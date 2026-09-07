@@ -1,0 +1,534 @@
+/* No horizontal padding — Shell.module.css's `.thread` and
+   PageHeader.module.css already supply the page's outer edge (same
+   convention every other route module in this directory follows). */
+.body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack);
+}
+
+.loadError {
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+/* ── Register form ────────────────────────────────────────────────── */
+.form {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-card);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.formTitle {
+  grid-column: 1 / -1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  margin: 0 0 2px;
+  color: var(--fg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.field label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/* A field has to look like a field ("forms are coming out weird", "fields
+   with no visible affordance", Saurabh). It used to be a --surface-sunk
+   wash edged with --rule, a hairline meant for separating rows: on a
+   --surface card that edge is barely a value apart from the fill, so the
+   control read as a greyed-out, disabled region rather than somewhere to
+   type. Inverted here — white well, --fg-faint edge — which also frees
+   the sunk fill to mean what it should: actually disabled.
+
+   Every input type, not a list of three. `type="number"`, `type="search"`
+   and `type="url"` were all missed by the old selector and fell back to
+   raw UA chrome, which is the other half of "forms are coming out
+   weird". */
+/* One text control. Single-line inputs and selects take the control
+   height so they sit level with the buttons in the same row; a textarea
+   is the one control that cannot, so it keeps the same inset as padding
+   and the same border, radius and type. */
+.field input,
+.field select,
+.field textarea {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--surface);
+  border: 1px solid var(--fg-faint);
+  border-radius: var(--radius-control);
+  color: var(--fg);
+  min-width: 0;
+}
+
+.field input,
+.field select {
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+}
+
+.field textarea {
+  padding: 7px var(--control-pad-x-sm);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--fg-faint);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--signal);
+}
+
+/* Offset 1px rather than global.css's 2: a ring that hugs the border
+   reads as belonging to the field instead of floating around it. */
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* Disabled is now carried by the sunk fill and a faded edge, not by
+   opacity alone — a distinct look from the resting state, which is the
+   whole point of giving the resting state a real border. */
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background: var(--surface-sunk);
+  border-color: var(--rule);
+  color: var(--fg-faint);
+  cursor: not-allowed;
+}
+
+.formActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  /* A border matching the fill, not `border: 0`: the outlined Cancel
+     beside it then has exactly the same box, so the two line up. */
+  border: 1px solid var(--signal);
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+}
+
+.formError {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+/* ── One server, one card ─────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-card);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.serverName {
+  margin: 0 0 3px;
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.baseUrl {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  word-break: break-all;
+}
+
+.cardHeadRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.authChip {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--chip);
+  background: var(--chip-soft);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.metaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.metaItem {
+  display: flex;
+  align-items: center;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The card's one lead action: this is what an operator came to the screen
+   to do (see the tools, in detail), so it is filled while Discover and
+   Remove stay outlined. */
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+}
+
+.primaryBtn:hover {
+  background: var(--signal-hover);
+  border-color: var(--signal-hover);
+}
+
+/* The dense in-row action. Height, not vertical padding, so it cannot be
+   stretched by the flex row it sits in — Settings had two of these at
+   49.2px beside identical ones at 30.6px. See tokens.css. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+}
+
+.actionBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.actionBtn.danger {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.confirmText {
+  font-size: var(--text-small);
+  color: var(--critical);
+}
+
+.confirmBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--on-signal);
+  background: var(--critical);
+  border: 1px solid var(--critical);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rowNote {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.rowNote.good {
+  color: var(--good);
+}
+
+.rowNote.critical {
+  color: var(--critical);
+}
+
+/* ── Tools: the point of the screen ───────────────────────────────── */
+.toolsSection {
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toolsHead h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+/* Same field contract as the register form above — a white well with a
+   real edge — so a search box on this screen looks like every other input
+   on it. */
+.toolsSearch {
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  background: var(--surface);
+  border: 1px solid var(--fg-faint);
+  border-radius: var(--radius-control);
+  color: var(--fg);
+  min-width: 200px;
+}
+
+.toolsSearch::placeholder {
+  color: var(--fg-faint);
+}
+
+.toolsSearch:focus {
+  border-color: var(--signal);
+}
+
+.toolsSearch:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.toolsNote {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+  line-height: 1.5;
+}
+
+.toolsEmpty {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.toolList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolCard {
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+}
+
+.toolCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.readOnlyChip {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--good);
+  background: var(--good-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.toolDescription {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
+
+/* The code-mode allow-list control, on each tool's own card. A tool the
+   server declares writes gets `codeModeBlocked` instead — a sentence, not
+   a disabled checkbox, because there is no state an operator could move it
+   to (§6.5: a server's "this writes" is trusted in the direction that
+   denies). */
+.codeModeBlocked {
+  margin: 8px 0 0;
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+  line-height: 1.5;
+}
+
+.codeModeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.codeModeToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-small);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.codeModeField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+}
+
+.codeModeField select {
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.allowListActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.allowListCount {
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}

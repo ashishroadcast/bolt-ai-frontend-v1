@@ -1,0 +1,83 @@
+/*
+ * Not in the mockup — designed in the same paper-sheet language as
+ * DataTable/DataChart: hairline rules between rows (matches .table td),
+ * mono for the locator, display type for the source title.
+ */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 4px 10px;
+  padding: var(--pad-cell-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.index {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--on-sheet-dim);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+
+.body {
+  min-width: 0;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-body);
+  color: var(--on-sheet);
+}
+
+.link {
+  color: var(--sheet-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--on-sheet);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--sheet-accent);
+  outline-offset: 2px;
+}
+
+.locator {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--on-sheet-dim);
+  white-space: nowrap;
+}
+
+.snippet {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--on-sheet-dim);
+  margin: 3px 0 0;
+}
+
+.empty {
+  padding: 22px var(--pad-sheet-x);
+  text-align: center;
+  font-family: var(--font-body);
+  color: var(--on-sheet-dim);
+}

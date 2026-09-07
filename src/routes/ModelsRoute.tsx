@@ -1,0 +1,342 @@
+import { useEffect, useMemo, useState } from "react";
+import { PageHeader } from "../agents/PageHeader.tsx";
+import { GatewayError } from "../api/errors.ts";
+import { listLlmConfigs, listModelCatalogue, type CatalogueModel } from "./llmConfigsApi.ts";
+import {
+  formatContext,
+  formatPerMillion,
+  perMillionNumber,
+  providerOf,
+} from "./ModelsRoute.pricing.ts";
+import styles from "./ModelsRoute.module.css";
+
+function errorMessage(err: unknown): string {
+  return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
+}
+
+type SortKey = "name" | "id" | "context" | "input" | "output";
+type SortDirection = "asc" | "desc";
+
+/**
+ * Which way each column sorts on its *first* click. The screen exists to
+ * answer "what is the cheapest thing with a big context window", so that
+ * question has to be one click away in each column rather than two:
+ * cheapest first on a price, biggest first on a window.
+ */
+const FIRST_DIRECTION: Record<SortKey, SortDirection> = {
+  name: "asc",
+  id: "asc",
+  context: "desc",
+  input: "asc",
+  output: "asc",
+};
+
+const COLUMN_LABEL: Record<SortKey, string> = {
+  name: "Model",
+  id: "Id",
+  context: "Context",
+  input: "Input $/1M",
+  output: "Output $/1M",
+};
+
+interface Sort {
+  key: SortKey;
+  direction: SortDirection;
+}
+
+/**
+ * Orders two numeric keys, with `null` always last. A model whose price the
+ * catalogue doesn't carry — or prices at the `-1` "depends on the route"
+ * sentinel (see `ModelsRoute.pricing.ts`) — is not the cheapest model; it
+ * is a model with no price, and it belongs at the bottom of the column
+ * whichever way the column is pointing.
+ */
+function compareNullable(a: number | null, b: number | null, direction: SortDirection): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return direction === "asc" ? a - b : b - a;
+}
+
+function compareText(a: string, b: string, direction: SortDirection): number {
+  return direction === "asc" ? a.localeCompare(b) : b.localeCompare(a);
+}
+
+function matchesSearch(model: CatalogueModel, needle: string): boolean {
+  if (needle === "") return true;
+  return model.name.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle);
+}
+
+/**
+ * The model catalogue as a reference table — Saurabh's own request, asked
+ * twice: "list all relevant models with there token cost and context
+ * window / open ai / anthropic / deep seek / minime / qwen / glm / etc
+ * etc".
+ *
+ * `GET /agent/llm-configs/catalogue` has answered this since it was built,
+ * and until now the only place it surfaced was a typeahead inside the "add
+ * a model" form on Settings — a picker you can search but not browse,
+ * which is not a list of what exists.
+ *
+ * **Prices are per million, converted from strings, never through a
+ * float.** OpenRouter quotes USD *per token*; nobody compares models at
+ * that scale. `ModelsRoute.pricing.ts` does the ×1,000,000 by shifting the
+ * decimal string, and its own docstring covers why `Number(x) * 1e6` is
+ * the wrong tool for a value like `2.7e-7`.
+ *
+ * **Every matching row renders — there is no cap, so there is nothing to
+ * disclose.** 380 rows is a few thousand DOM nodes, which a table handles
+ * without help, and the filter and sort are memoised so typing doesn't
+ * redo that work per keystroke. A silently truncated list reads as "this
+ * is all there is", and the count beside the title is the whole
+ * population.
+ *
+ * **Configured models are marked in place rather than split onto their own
+ * screen.** `listLlmConfigs()` gives the tenant's saved configs, and a
+ * config's `model` field is the same OpenRouter id, so a row can say "in
+ * use" where it stands. That load is independent of the catalogue's: a
+ * failure on either is reported on its own and never blanks the other,
+ * the same split `McpServersRoute.tsx` uses for its bindings.
+ */
+export function ModelsRoute() {
+  const [models, setModels] = useState<CatalogueModel[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [configuredIds, setConfiguredIds] = useState<Set<string>>(new Set());
+  const [configsError, setConfigsError] = useState<string | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [provider, setProvider] = useState("");
+  const [configuredOnly, setConfiguredOnly] = useState(false);
+  // Id ascending, because an OpenRouter id leads with its provider — so
+  // the default browse order groups Anthropic's models together, then
+  // DeepSeek's, then Google's, with no filter applied.
+  const [sort, setSort] = useState<Sort>({ key: "id", direction: "asc" });
+
+  useEffect(() => {
+    let cancelled = false;
+    listModelCatalogue()
+      .then((rows) => {
+        if (!cancelled) setModels(rows);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setModels([]);
+          setLoadError(errorMessage(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    listLlmConfigs()
+      .then((configs) => {
+        if (!cancelled) setConfiguredIds(new Set(configs.map((config) => config.model)));
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setConfigsError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rows = useMemo(() => models ?? [], [models]);
+
+  const providers = useMemo(() => {
+    const seen = new Set(rows.map((model) => providerOf(model.id)));
+    return [...seen].sort((a, b) => a.localeCompare(b));
+  }, [rows]);
+
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const filtered = rows.filter(
+      (model) =>
+        (provider === "" || providerOf(model.id) === provider) &&
+        (!configuredOnly || configuredIds.has(model.id)) &&
+        matchesSearch(model, needle),
+    );
+
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      switch (sort.key) {
+        case "name":
+          return compareText(a.name, b.name, sort.direction);
+        case "id":
+          // Provider first, then the whole id. Sorting the raw string
+          // alone would file every alias id under "~" instead of beside
+          // the provider it belongs to, which is the one thing this
+          // column's order is for.
+          return (
+            compareText(providerOf(a.id), providerOf(b.id), sort.direction) ||
+            compareText(a.id, b.id, sort.direction)
+          );
+        case "context":
+          return compareNullable(
+            a.context_length ?? null,
+            b.context_length ?? null,
+            sort.direction,
+          );
+        case "input":
+          return compareNullable(
+            perMillionNumber(a.pricing?.prompt),
+            perMillionNumber(b.pricing?.prompt),
+            sort.direction,
+          );
+        case "output":
+          return compareNullable(
+            perMillionNumber(a.pricing?.completion),
+            perMillionNumber(b.pricing?.completion),
+            sort.direction,
+          );
+      }
+    });
+    return sorted;
+  }, [rows, search, provider, configuredOnly, configuredIds, sort]);
+
+  const configuredInCatalogue = useMemo(
+    () => rows.filter((model) => configuredIds.has(model.id)).length,
+    [rows, configuredIds],
+  );
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: FIRST_DIRECTION[key] },
+    );
+  }
+
+  function sortHeader(key: SortKey, numeric = false) {
+    const active = sort.key === key;
+    return (
+      <th
+        className={numeric ? styles.num : undefined}
+        aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
+      >
+        <button type="button" className={styles.sortBtn} onClick={() => toggleSort(key)}>
+          {COLUMN_LABEL[key]}
+          {active && (
+            <span className={styles.caret} aria-hidden="true">
+              {sort.direction === "asc" ? "▲" : "▼"}
+            </span>
+          )}
+        </button>
+      </th>
+    );
+  }
+
+  const loading = models === null;
+
+  return (
+    <>
+      <PageHeader
+        kicker="Connections"
+        title="Models"
+        description="Every model the gateway can route to, with its context window and what a million tokens costs in and out."
+      />
+
+      <div className={styles.body}>
+        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+        {configsError !== null && (
+          <p className={styles.loadError}>
+            Couldn't load which models you've configured — {configsError}
+          </p>
+        )}
+
+        <div className={styles.controls}>
+          <input
+            type="search"
+            className={styles.search}
+            placeholder="Search name or id…"
+            aria-label="Search models"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className={styles.provider}
+            aria-label="Filter by provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+          >
+            <option value="">All providers</option>
+            {providers.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <label className={styles.toggle}>
+            <input
+              type="checkbox"
+              checked={configuredOnly}
+              onChange={(e) => setConfiguredOnly(e.target.checked)}
+            />
+            Configured only ({configuredInCatalogue})
+          </label>
+        </div>
+
+        <section className={styles.sheet}>
+          <header className={styles.sheetHead}>
+            <h3>Catalogue</h3>
+            <span className={styles.sub} data-testid="models-count">
+              {loading
+                ? "Loading…"
+                : visible.length === rows.length
+                  ? `${rows.length} models · ${providers.length} providers`
+                  : `${visible.length} of ${rows.length} models`}
+            </span>
+          </header>
+
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  {sortHeader("name")}
+                  {sortHeader("id")}
+                  {sortHeader("context", true)}
+                  {sortHeader("input", true)}
+                  {sortHeader("output", true)}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((model) => (
+                  <tr key={model.id}>
+                    <td>
+                      <div className={styles.nameCell}>
+                        <span className={styles.name} title={model.name}>
+                          {model.name}
+                        </span>
+                        {configuredIds.has(model.id) && (
+                          <span className={styles.inUse}>in use</span>
+                        )}
+                      </div>
+                    </td>
+                    <td>
+                      <code className={styles.modelId}>{model.id}</code>
+                    </td>
+                    <td className={styles.num}>{formatContext(model.context_length) ?? "—"}</td>
+                    <td className={styles.num}>{formatPerMillion(model.pricing?.prompt) ?? "—"}</td>
+                    <td className={styles.num}>
+                      {formatPerMillion(model.pricing?.completion) ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {!loading && visible.length === 0 && (
+            <p className={styles.noMatch}>
+              {rows.length === 0
+                ? "The catalogue came back empty."
+                : "No model matches these filters."}
+            </p>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}

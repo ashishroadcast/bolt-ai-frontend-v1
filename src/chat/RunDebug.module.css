@@ -1,0 +1,165 @@
+/*
+ * The debug drawer. Code blocks sit in the sunk well rather than on a dark
+ * ground: this console is single-theme light by instruction (tokens.css),
+ * and there is no dark surface token to spend here.
+ */
+.panel {
+  margin-top: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px 12px;
+  box-shadow: var(--lift-card);
+}
+
+.section + .section {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.sectionTitle {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.absent {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  max-width: 68ch;
+}
+
+.tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.toolName {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--chip);
+  background: var(--chip-soft);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.resultToggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.resultToggle:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+.resultToggle:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/*
+ * `pre-wrap`, not `pre`: the tool's own SQL arrives pretty-printed over
+ * many short lines, but the phase's `sql_run` is normalised to one long
+ * line, and under `pre` that became a single 2000px row nobody scrolls to
+ * the end of. Wrapping keeps the pretty-printed form intact (its newlines
+ * and indentation are preserved either way) and makes the single-line form
+ * readable. `overflow-x` stays as the backstop for an unbreakable token,
+ * so the thread body still never moves sideways.
+ */
+.code,
+.result {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-sunk);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--fg);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.result {
+  margin-top: 6px;
+  color: var(--fg-dim);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.argText {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  max-width: 68ch;
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 6px;
+}
+
+.scorePill {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-variant-numeric: tabular-nums;
+  background: var(--chip-soft);
+  color: var(--chip);
+}
+
+.scorePill[data-tone="good"] {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.scorePill[data-tone="weak"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.scoreNote {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+}
+
+.reasoning {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--fg-dim);
+  max-width: 74ch;
+}

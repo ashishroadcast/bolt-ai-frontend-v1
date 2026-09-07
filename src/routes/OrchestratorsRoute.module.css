@@ -1,0 +1,192 @@
+/* No horizontal padding — see AgentsRoute.module.css's own comment for why. */
+.body {
+  padding: 0;
+}
+
+.sheet {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--lift-card);
+}
+
+/* --pad-sheet-x, not 15px: the sheet header and the table beneath it have
+   to sit on one line, and a one-pixel disagreement between neighbouring
+   screens is exactly what reads as nothing lining up. */
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--stack-tight);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.sheetHead h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin: 0;
+}
+
+.sheetHead .sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(200px, 1.4fr) minmax(160px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 12px var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.rowEditing {
+  display: block;
+  padding: 12px var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.rowEditing:last-child {
+  border-bottom: 0;
+}
+
+.name {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.description {
+  color: var(--fg-dim);
+  font-size: var(--text-small);
+}
+
+.modeCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control);
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+}
+
+.modeText b {
+  display: block;
+  font-size: var(--text-small);
+  color: var(--fg);
+}
+
+.modeText span {
+  display: block;
+  font-size: var(--text-micro);
+  color: var(--fg-dim);
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  justify-self: end;
+}
+
+/* The dense in-row action. Height, not vertical padding, so it cannot be
+   stretched by the flex row it sits in — Settings had two of these at
+   49.2px beside identical ones at 30.6px. See tokens.css. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--rule);
+}
+
+.actionBtn:hover {
+  color: var(--fg);
+  background: var(--ground-lift);
+}
+
+.deleteBtn {
+  composes: actionBtn;
+  color: var(--critical);
+  border-color: var(--critical-soft);
+}
+
+.deleteBtn:hover {
+  background: var(--critical-soft);
+}
+
+.confirmBtn {
+  composes: actionBtn;
+  color: var(--on-signal);
+  background: var(--critical);
+  border-color: var(--critical);
+}
+
+.confirmBtn:hover {
+  background: var(--critical);
+  opacity: 0.9;
+}
+
+.confirmRow {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.confirmText {
+  font-size: var(--text-small);
+  color: var(--critical);
+}
+
+.empty {
+  padding: 28px var(--pad-sheet-x);
+  color: var(--fg-dim);
+  font-size: var(--text-body);
+}
+
+.error {
+  padding: var(--pad-sheet-x);
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+.loading {
+  padding: 28px var(--pad-sheet-x);
+  color: var(--fg-faint);
+  font-size: var(--text-body);
+  font-family: var(--font-mono);
+}

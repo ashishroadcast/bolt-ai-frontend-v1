@@ -1,0 +1,154 @@
+/*
+ * The reading — the conclusion the panels above add up to, and the thing
+ * this product exists to produce.
+ *
+ * It is not a sheet, and that part was right: giving it the same white
+ * card as the panels would make it a fifth piece of evidence rather than
+ * the answer to them. But the first version drew the distinction the wrong
+ * way round. It sat transparent, 569px wide, inset behind a left rule,
+ * with a 17px headline — beneath two 788px white cards with headers and
+ * row counts. The eye ranks by visual weight, so the apparatus read as the
+ * designed thing and the answer read as a leftover aside. Measured on
+ * screen, not guessed.
+ *
+ * What marks it out instead is SCALE and WIDTH: it takes the full column
+ * the panels take, and it opens at a size nothing else on the page uses.
+ * A confident line on the page's own ground outranks a small one in a box,
+ * and it does it without borrowing the apparatus's chrome.
+ */
+.summary {
+  /* Full column, flush left: aligned with the panels rather than indented
+     from them, so the answer and its evidence read as one column of
+     argument instead of a quote hanging off the side of a table. */
+  margin: 26px 0 var(--stack);
+  padding: 0;
+  max-width: none;
+}
+
+/* The measure is set on the prose, not the block — the answer spans the
+   column, but a line of it still stops at a readable length. */
+.summary > * {
+  max-width: 60ch;
+}
+
+/*
+ * The finding, and the largest type on the page.
+ *
+ * 17px was the whole problem: two pixels above the 13.5px body it sat in,
+ * which is not a headline but a bolded sentence. It scales with the
+ * viewport and caps out, so a model that ignores the ten-word instruction
+ * still wraps to two readable lines rather than a slab.
+ */
+.headline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(20px, 2.1vw, 25px);
+  line-height: 1.22;
+  letter-spacing: -0.021em;
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+/* Short, in the agent's accent: enough to close the headline off from the
+   reading beneath it without a rule across the column, which would cut the
+   answer in half. The same device the streamed answer's own lead uses. */
+.headline::after {
+  content: "";
+  display: block;
+  width: 30px;
+  height: 2px;
+  margin-top: 12px;
+  background: var(--signal);
+  border-radius: 1px;
+}
+
+/* The one number in an answer allowed to shout. Mono because every other
+   figure in this console is, and tabular so it reads as a measurement
+   rather than as a word. */
+/*
+ * The figure sits inside a display-face line, so it takes the display face
+ * too. Mono here was a mistake twice over: it fought the headline's
+ * letterforms mid-sentence, and it rendered a full percent narrower, so
+ * the line looked like two pieces of type that had been pasted together.
+ * Tabular figures give the alignment mono was reached for in the first
+ * place.
+ */
+.figure {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--signal);
+  white-space: nowrap;
+}
+
+.points {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  /* Each observation is a separate thought and has to read as one. */
+  gap: 10px;
+}
+
+/*
+ * No bullet glyph. The left rule already groups these, and a marker per
+ * item inside a bordered block is one structural device too many — the
+ * version with green squares had a rule AND a dash AND an indent doing
+ * the same job.
+ */
+.point {
+  font-family: var(--font-body);
+  /* A step above body, in full ink. These are the reading — the substance
+     of the answer — and at body size in the dimmed ink they read as the
+     caption of the table above them. */
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--fg);
+}
+
+/*
+ * Grid, not flex. Flex put the label and the text in one row, so a wrapped
+ * second line returned to the container's left edge and ran under the
+ * label instead of aligning with the first line of its own sentence — a
+ * ragged hang exactly where the eye expects a column.
+ */
+.next {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+/* A label, so a recommendation is marked as one rather than trailing off
+   the observations as if it were another. */
+.nextLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--signal);
+  flex: none;
+}
+
+/*
+ * What the reading was drawn from: the population, the window, the measure.
+ *
+ * Sits between the headline and the observations, in the structural voice
+ * rather than the reading voice — it is provenance, not argument. Quiet
+ * enough that it does not compete with the finding, present enough that a
+ * reader can see what the finding covers before deciding whether to trust
+ * it. A claim without this is an assertion.
+ */
+.basis {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg-faint);
+}

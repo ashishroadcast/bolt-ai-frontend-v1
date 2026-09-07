@@ -1,0 +1,102 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  /* The training-signal panel sits under the phase split as its own block
+     rather than inside it: it is about the agent, not about whichever
+     phase happens to be open. */
+  gap: var(--stack);
+  padding-bottom: 8px;
+}
+
+.body {
+  color: var(--fg-dim);
+  font-size: var(--text-small);
+  max-width: 78ch;
+  margin: 0 0 14px;
+}
+
+.alert {
+  color: var(--critical);
+  font-size: var(--text-body);
+  padding: 8px 0;
+}
+
+/* Phase list beside the open phase, not five stacked cards. Fixed rail so
+   the panel's own measure doesn't shift as phase names change length. */
+.split {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.phaseList {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: var(--lift-card);
+}
+
+.phaseItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 3px solid transparent;
+  padding: 8px 12px;
+  cursor: pointer;
+  min-height: var(--row-h);
+  justify-content: center;
+}
+
+.phaseItem:last-child {
+  border-bottom: 0;
+}
+
+.phaseItem:hover {
+  background: var(--ground-lift);
+}
+
+/* The open phase is marked by a filled band and a left rule, not colour
+   alone — tokens.css rule 2, and it also survives the band being the only
+   thing distinguishing two adjacent rows. */
+.phaseItemOn {
+  background: var(--signal-soft);
+  border-left-color: var(--signal);
+}
+
+.phaseItemOn:hover {
+  background: var(--signal-soft);
+}
+
+.phaseName {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-h3);
+  text-transform: capitalize;
+  color: var(--fg);
+}
+
+.phaseItemOn .phaseName {
+  color: var(--signal);
+}
+
+.phaseMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}

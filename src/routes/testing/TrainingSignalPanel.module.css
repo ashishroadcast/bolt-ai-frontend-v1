@@ -1,0 +1,240 @@
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  margin: 0;
+}
+
+.counts {
+  display: flex;
+  gap: 14px;
+  margin-left: auto;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.count strong {
+  color: var(--fg);
+}
+
+.body {
+  margin: 10px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  max-width: 78ch;
+}
+
+.status {
+  margin: 12px 0 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-sunk);
+  min-width: 0;
+}
+
+/* The colour carries the rating so the list can be scanned for the rows
+   that need work without reading every label. */
+.row[data-rating="down"] {
+  border-left: 3px solid var(--critical);
+}
+
+.row[data-rating="up"] {
+  border-left: 3px solid var(--good);
+}
+
+.rowHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mark {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  flex: none;
+}
+
+.question {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.reasonBtn {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-faint);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  flex: none;
+}
+
+.reasonBtn:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+/* Two lines of the answer is enough to recognise the turn; the whole
+   answer belongs in the transcript, not in a review queue. */
+.answer {
+  margin: 5px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.comment {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg);
+  border-left: 2px solid var(--chip);
+  padding-left: 9px;
+}
+
+.warn {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  color: var(--amber);
+}
+
+.reasonBox {
+  margin-top: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reasonBox label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.reasonInput {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--fg-faint);
+  border-radius: 7px;
+  padding: 8px 10px;
+  min-height: 4.5em;
+  resize: vertical;
+}
+
+.reasonInput:focus {
+  border-color: var(--signal);
+}
+
+.reasonInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.reasonActions {
+  display: flex;
+  gap: 9px;
+}
+
+.recordBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+  border-radius: 7px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.recordBtn:hover:not(:disabled) {
+  background: var(--signal-hover);
+}
+
+.recordBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.cancelBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: transparent;
+  border: 1px solid var(--fg-faint);
+  color: var(--fg-dim);
+  border-radius: 7px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.error {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  color: var(--critical);
+}

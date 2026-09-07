@@ -1,0 +1,158 @@
+/*
+ * A ranked comparison. Grid rather than a table: the columns must hold
+ * their line across every row (that is the whole point of a ranking), but
+ * the rows are not tabular data — the bar behind them is part of the
+ * reading, and a <td> has nowhere to put it.
+ */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--pad-cell-y);
+}
+
+.row {
+  position: relative;
+  display: grid;
+  /* rank | name | figure | share of total | movement. The name takes the
+     slack; the data columns are sized to their content so the digits stay
+     in columns the eye can run down. */
+  grid-template-columns: 18px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0 12px;
+  min-height: var(--row-h);
+  padding: 0 var(--pad-sheet-x);
+  border-top: 1px solid var(--rule-soft);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+/*
+ * The proportional bar, behind the content.
+ *
+ * Very faint on purpose. It carries the shape of the comparison — who
+ * leads, and by how much — at a glance, and it has to do that without
+ * competing with the figures sitting on top of it. Anchored left and
+ * inset by the sheet's own padding so every bar starts on the same line
+ * the text does.
+ */
+.bar {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  background: var(--signal-soft);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  pointer-events: none;
+}
+
+.rank {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.label {
+  position: relative;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Mono and tabular so the digits align down the column — the reason a
+   ranking is readable at all. */
+.value {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  text-align: right;
+}
+
+/* The row's share of the whole, beside the figure it qualifies. Reserved
+   width even when empty, so the movement chips beyond it stay in one
+   column whether or not a share could be computed. */
+.ofTotal {
+  position: relative;
+  min-width: 6ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+/*
+ * The movement chip. Colour is the LAST of three signals — the arrow and
+ * the sign on the number both say it first, so the chip still reads in
+ * greyscale and for a colour-blind reader.
+ */
+.delta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 96px;
+  justify-content: flex-end;
+}
+
+.delta[data-direction="up"] {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.delta[data-direction="down"] {
+  color: var(--critical);
+  background: var(--critical-soft);
+}
+
+.delta[data-direction="flat"] {
+  color: var(--chip);
+  background: var(--chip-soft);
+}
+
+.deltaValue {
+  font-weight: 500;
+}
+
+/* Quieter than the absolute figure beside it: the rupee movement is the
+   fact, the percentage is the scale of it. */
+.deltaPercent {
+  opacity: 0.75;
+}
+
+.empty {
+  padding: 22px var(--pad-sheet-x);
+  text-align: center;
+  font-family: var(--font-body);
+  color: var(--on-sheet-dim);
+}
+
+/* Below the reflow point the movement chip wraps under the figure rather
+   than squeezing the store name to an ellipsis after two characters. */
+@media (max-width: 560px) {
+  .row {
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .delta {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+}

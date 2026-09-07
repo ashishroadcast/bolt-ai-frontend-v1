@@ -1,0 +1,98 @@
+.rail {
+  grid-area: rail;
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+  padding: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  padding: 14px 16px 5px;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  min-height: 30px;
+  color: var(--fg-dim);
+  text-decoration: none;
+  font-size: var(--text-body);
+  border-left: 2px solid transparent;
+}
+
+.link:hover {
+  color: var(--fg);
+  background: var(--ground-lift);
+}
+
+.link.on {
+  color: var(--fg);
+  font-weight: 600;
+  border-left-color: var(--signal);
+  background: var(--signal-soft);
+}
+
+/* Inset, not outset — the rail scrolls its own overflow, so a ring drawn
+   outside the link's box would be clipped at the edge. */
+.link:focus-visible {
+  outline-offset: -2px;
+}
+
+.glyph {
+  /* An SVG now, not a monospace character — so it needs a fixed box and a
+     stroke colour rather than a font size. `flex: none` keeps it from being
+     squeezed when a label wraps. */
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--fg-faint);
+}
+
+.link:hover .glyph {
+  color: var(--fg-dim);
+}
+
+.on .glyph {
+  color: var(--signal);
+}
+
+.link.on .glyph {
+  color: var(--signal);
+}
+
+@media (max-width: 900px) {
+  .rail {
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 8px;
+    gap: 4px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .label {
+    display: none;
+  }
+
+  .link {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    padding: 6px 11px;
+  }
+
+  .link.on {
+    border-left: 0;
+    border-bottom-color: var(--signal);
+  }
+}

@@ -1,0 +1,169 @@
+/*
+ * A live control on a deadline: the run is blocked for sixty seconds while
+ * this is on screen. So it is the one thing in a thread allowed to look
+ * like it wants something — a filled ground and a full-strength accent
+ * rule, where the summary beside it uses the same rule at rest.
+ */
+.question {
+  margin: var(--stack) 0;
+  padding: 14px 16px;
+  background: var(--signal-soft);
+  border-left: 2px solid var(--signal);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  max-width: 62ch;
+}
+
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.prompt {
+  margin: 0 0 10px;
+  padding: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The whole row is the target, not just the 13px control — this is being
+   answered against a clock. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.option:hover {
+  border-color: var(--signal);
+}
+
+.option input {
+  accent-color: var(--signal);
+  flex: none;
+}
+
+.other {
+  display: block;
+  margin-top: 10px;
+}
+
+.otherLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.otherInput {
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--fg);
+}
+
+.otherInput:focus-visible,
+.option input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.submit {
+  margin-top: 12px;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 0;
+  border-radius: var(--radius-control);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: var(--signal-hover);
+}
+
+/* Answered: the question stays, because a thread showing an answer without
+   the question it answered reads as a non-sequitur when reopened. */
+.sent {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  color: var(--fg-dim);
+}
+
+.sent::before {
+  content: "✓ ";
+  color: var(--signal);
+  font-weight: 700;
+}
+
+.failed,
+.expired {
+  margin: 10px 0 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--critical);
+}
+
+.expired {
+  color: var(--fg-faint);
+}
+
+/*
+ * A question nobody answered in time.
+ *
+ * The live form's whole design is to demand attention — filled ground,
+ * full-strength accent rule, a column of tap targets. Left in that state
+ * after the run stopped listening it dominated the thread with a control
+ * that could only fail, twice over when the agent asked twice. So the
+ * closed state keeps only the record: what was asked, and that the run
+ * decided for itself. No ground, a hairline instead of the accent, and one
+ * line of explanation.
+ */
+.closed {
+  margin: var(--stack) 0;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--rule);
+  max-width: 62ch;
+}
+
+.closedPrompt {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.closed .expired {
+  margin: 3px 0 0;
+}

@@ -1,0 +1,60 @@
+/*
+ * The wait indicator. Every choice here is about staying out of the way:
+ * it sits in the console's quietest ink, in the mono voice the rail and
+ * the timings already use, and it disappears the moment an answer starts.
+ */
+.waiting {
+  margin: 0 0 var(--stack-tight);
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/*
+ * A slow pulse in the agent's own accent — the one thing on this line that
+ * says "running" rather than "ran". Deliberately not a spinner: a spinner
+ * is the most attention-hungry object a UI has, and this has to sit beside
+ * text without competing for the eye.
+ *
+ * The dot itself is drawn with no animation, so a reduced-motion reader
+ * still gets the mark; only the pulse is behind the query.
+ */
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal);
+  flex: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pulse {
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.step {
+  color: var(--fg-dim);
+}
+
+/* Tabular so the seconds column does not shuffle the label sideways every
+   time the count crosses a digit width. */
+.elapsed {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}

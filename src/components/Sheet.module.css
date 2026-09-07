@@ -1,0 +1,66 @@
+/*
+ * The paper sheet chrome — surface, header, rule under the header. Ported
+ * 1:1 from the mockup's `.sheet` / `.sheet-hd` (agent-console.html). Every
+ * persisted artifact (table, chart, citations) is a sheet on the console's
+ * ground; this is the one place that visual language is defined, so it
+ * can only drift in one place.
+ */
+.sheet {
+  background: var(--surface);
+  color: var(--on-sheet);
+  border-radius: var(--radius-card);
+  margin-bottom: var(--stack);
+  overflow: hidden;
+  /* A sheet is lifted off the bench, not painted on it: a hairline to hold
+     its edge against a ground that is nearly as light, then a soft drop —
+     the same --lift-card every other card in the console uses, so a table
+     sheet and an Agents/Orchestrators card read as the same kind of
+     object rather than two competing card languages. */
+  border: 1px solid var(--rule-soft);
+  box-shadow: var(--lift-card);
+}
+
+.sheet:last-child {
+  margin-bottom: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The same horizontal inset the table/chart/stat body below it uses, so
+     the sheet's title and the first column under it start on one line. */
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+/* Tinted icon tile, same pairing as EmptyState/DashboardRoute — the
+   accent shows up on a card header, not only in charts. */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: var(--text-small);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--on-sheet-dim);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -1,0 +1,458 @@
+/* Same shell as AgentsRoute.module.css/OrchestratorsRoute.module.css:
+   Shell.module.css's `.thread` already supplies the outer edge, so no
+   second side margin here. */
+.body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack);
+}
+
+.sheet {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--lift-card);
+}
+
+/* --pad-sheet-x, not 15px: the sheet header and the table beneath it have
+   to sit on one line, and a one-pixel disagreement between neighbouring
+   screens is exactly what reads as nothing lining up. */
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--stack-tight);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.sheetHead h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin: 0;
+}
+
+.sheetHead .sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--on-signal);
+  background: var(--signal);
+  border: 1px solid var(--signal);
+}
+
+.addBtn:hover {
+  background: var(--signal-hover);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-body);
+}
+
+/* The cell inset is --pad-sheet-x, the same one the sheet header above
+   uses: that is what puts a table's first column and its sheet's title on
+   one vertical line. Measured at 249/250/251px on three neighbouring
+   screens before this was a token. */
+.table th,
+.table td {
+  padding: var(--pad-cell-y) var(--pad-sheet-x);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-weight: 400;
+  border-bottom: 1px solid var(--rule);
+}
+
+.table td {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background: var(--ground-lift);
+}
+
+.name {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.description {
+  color: var(--fg-dim);
+}
+
+.statusCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+}
+
+/* The dense in-row action. Height, not vertical padding, so it cannot be
+   stretched by the flex row it sits in — Settings had two of these at
+   49.2px beside identical ones at 30.6px. See tokens.css. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--rule);
+}
+
+.actionBtn:hover {
+  color: var(--fg);
+  background: var(--ground-lift);
+}
+
+.actionBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.danger {
+  color: var(--critical);
+  border-color: var(--critical-soft);
+}
+
+.danger:hover {
+  background: var(--critical-soft);
+}
+
+.rowNote {
+  margin: 6px 0 0;
+  color: var(--critical);
+  font-size: var(--text-small);
+}
+
+.empty {
+  padding: 28px var(--pad-sheet-x);
+  color: var(--fg-dim);
+  font-size: var(--text-body);
+}
+
+.error {
+  padding: var(--pad-sheet-x);
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+.loading {
+  padding: 28px var(--pad-sheet-x);
+  color: var(--fg-faint);
+  font-size: var(--text-body);
+  font-family: var(--font-mono);
+}
+
+/* --- Add-a-model form --- */
+
+.formWrap {
+  padding: 13px var(--pad-sheet-x) 0;
+}
+
+.form {
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  padding: var(--pad-card);
+  margin-bottom: var(--stack);
+}
+
+.formGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+}
+
+.label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 5px;
+}
+
+.input {
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  font-size: var(--text-body);
+  color: var(--fg);
+  font-family: var(--font-body);
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  margin-top: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  /* A border matching the fill, not `border: 0`: the outlined Cancel
+     beside it then has exactly the same box, so the two line up. */
+  border: 1px solid var(--signal);
+}
+
+.submit:hover {
+  background: var(--signal-hover);
+}
+
+.submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+}
+
+.cancel:hover {
+  color: var(--fg);
+  background: var(--ground-lift);
+}
+
+.formError {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  background: var(--critical-soft);
+  color: var(--critical);
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
+}
+
+/* --- Sandbox facts --- */
+
+.sandboxNote {
+  margin: 0;
+  padding: 11px var(--pad-sheet-x) 0;
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}
+
+.sandboxNote code {
+  font-family: var(--font-mono);
+}
+
+.factGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  padding: 14px var(--pad-sheet-x);
+  margin: 0;
+}
+
+.fact dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  margin-bottom: 3px;
+}
+
+.fact dd {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-h2);
+  font-weight: 600;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.factBadge {
+  font-size: var(--text-micro);
+}
+
+/* --- model catalogue picker ------------------------------------------- */
+
+/* The two numbers an operator compares models on, once one is chosen.
+   Sits under the field rather than in the list so it survives the list
+   collapsing on an exact match. */
+.modelChosen {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.modelHint {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  color: var(--amber);
+}
+
+.modelList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift-card);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.modelList > li + li {
+  border-top: 1px solid var(--rule-soft);
+}
+
+/* A grid, not a flex row: the price column has to line up down the list
+   or the comparison the picker exists for does not happen. */
+.modelOption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name meta"
+    "id   meta";
+  column-gap: 12px;
+  width: 100%;
+  padding: 8px 11px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+.modelOption:hover:not(:disabled) {
+  background: var(--ground-lift);
+}
+
+.modelOption:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.modelOption:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.modelName {
+  grid-area: name;
+  font-size: var(--text-body);
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelId {
+  grid-area: id;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelMeta {
+  grid-area: meta;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

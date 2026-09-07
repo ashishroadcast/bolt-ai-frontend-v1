@@ -1,0 +1,143 @@
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  padding: 11px 15px;
+  border-bottom: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.question {
+  font-size: 13.5px;
+  color: var(--fg);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.inactive {
+  color: var(--fg-faint);
+  text-decoration: line-through;
+}
+
+.meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.score {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.expected {
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.expected b {
+  color: var(--fg-faint);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The judge's stated reasoning — always shown inline for a case that has
+   run, never behind an extra click. See the task brief: "last_reasoning
+   exists so a person can read why the judge passed something, and it
+   should be reachable, not buried." */
+.reasoning {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  background: var(--surface-sunk);
+  border-radius: 6px;
+  padding: 7px 9px;
+  margin: 0;
+}
+
+.reasoning b {
+  color: var(--fg-faint);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-right: 6px;
+}
+
+.never {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.action {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 12px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--fg-dim);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+.action:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.danger {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+.danger:hover {
+  background: var(--critical-soft);
+}
+
+.runError {
+  font-size: 12px;
+  color: var(--critical);
+  margin: 0;
+}
+
+.empty {
+  padding: 22px 15px;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 13px;
+}

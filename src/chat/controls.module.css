@@ -1,0 +1,66 @@
+/*
+ * The small control the Ask screen is made of.
+ *
+ * Copy, Rerun, the two ratings, Show debug, the evidence disclosure,
+ * History's Share and Delete, and a table's page buttons were eight
+ * separately-authored takes on the same object, and they had already
+ * drifted apart on padding, radius, font family and weight — which is most
+ * of what "consistency is missing" (Saurabh) was pointing at on this
+ * screen. Extracted at the third occurrence, per the house rule, and by
+ * now well past it.
+ *
+ * `composes` rather than a global class, so this stays a CSS module like
+ * everything else here: each consumer keeps its own class name and adds
+ * only what is genuinely its own (a tone, a disclosure triangle, a mono
+ * face).
+ *
+ * ── The cascade contract, which is not optional ───────────────────────
+ *
+ * css-modules gives no guarantee about where a composed file's rules land
+ * relative to the file composing them, and this bundle really does emit
+ * `.debugToggle` *before* the `.pill` it composes. So specificity, not
+ * source order, has to settle every conflict:
+ *
+ *   - These rules carry exactly one class. Less would lose to global.css's
+ *     `button { font: inherit; color: inherit }` — an element selector,
+ *     and the reason a zero-specificity base silently reverted every one
+ *     of these controls to 15px body text.
+ *   - A consumer overriding anything set here names its own class twice
+ *     (`.debugToggle.debugToggle`), and names `:hover` explicitly when it
+ *     overrides something the hover rule below also sets.
+ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  color: var(--fg-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pill:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+/* After :hover on purpose — same specificity, so source order within this
+   one file is what stops a disabled control lighting up under the
+   pointer. */
+.pill:disabled {
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}

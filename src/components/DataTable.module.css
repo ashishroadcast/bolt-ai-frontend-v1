@@ -1,0 +1,123 @@
+/*
+ * Ported from the mockup's table rules (agent-console.html: .tblwrap,
+ * table, th/td, .num, .share, .sparkbar). Horizontal scroll lives on
+ * .tableWrap alone so a wide table never pushes the page body sideways.
+ *
+ * Row height and cell inset come from the density tokens rather than from
+ * numbers chosen here (tokens.css: "so tables agree across screens") — the
+ * same `--row-h` / `--pad-sheet-x` pair AgentsRoute and ModelsRoute
+ * already lay their tables out on. A table inside an answer and a table on
+ * an admin screen are the same object and were reading as two.
+ */
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-body);
+}
+
+.table th,
+.table td {
+  padding: 0 var(--pad-sheet-x);
+  height: var(--row-h);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--on-sheet-dim);
+  font-weight: 400;
+  border-bottom: 1px solid var(--rule);
+}
+
+.table td {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Numeric columns: right-aligned, mono, and tabular so figures actually
+   line up in a column rather than merely looking like they do. */
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.share {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  justify-content: flex-end;
+}
+
+.sparkbar {
+  width: 46px;
+  height: 5px;
+  background: var(--surface-sunk);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: none;
+}
+
+.sparkbarFill {
+  display: block;
+  height: 100%;
+  background: var(--sheet-accent);
+}
+
+.emptyCell {
+  height: auto;
+  padding: 22px var(--pad-sheet-x);
+  text-align: center;
+  white-space: normal;
+  font-family: var(--font-body);
+  color: var(--on-sheet-dim);
+  border-bottom: 0;
+}
+
+/*
+ * The pager. Sits outside .tableWrap on purpose: a wide table scrolls its
+ * own rows sideways, and page controls that scrolled away with them would
+ * be the second half of the same complaint.
+ */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 7px var(--pad-sheet-x);
+  border-top: 1px solid var(--rule);
+}
+
+/* How much of the result has been seen — a count, so it takes the
+   console's structural voice and its tabular figures. */
+.range,
+.pageOf {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--on-sheet-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pageControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pageBtn {
+  composes: pill from "../chat/controls.module.css";
+}

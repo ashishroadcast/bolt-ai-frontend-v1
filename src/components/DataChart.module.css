@@ -1,0 +1,26 @@
+/*
+ * Chrome only. The plot itself is Recharts, styled through props against
+ * the same tokens (grid `--rule`, ticks `--fg-faint`, tooltip `--surface`)
+ * — a chart library reads its colours as values, not as class names, so
+ * there is nothing here for the grid, the axes or the legend to hook.
+ *
+ * Series colours stay data, supplied by the caller: see DataChart.tsx's
+ * own note on the partner reservation.
+ */
+.body {
+  padding: var(--pad-cell-y) var(--pad-sheet-x) 4px;
+}
+
+/* Recharts measures its own container, so the sheet must not hand it a
+   width that changes after layout — a percentage inside a flex child
+   collapses to zero on first paint and the chart never appears. */
+.body > div {
+  min-width: 0;
+}
+
+.empty {
+  padding: 22px var(--pad-sheet-x);
+  text-align: center;
+  font-family: var(--font-body);
+  color: var(--on-sheet-dim);
+}

@@ -1,0 +1,254 @@
+/*
+ * Design tokens — the single source for every colour, typeface and scale
+ * used by the console. Components read these custom properties, never a
+ * literal hex or font stack, so the palette can only drift in one place.
+ *
+ * LIGHT, single-theme, by Saurabh's instruction (2026-08-27: "i don't want
+ * dark theme"). There is no dark variant and no toggle.
+ *
+ * ── What this console is ──────────────────────────────────────────────
+ *
+ * The control room for AI agents that answer questions about a
+ * multi-outlet Indian restaurant business. Two kinds of person use it: the
+ * operator who runs the outlets, and the engineer who wires the agents up.
+ * Its one job is to let them see what the agents are doing, ask them
+ * things, and rewire them without touching code. That is an operations
+ * console, not a marketing site — so it is dense, it is scannable, and
+ * every pixel of chrome has to earn its place against the content.
+ *
+ * ── The two decisions worth explaining ────────────────────────────────
+ *
+ * **Bottle green, and why the accent could never have been warm.** Swiggy
+ * orange and Zomato red appear in nearly every chart this console draws,
+ * and they are reserved (see the rule below). That takes the whole warm
+ * half of the wheel off the table for a brand accent — not a preference, a
+ * constraint. Of what remains, deep green is the one that belongs to this
+ * subject: hospitality's own colour, on awnings and aprons and brasserie
+ * signage, and comfortably AA on white. It is also, deliberately, not the
+ * indigo of the reference console Saurabh admired — copying the craft
+ * there was the point, copying the identity was not.
+ *
+ * **The monospace is the structural voice.** Every label, count,
+ * timestamp, state pill, table header and numeric cell is IBM Plex Mono;
+ * prose is Public Sans; headings are Archivo. This is the console's one
+ * memorable typographic move, and it is true to the subject rather than
+ * decorative: this business runs on monospaced columns of figures — the
+ * kitchen ticket rail, the till roll, the closing report. It costs nothing
+ * to load (all three faces were already linked) and it makes a screenshot
+ * of this console recognisable as this console.
+ *
+ * ── Two rules that are not stylistic ──────────────────────────────────
+ *
+ *   1. Orange and red are reserved for partner data inside charts.
+ *      No chart series, legend or axis may spend those hues on anything
+ *      else. Semantic state pills (--amber, --critical) live outside
+ *      charts and are exempt — but never put one inside a plot area.
+ *   2. Semantic state is carried by form as well as colour, so it survives
+ *      a screenshot, a colour-blind reader, and a printed page.
+ */
+:root {
+  /* Ground and surfaces. The ground carries a faint green cast rather than
+     the blue-grey every dashboard defaults to, so white cards read as
+     deliberately lifted off it instead of merely lighter. */
+  --ground: #f3f5f2; /* the page behind everything */
+  --surface: #ffffff; /* sidebar, cards, sheets, tables */
+  --surface-sunk: #eef1ed; /* input wells, bar troughs, table zebra */
+  --ground-lift: #e9ede8; /* hover on the ground */
+  --rule: #e1e6e0; /* hairline borders */
+  --rule-soft: #edf0ec;
+
+  /* The agent's own colour — streaming, phases, live state, primary
+     action, focus rings. See the header for why it is green and not warm. */
+  --signal: #0b5d3b;
+  --signal-hover: #094a2f;
+  --signal-soft: #e6efe9; /* active nav pill, quiet emphasis */
+  /* A step between --signal-soft and --signal, for a filled band that has
+     to read against --surface-sunk. --signal-soft does not: the two differ
+     by about eight values per channel and the band simply vanished. */
+  --signal-band: #c3dbcd;
+  --on-signal: #ffffff; /* white on --signal clears AA; move the pair together */
+
+  /* Semantic state — never the brand accent, always paired with a pill or
+     chip so colour is not the only channel. --good is deliberately a
+     lighter, cooler green than --signal: "healthy" and "this product's
+     accent" are different ideas and must not read as the same ink. */
+  --good: #067647;
+  --good-soft: #ecfdf3;
+  --amber: #b54708;
+  --amber-soft: #fffaeb;
+  --critical: #b42318;
+  --critical-soft: #fef3f2;
+
+  /* Neutral chip — type badges and counts, where state is not the point. */
+  --chip: #46514a;
+  --chip-soft: #eef1ed;
+
+  /*
+   * Reserved for partner data. Never outside a chart series or its legend.
+   */
+  --swiggy: #fc8019;
+  --zomato: #e23744;
+
+  /* A sheet's own accent — share bars. Never a UI accent outside a sheet;
+     that role is --signal's. */
+  --sheet-accent: #2f6f5c;
+
+  /*
+   * Chart series, in draw order — the non-partner ramp.
+   *
+   * These exist because chart series were previously drawn from whatever
+   * token was nearest to hand, and two of the first three were the same
+   * colour: --sheet-accent (#2f6f5c) and --signal (#0b5d3b) are both
+   * bottle green, so a two-series chart — dine-in against delivery, the
+   * single most common comparison this console draws — arrived as two
+   * bars a reader could not tell apart. The ramp also reached for --amber
+   * and --good, which is the rule at the top of this file being broken
+   * from the inside: a state colour inside a plot area means a series is
+   * saying "warning" to anyone who has learnt the rest of the interface.
+   *
+   * Chosen for separation first. Orange and red are unavailable (reserved
+   * for Swiggy and Zomato above), which removes the warm half of the
+   * wheel, so the ramp walks the cool half.
+   *
+   * **Lightness does most of the work, not hue.** The first version of
+   * this ramp spread the hues properly and then drew all six at roughly
+   * the same darkness — and six equally-dark bands on one chart read as
+   * mud however far apart their hues are. So the ramp now alternates
+   * dark and light (green 30%, blue 55%, violet 40%, aqua 62%, olive 48%,
+   * slate 25%): adjacent series differ in value as well as hue, which is
+   * what keeps them apart in greyscale, on a projector, and for a reader
+   * who cannot separate the hues at all.
+   *
+   * Six, deliberately: a chart needing a seventh series is a chart with
+   * too many to read.
+   */
+  --series-1: #0b5d3b; /* green,  dark  */
+  --series-2: #2f8fd8; /* blue,   light */
+  --series-3: #6b3fa0; /* violet, mid   */
+  --series-4: #2bb3a3; /* aqua,   light */
+  --series-5: #7d8c00; /* olive,  mid   */
+  --series-6: #37474f; /* slate,  dark  */
+
+  /* Text. Near-black carries a green bias so it sits in the same world as
+     the ground rather than reading as a borrowed neutral. */
+  --fg: #141a17;
+  --fg-dim: #55605a;
+  --fg-faint: #8a938d;
+
+  /* Text on a surface is the same scale — the ground is near-white, so a
+     second scale would be a distinction without a difference. Kept as
+     separate names because sheets are a distinct concept and may diverge. */
+  --on-sheet: #141a17;
+  --on-sheet-dim: #55605a;
+
+  /* Type — real fallback stacks, not just the web font */
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /*
+   * Type scale — named steps, not a font-size list. The steps are far
+   * apart on purpose: the previous scale ran 28/20/15/14/12.5, where a
+   * heading and its body copy differed by a single pixel and hierarchy
+   * simply did not read. Body sits at 13.5 rather than 14 because this is
+   * an operations console that is scanned, not an article that is read.
+   * `--text-stat` is its own top step, above `--text-h1`, because a count
+   * is the point of a stat tile and has to land before anything else does.
+   */
+  --text-stat: 38px;
+  --text-h1: 24px;
+  --text-h2: 17px;
+  --text-h3: 13.5px;
+  --text-body: 13.5px;
+  --text-small: 12px;
+  --text-micro: 10.5px;
+
+  /* Elevation — one soft card lift, and one for anything that floats above
+     the page. Kept tiny on purpose: hairlines carry the structure here, and
+     a heavy shadow reads as a different, busier product. */
+  --lift-card: 0 1px 2px rgba(20, 26, 23, 0.045);
+  --lift-float: 0 8px 24px -12px rgba(20, 26, 23, 0.18);
+
+  /*
+   * Density. A table row and a sheet's padding are design decisions the
+   * whole console should share, and they were previously re-chosen in
+   * every route's own module — which is how one screen ends up with 56px
+   * rows and its neighbour 44px. Named here so they move together.
+   *
+   * `--pad-sheet-x` is the one horizontal inset inside any card: the sheet
+   * header, a table cell, a card's body. That is what makes a sheet title
+   * and the first column of the table beneath it start on the same
+   * vertical line. Measured before this rule existed, the first column's
+   * text began at x=249 on Databases, 250 on Audit and 251 on Models —
+   * three neighbouring screens, three different lines.
+   *
+   * `--pad-cell-y` is the vertical half of that inset. It is smaller than
+   * `--pad-sheet-y` on purpose: a sheet header is a band and wants air,
+   * a table row is a line of data and wants to stay scannable. Paired
+   * with `--text-body` it lands a single-line row on `--row-h` exactly.
+   */
+  --row-h: 40px;
+  --pad-sheet-y: 13px;
+  --pad-sheet-x: 16px;
+  --pad-cell-y: 9px;
+
+  /*
+   * Controls. Every button, input and select in this console is one of two
+   * heights, and shares this radius, padding and focus treatment. They had
+   * drifted to five different primary buttons (34.6 / 38.1 / 30.6 / 32 px
+   * tall, four radii, four font sizes) across routes that sit one click
+   * apart in the same rail — which is what reads as amateur even when no
+   * single screen looks wrong.
+   *
+   * A control is sized by `height`, never by vertical padding: padding
+   * makes a control's height a function of its font and border, so two
+   * buttons with the same padding and different text sizes end up
+   * different heights, and a button stretched by a flex row grows without
+   * limit (Settings' row actions measured 49.2px next to identical 30.6px
+   * ones). Set the height, centre the label, and `flex: none`.
+   *
+   * `--control-h-sm` is the dense in-row variant — a per-row action inside
+   * a table, where the standard height would make the row a button rail.
+   * The Ask surface's own micro control (chat/controls.module.css `.pill`)
+   * is a third, smaller step; it shares this radius and focus ring, and
+   * stays where it is because a control inline with answer prose is a
+   * different object from a control in a toolbar.
+   */
+  --control-h: 32px;
+  --control-h-sm: 28px;
+  --control-pad-x: 14px;
+  --control-pad-x-sm: 10px;
+  --radius-control: 6px;
+
+  /*
+   * Cards. One radius for anything that reads as a surface lifted off the
+   * ground — sheet, stat tile, form panel, rail. There were four (4px on
+   * sheets, 10px on route-local sheets, 12px on dashboard tiles, 8px on
+   * forms), so two cards on the same screen read as two kinds of object.
+   */
+  --radius-card: 10px;
+  --pad-card: 16px;
+
+  /*
+   * Vertical rhythm. `--stack` is the gap between page-level blocks (the
+   * header's rule and the first card, one card and the next); `--stack-
+   * tight` is the gap inside a block. Two steps only — a rhythm with five
+   * values is not a rhythm.
+   */
+  --stack: 16px;
+  --stack-tight: 10px;
+
+  /* Layout — the shell's three-zone proportions. The reflow breakpoint
+     (900px) isn't listed here: media queries can't consume a custom
+     property, so it's a literal at each @media rule instead.
+
+     `--gutter` is the page's own left and right edge, applied once by
+     Shell.module.css's `.thread`. No route adds a second one: a screen
+     that pads itself as well puts its header on a different line from its
+     neighbour's, and that compounding margin is what a page header not
+     lining up with the table under it usually turns out to be. */
+  --gutter: 20px;
+  --rail-w: 214px;
+  --inspector-w: 300px;
+  --inspector-w-closed: 40px;
+}

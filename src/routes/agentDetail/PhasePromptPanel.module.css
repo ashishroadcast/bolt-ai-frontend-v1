@@ -1,0 +1,464 @@
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: var(--lift-card);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.phase {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  text-transform: capitalize;
+  margin: 0;
+}
+
+.serving {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  margin-right: auto;
+}
+
+/* ── The serving text ─────────────────────────────────────────────────
+   The point of this screen. It used to sit behind a <details> and then
+   inside a 90px scroller that cut it off mid-sentence; here it has real
+   height and wraps rather than clipping. */
+.promptBlock {
+  margin-top: 12px;
+}
+
+.promptBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.promptLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.copyBtn {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-faint);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.copyBtn:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+/* `pre` for the element, prose for the type: the instructions are written
+   as paragraphs and their blank lines are meaningful, but they are read,
+   not scanned as structure — mono at this length is punishing. */
+.promptText {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--fg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 14px;
+  /* Tall enough for most phase prompts outright; anything longer scrolls
+     inside its own container, never the page body. */
+  max-height: 26em;
+  overflow-y: auto;
+}
+
+.promptStatus {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  padding: 10px 0;
+}
+
+.readOnlyNote {
+  margin: 10px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  background: var(--chip-soft);
+  border-left: 3px solid var(--chip);
+  border-radius: 0 7px 7px 0;
+  padding: 9px 11px;
+}
+
+.readOnlyNote code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+/* ── Tune / Promote ───────────────────────────────────────────────── */
+.action {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.actionHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.actionHead h4 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  margin: 0;
+}
+
+.actionHelp {
+  margin: 4px 0 10px;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  max-width: 68ch;
+}
+
+.actionHelp code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.tuneBtn {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--surface);
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-faint);
+  border-radius: 7px;
+  padding: 6px 13px;
+  cursor: pointer;
+}
+
+.tuneBtn:hover:not(:disabled) {
+  background: var(--ground-lift);
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+
+.tuneBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.candidate {
+  margin-top: 10px;
+  border-left: 3px solid var(--signal);
+  padding-left: 11px;
+}
+
+.candidateTitle {
+  margin: 0 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--signal);
+  font-variant-numeric: tabular-nums;
+}
+
+.promoteRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.versionField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.versionField label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/* Wide enough for its own placeholder and a four-digit version. The 68px
+   this replaced clipped "version" to "versior" — the field was narrower
+   than the word telling you what to put in it. */
+.versionInput {
+  width: 15ch;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface);
+  border: 1px solid var(--fg-faint);
+  border-radius: 7px;
+  padding: 7px 10px;
+  color: var(--fg);
+}
+
+.versionInput:focus {
+  border-color: var(--signal);
+}
+
+.versionInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.promoteBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+  border-radius: 7px;
+  padding: 7px 15px;
+  cursor: pointer;
+}
+
+.promoteBtn:hover:not(:disabled) {
+  background: var(--signal-hover);
+  border-color: var(--signal-hover);
+}
+
+.promoteBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.error {
+  color: var(--critical);
+  font-size: var(--text-small);
+  margin: 8px 0 0;
+}
+
+/* ── Confirm ─────────────────────────────────────────────────────────
+   The one gate between clicking Promote and the request firing. */
+.confirm {
+  margin-top: 12px;
+  padding: 12px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: var(--surface-sunk);
+}
+
+.confirmTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  margin: 0 0 4px;
+}
+
+.confirmMove {
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  margin: 0 0 10px;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Same colour as the Promote button that opened this step — confirming is
+   still the promote action, not a second, distinct one. Override (in
+   RefusalPanel) is the genuinely riskier action and gets --critical. */
+.confirmBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.confirmBtn:hover:not(:disabled) {
+  background: var(--signal-hover);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cancelBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: transparent;
+  border: 1px solid var(--fg-faint);
+  color: var(--fg-dim);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.refusalWrap {
+  margin-top: 12px;
+}
+
+/* ── Result — copy rule: the button said Promote, the result says
+   Promoted. ── */
+.result {
+  margin-top: 12px;
+  padding: 12px 13px;
+  border-radius: 8px;
+  border-left: 3px solid var(--good);
+  background: var(--good-soft);
+}
+
+.resultTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h3);
+  margin: 0 0 4px;
+  color: var(--fg);
+}
+
+.resultMove {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+  margin: 0 0 6px;
+}
+
+.rollback {
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+/* ── The editor ───────────────────────────────────────────────────────
+   Same type and well as `.promptText` was: the instructions are read as
+   prose long before they are edited, so the box the operator types in
+   must not switch to mono and 11px the moment it becomes editable. */
+.promptEditor {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--fg);
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 16em;
+  max-height: 34em;
+  resize: vertical;
+  overflow-y: auto;
+}
+
+.promptEditor:focus {
+  border-color: var(--signal);
+}
+
+.promptEditor:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.saveRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* Deliberately NOT --signal: the green button on this panel is Promote,
+   the one action that changes what production serves. A save is a
+   registration, and dressing it in the same colour would say otherwise. */
+.saveBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--fg-dim);
+  border-radius: 7px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.saveBtn:hover:not(:disabled) {
+  background: var(--ground-lift);
+}
+
+.saveBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  border-color: var(--fg-faint);
+  color: var(--fg-dim);
+}
+
+.revertBtn {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-faint);
+  border-radius: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.revertBtn:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.saveHint {
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.savedNote {
+  margin: 10px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.55;
+  color: var(--fg);
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber);
+  border-radius: 0 7px 7px 0;
+  padding: 9px 11px;
+}

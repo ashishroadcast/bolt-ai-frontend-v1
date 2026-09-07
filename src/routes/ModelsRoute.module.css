@@ -1,0 +1,251 @@
+/* No horizontal padding — Shell.module.css's `.thread` and PageHeader
+   already supply the page's outer edge (the convention every route module
+   in this directory follows). */
+.body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack);
+}
+
+.loadError {
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+/* ── Filters ──────────────────────────────────────────────────────── */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* One text control. Single-line inputs and selects take the control
+   height so they sit level with the buttons in the same row; a textarea
+   is the one control that cannot, so it keeps the same inset as padding
+   and the same border, radius and type. */
+.search,
+.provider {
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  color: var(--fg);
+}
+
+.search {
+  flex: 1 1 240px;
+  min-width: 180px;
+}
+
+/* A provider is an id fragment, so it is shown in the id's own voice. */
+.provider {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  flex: none;
+}
+
+.search:focus-visible,
+.provider:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  white-space: nowrap;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.toggle input {
+  accent-color: var(--signal);
+  cursor: pointer;
+}
+
+/* ── The table ────────────────────────────────────────────────────── */
+.sheet {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--lift-card);
+}
+
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 11px var(--pad-sheet-x) 9px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.sheetHead h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 600;
+  margin: 0;
+}
+
+.sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 380 rows deep and five columns wide: the page scrolls vertically, and
+   only this box scrolls sideways when a long id needs the room. */
+.tableWrap {
+  overflow-x: auto;
+  max-height: 68vh;
+  overflow-y: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-body);
+}
+
+.table th {
+  padding: 0;
+  text-align: left;
+  border-bottom: 1px solid var(--rule);
+  /* The header outlives its rows while the body scrolls — a price column
+     with no label is unreadable after the first screenful. */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.table td {
+  height: var(--row-h);
+  padding: 0 var(--pad-sheet-x);
+  text-align: left;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+.table tbody tr:nth-child(even) td {
+  background: var(--surface-sunk);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* The whole header cell is the target, so a sort is never a hunt for a
+   caret two pixels wide. */
+.sortBtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--pad-sheet-x);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.sortBtn:hover {
+  color: var(--fg-dim);
+}
+
+.sortBtn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.num .sortBtn {
+  justify-content: flex-end;
+}
+
+.caret {
+  color: var(--signal);
+  font-size: var(--text-micro);
+}
+
+/* The two text columns are capped so the three numeric ones — the point of
+   the screen — are never the columns pushed off the right edge. A tenth of
+   the catalogue is longer than this; those are handled per column below
+   rather than by letting every row set the table's width. */
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 30ch;
+}
+
+.name {
+  color: var(--fg);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* An id is a value to read and copy, so it scrolls inside its own cell
+   rather than being clipped — the same treatment ArtifactsRoute gives a
+   filename it can't shorten. */
+.modelId {
+  display: block;
+  max-width: 32ch;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+/* Every numeric column: right-aligned and tabular, so magnitudes line up
+   down the page rather than having to be read digit by digit. */
+.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.table td.num {
+  text-align: right;
+  color: var(--fg);
+}
+
+/* Already configured on Settings. A quiet chip, not a colour on the row —
+   this marks a fact about the tenant, not a state of the model. */
+.inUse {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--signal);
+  background: var(--signal-soft);
+  border-radius: 999px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.noMatch {
+  margin: 0;
+  padding: 14px var(--pad-sheet-x);
+  font-size: var(--text-body);
+  color: var(--fg-dim);
+}

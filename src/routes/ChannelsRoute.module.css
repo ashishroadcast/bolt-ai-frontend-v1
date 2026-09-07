@@ -1,0 +1,467 @@
+/* No horizontal padding — Shell.module.css's `.thread` and
+   PageHeader.module.css already supply the page's outer edge (see
+   AgentsRoute.module.css's identical comment). */
+.body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--stack);
+}
+
+.loadError {
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+/* ── The one-time webhook URL panel ──────────────────────────────────
+   Shown only right after a create resolves — see ChannelsRoute.tsx's own
+   docstring for why this can never be re-derived for an existing row. */
+.webhookPanel {
+  background: var(--signal-soft);
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-card);
+  padding: 14px 16px;
+}
+
+.webhookTitle {
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-body);
+  color: var(--fg);
+}
+
+.webhookNote {
+  margin: 0 0 10px;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.webhookRow {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The URL itself can run long (a 32-byte urlsafe token) — scrolls inside
+   its own container, never the page (task brief: "anything long ...
+   scrolls inside its own container, never the page body"). */
+.webhookUrl {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg);
+}
+
+.copyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+}
+
+.copyBtn:hover {
+  background: var(--signal-hover);
+}
+
+.doneBtn {
+  margin-top: var(--stack-tight);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+}
+
+/* ── Connect form ─────────────────────────────────────────────────── */
+.form {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-card);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.formTitle {
+  grid-column: 1 / -1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  margin: 0 0 2px;
+  color: var(--fg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.field label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/* A field has to look like a field ("forms are coming out weird", "fields
+   with no visible affordance", Saurabh). It used to be a --surface-sunk
+   wash edged with --rule, a hairline meant for separating rows: on a
+   --surface card that edge is barely a value apart from the fill, so the
+   control read as a greyed-out, disabled region rather than somewhere to
+   type. Inverted here — white well, --fg-faint edge — which also frees
+   the sunk fill to mean what it should: actually disabled.
+
+   Every input type, not a list of three. `type="number"`, `type="search"`
+   and `type="url"` were all missed by the old selector and fell back to
+   raw UA chrome, which is the other half of "forms are coming out
+   weird". */
+/* One text control. Single-line inputs and selects take the control
+   height so they sit level with the buttons in the same row; a textarea
+   is the one control that cannot, so it keeps the same inset as padding
+   and the same border, radius and type. */
+.field input,
+.field select,
+.field textarea {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--surface);
+  border: 1px solid var(--fg-faint);
+  border-radius: var(--radius-control);
+  color: var(--fg);
+  min-width: 0;
+}
+
+.field input,
+.field select {
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+}
+
+.field textarea {
+  padding: 7px var(--control-pad-x-sm);
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--fg-faint);
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--signal);
+}
+
+/* Offset 1px rather than global.css's 2: a ring that hugs the border
+   reads as belonging to the field instead of floating around it. */
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* Disabled is now carried by the sunk fill and a faded edge, not by
+   opacity alone — a distinct look from the resting state, which is the
+   whole point of giving the resting state a real border. */
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background: var(--surface-sunk);
+  border-color: var(--rule);
+  color: var(--fg-faint);
+  cursor: not-allowed;
+}
+
+.formActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  /* A border matching the fill, not `border: 0`: the outlined Cancel
+     beside it then has exactly the same box, so the two line up. */
+  border: 1px solid var(--signal);
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+}
+
+.formError {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+/* ── List sheet ───────────────────────────────────────────────────── */
+.sheet {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--lift-card);
+}
+
+/* --pad-sheet-x, not 15px: the sheet header and the table beneath it have
+   to sit on one line, and a one-pixel disagreement between neighbouring
+   screens is exactly what reads as nothing lining up. */
+.sheetHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--stack-tight);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.sheetHead h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin: 0;
+}
+
+.sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-body);
+}
+
+/* The cell inset is --pad-sheet-x, the same one the sheet header above
+   uses: that is what puts a table's first column and its sheet's title on
+   one vertical line. Measured at 249/250/251px on three neighbouring
+   screens before this was a token. */
+.table th,
+.table td {
+  padding: var(--pad-cell-y) var(--pad-sheet-x);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-weight: 400;
+  border-bottom: 1px solid var(--rule);
+}
+
+.table td {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.chatwoot {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.baseUrl {
+  margin-top: 2px;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The dense in-row action. Height, not vertical padding, so it cannot be
+   stretched by the flex row it sits in — Settings had two of these at
+   49.2px beside identical ones at 30.6px. See tokens.css. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+}
+
+.actionBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.actionBtn.danger {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.confirmText {
+  font-size: var(--text-small);
+  color: var(--critical);
+}
+
+.confirmBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--on-signal);
+  background: var(--critical);
+  border: 1px solid var(--critical);
+}
+
+.confirmBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rowNote {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.rowNote.good {
+  color: var(--good);
+}
+
+.rowNote.critical {
+  color: var(--critical);
+}
+
+/* Names the provider on the row itself. The table used to be Chatwoot-only,
+   so the column header carried that fact; with more than one kind of
+   binding in the list it has to sit on each row instead. */
+.kindTag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface-sunk);
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}

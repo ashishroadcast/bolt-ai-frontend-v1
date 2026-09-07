@@ -1,0 +1,40 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 8px;
+}
+
+.body {
+  color: var(--fg-dim);
+  font-size: 13.5px;
+  max-width: 66ch;
+  margin: 0 0 16px;
+}
+
+.phaseHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 6px;
+}
+
+.phaseName {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: capitalize;
+  margin: 0;
+}
+
+.status {
+  color: var(--fg-dim);
+  font-size: 13.5px;
+  padding: 20px 0;
+}
+
+.alert {
+  color: var(--critical);
+  font-size: 13.5px;
+  padding: 8px 0;
+}

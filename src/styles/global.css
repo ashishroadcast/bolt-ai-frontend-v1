@@ -1,0 +1,66 @@
+/* Base reset and cross-cutting rules. Everything else lives in component
+   CSS modules so a component's styles stay next to its markup. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+dl,
+dd {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Numbers that line up in a column must not visually stagger. Applied
+   explicitly wherever tabular data renders — not globally, since prose
+   numerals should keep proportional spacing. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible keyboard focus on every interactive element, repo-wide. A
+   component only needs to override this when it sits on --surface or
+   --signal, where the default ring would disappear against the ground. */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,63 @@
+/* Shared by every copy-to-clipboard affordance in the chat surface —
+   per-message Copy (Thread.tsx) and the history panel's Share/copy-link
+   (HistoryPanel.tsx) — so the three read as one control, not three. The
+   button itself is now the console's own small control
+   (controls.module.css); this file owns only what is specific to copying,
+   which is what the click produced. */
+.wrap {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.btn {
+  composes: pill from "./controls.module.css";
+}
+
+/*
+ * The result of the click, held long enough to read. Doubled, and naming
+ * `:hover`, per the shared control's cascade contract
+ * (controls.module.css) — an outcome that vanished under the pointer
+ * would read as the copy having been undone.
+ */
+.copied.copied,
+.copied.copied:hover {
+  color: var(--good);
+  border-color: var(--good);
+}
+
+.failed.failed,
+.failed.failed:hover {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+/* The manual-copy fallback — shown only once the async Clipboard API has
+   actually failed (denied permission, or absent on a non-secure origin).
+   A short instruction plus the exact text, pre-selected, so "select and
+   Cmd/Ctrl+C" is the whole remaining step rather than a dead end. */
+.fallback {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-micro);
+  color: var(--critical);
+}
+
+.fallbackInput {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg);
+  background: var(--surface-sunk);
+  border: 1px solid var(--critical);
+  border-radius: 5px;
+  padding: 3px 6px;
+  width: 100%;
+  min-width: 200px;
+}
+
+.fallbackInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}

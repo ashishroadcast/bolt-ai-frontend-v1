@@ -1,0 +1,292 @@
+/*
+ * A drawer over the console, not a column beside the conversation.
+ *
+ * It used to be a sticky card between the nav rail and the thread, which
+ * put three columns of chrome around one column of content and left the
+ * conversation looking like a panel in someone else's layout ("chat
+ * history is akwardly placed"). Navigation that is used a few times a
+ * session should cost nothing when it is not being used, so it now costs
+ * exactly a button until it is opened.
+ *
+ * Anchored left because that is where this console's navigation lives —
+ * it slides over the rail and reads as the same job pushed forward, where
+ * the right edge already belongs to the inspector. AskRoute owns the scrim
+ * behind it and whether it exists at all.
+ */
+.panel {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 40;
+  width: min(330px, 86vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+  box-shadow: var(--lift-float);
+  padding: 14px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .panel {
+    animation: slide-in 140ms ease-out;
+  }
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.iconTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-h3);
+  color: var(--fg);
+}
+
+.close {
+  composes: pill from "./controls.module.css";
+  margin-left: auto;
+}
+
+/* Doubled per the shared control's cascade contract (controls.module.css).
+   Square, because it holds a glyph and no word. */
+.close.close {
+  padding: 4px;
+}
+
+.searchField {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  color: var(--fg-faint);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 6px 10px 6px 28px;
+  font-size: var(--text-small);
+  color: var(--fg);
+  font-family: var(--font-body);
+}
+
+.searchInput:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row is the open-button plus its own action strip underneath — two
+   siblings, not one nested inside the other (a <button> cannot contain
+   another <button> and still be valid, keyboard-reachable markup). */
+.row {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  padding-bottom: 2px;
+}
+
+.row:hover {
+  background: var(--ground-lift);
+}
+
+.item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 8px 4px;
+  cursor: pointer;
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.item:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.itemHeading {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  color: var(--fg);
+}
+
+.itemSnippet {
+  font-size: var(--text-micro);
+  line-height: 1.45;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* How much conversation is behind this row — the one thing that
+   distinguishes a one-shot question from a thread worth reopening. */
+.itemCount {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Share/Delete — always visible rather than hover-only, so keyboard and
+   touch reach them the same way a mouse-hover reveal never would. */
+.rowActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 0 8px 6px;
+  flex-wrap: wrap;
+}
+
+.rowAction {
+  composes: pill from "./controls.module.css";
+}
+
+.confirmRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.confirmText {
+  font-size: var(--text-micro);
+  color: var(--critical);
+}
+
+.confirmBtn {
+  composes: pill from "./controls.module.css";
+}
+
+/* Destructive, and it says so in ink as well as in words — the one
+   control on this screen that cannot be undone. Doubled, and naming
+   `:hover`, per the shared control's cascade contract
+   (controls.module.css). */
+.confirmBtn.confirmBtn,
+.confirmBtn.confirmBtn:hover {
+  background: var(--critical);
+  border-color: var(--critical);
+  color: var(--on-signal);
+}
+
+.cancelBtn {
+  composes: pill from "./controls.module.css";
+}
+
+.rowError {
+  font-size: var(--text-micro);
+  color: var(--critical);
+  margin: 0 8px 6px;
+}
+
+.status {
+  font-size: var(--text-small);
+  color: var(--good);
+  margin: 0;
+}
+
+.loading {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+  margin: 0;
+}
+
+.empty {
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.error {
+  font-size: var(--text-small);
+  color: var(--critical);
+  margin: 0;
+}
+
+/* Two tabs, not a dropdown: there are exactly two lists and both names are
+   short, so a select would hide half the answer behind a click. Segmented
+   rather than free-standing buttons so the pair reads as one control with
+   one of them chosen, which is what a tablist is. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+.tab {
+  flex: 1;
+  padding: 5px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-dim);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+.tab:hover {
+  color: var(--fg);
+}
+.tabActive {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--lift-float);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}

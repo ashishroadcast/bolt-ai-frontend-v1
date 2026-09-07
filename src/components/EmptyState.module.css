@@ -1,0 +1,70 @@
+/*
+ * Shared by every route's empty state (and by the Ask thread's own
+ * variant) so the five screens read as one interface rather than five
+ * one-off pages. The bold, solid Ask button lives only in the composer —
+ * these actions stay outlined so that one accent isn't spent five times.
+ */
+.empty {
+  margin: auto;
+  max-width: 44ch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 2px;
+}
+
+/* Tinted icon tile (redesign brief, "the accent barely appears" — use
+   tinted icon tiles constantly): --signal-soft behind a --signal icon,
+   the same pairing stat tiles and card headers use elsewhere now. */
+.iconTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-card);
+  background: var(--signal-soft);
+  color: var(--signal);
+  margin-bottom: 6px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(19px, 2.4vw, var(--text-h1));
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--fg);
+  text-wrap: balance;
+}
+
+/* One line, maybe two, not a paragraph — see EmptyState.tsx's own
+   docstring. */
+.body {
+  font-size: var(--text-body);
+  line-height: 1.55;
+  color: var(--fg-dim);
+}
+
+.action {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  letter-spacing: 0.01em;
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--signal-soft);
+}

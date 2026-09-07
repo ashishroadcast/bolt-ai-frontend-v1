@@ -1,0 +1,75 @@
+/*
+ * Reasoning in flight. Everything here is set below the answer's own
+ * weight, because the one thing a reader must never have to work out is
+ * which of two blocks of text is the thing they asked for.
+ *
+ * Mono, because in this console mono is the voice of machinery — the
+ * phase rail, the timings, the tool names. This is the same voice, in
+ * sentences.
+ */
+/*
+ * The window the reasoning travels through.
+ *
+ * `column-reverse` is what pins it to the bottom: an overflowing flex
+ * column laid out in reverse clips from its own start edge, which here is
+ * the TOP — so the newest words stay on screen without a scroll position
+ * to manage, and without the block growing the page under the answer.
+ *
+ * Four lines. One line was what it had, and at that height the reasoning
+ * streamed past faster than it could be read and left a single stranded
+ * sentence behind.
+ */
+.window {
+  display: flex;
+  flex-direction: column-reverse;
+  max-height: 6.4em;
+  overflow: hidden;
+  margin: 0 0 var(--stack-tight);
+  /* Fades the clipped edge rather than cutting a line of text in half,
+     so the top reads as "there is more above" instead of as a rendering
+     fault. */
+  mask-image: linear-gradient(to bottom, transparent, black 1.6em);
+}
+
+.thought {
+  margin: 0;
+  padding-left: 11px;
+  border-left: 2px solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--fg-faint);
+  /* The tail of a long reasoning stream, so the block must not grow the
+     page as it fills — it holds its height and the text moves through it. */
+  max-width: 68ch;
+}
+
+/*
+ * The same cursor the answer's reveal uses, in the same accent, for the
+ * same reason: it is the cue that more is coming. Faint here to match the
+ * text it follows.
+ *
+ * The blink sits behind a motion query; the block itself does not,
+ * because without it a reduced-motion reader gets no cue at all that
+ * anything is still happening — which is information, not decoration.
+ */
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--fg-faint);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .caret {
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}

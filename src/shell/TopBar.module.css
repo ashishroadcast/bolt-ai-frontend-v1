@@ -1,0 +1,72 @@
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  height: 52px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The bar's only voice now, so it is sized to be seen rather than to sit
+   quietly beside a clock that no longer exists. Its own step, above
+   --text-h2: this is a wordmark, not a heading in a hierarchy. */
+.mark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+
+
+
+
+
+
+
+
+
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.who {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.signOut {
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: 500;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.signOut:hover {
+  color: var(--fg);
+  border-color: var(--fg-faint);
+}
+
+.signOut:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* The strip is the first thing to go when the bar gets tight: it is
+   ambient, and the clock beside it carries the same fact in words. */

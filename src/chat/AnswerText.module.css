@@ -1,0 +1,199 @@
+/*
+ * The answer's own prose. Everything here is on the console's type scale
+ * (tokens.css) rather than a per-component pixel value — a chat answer is
+ * the longest continuous text in this product and had been sitting at a
+ * size that appeared nowhere else in it.
+ *
+ * `--chat-measure` is set once on the Ask screen (AskRoute.module.css) so
+ * the question bubble, the answer and the composer all agree on how wide a
+ * line of text may get; the fallback keeps this readable wherever else the
+ * thread is mounted.
+ */
+.prose {
+  max-width: var(--chat-measure, 66ch);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.65;
+  color: var(--fg);
+}
+
+.paragraph {
+  margin: 0 0 10px;
+}
+
+/*
+ * The answer itself, in one line.
+ *
+ * This is the signature of the whole screen and it was set at body size in
+ * body weight, indistinguishable from the observations under it — so an
+ * answer that had a headline read as four interchangeable sentences. It
+ * takes the display face at its own step, above --text-h2, because it is
+ * not a heading in a document hierarchy; it is the finding, and it should
+ * land before the eye reaches anything else on the sheet.
+ *
+ * The rule beneath it is short and in the agent's own accent: enough to
+ * separate the finding from the reading of it without drawing a line
+ * across the column, which would cut the answer in half.
+ */
+.lead {
+  margin: 0 0 12px;
+  padding-bottom: 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  /* 18px, not 21. A headline is one short line; the model does not always
+     write one, and a twelve-word sentence set at 21px display bold is a
+     heavy two-line slab — bigger type made a long lead WORSE, not better.
+     This size carries a short lead with authority and survives a long one
+     without dominating the sheet. */
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.018em;
+  color: var(--fg);
+  /* The finding is one sentence; past this it is prose and should not be
+     set as a headline at all. */
+  max-width: 46ch;
+  position: relative;
+}
+
+.lead::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 28px;
+  height: 2px;
+  background: var(--signal);
+  border-radius: 1px;
+}
+
+/* The figure in the finding, in the accent. Only inside the lead: an
+   answer that tinted every bold run would be a page of green. */
+.lead strong {
+  color: var(--signal);
+  font-weight: 800;
+}
+
+/*
+ * What to look at next. A recommendation is a different kind of speech
+ * from an observation, so it is set in the structural voice rather than
+ * the reading voice — and quieter, because it is the one line a reader
+ * may legitimately skip.
+ */
+.closing {
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: baseline;
+  /* Body, NOT mono. Mono is this console's structural voice — labels,
+     counts, timestamps — and a full English sentence set in it at 12px in
+     the faintest ink was harder to read than the plain paragraph it
+     replaced. The distinction this line needs is that it is a
+     recommendation, and the arrow plus a quieter ink already carry that. */
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.closing::before {
+  content: "→";
+  color: var(--signal);
+}
+
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * The list the prompt actually asks for. Marker and text are laid out as a
+ * grid rather than with `list-style`, because a browser's own bullet
+ * cannot be given the console's structural voice — these are counts and
+ * names of things, and the marker is chrome, so it takes --font-mono at
+ * the weight everything else structural does.
+ */
+.bullets,
+.ordered {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  /* Each observation is a separate thought and needs to read as one; at
+     3px they were a single block of text with markers in it. */
+  gap: 9px;
+  counter-reset: answer-item;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 2px;
+}
+
+.item::before {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A square in the accent, not an em dash in grey. The dash sat at text
+   weight in the faintest ink on the page, so a three-item reading had no
+   visible structure at all — the markers disappeared and the items ran
+   together as one paragraph with odd indents. */
+.bullets > .item::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--signal);
+  /* Optically centred on the first line rather than sitting on the
+     baseline, where a square reads as having fallen off the text. */
+  transform: translateY(-0.32em);
+}
+
+.ordered > .item {
+  counter-increment: answer-item;
+}
+
+.ordered > .item::before {
+  content: counter(answer-item) ".";
+}
+
+/* Emphasis has to survive a greyscale print, so it is carried by weight —
+   never by tinting the run a different colour from the sentence it is in. */
+.prose strong {
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/*
+ * The reveal's cursor. Present only while text is still arriving on
+ * screen, and drawn in the agent's own accent so it reads as "still
+ * speaking" rather than as a text caret someone could type into.
+ *
+ * The blink is behind a motion query; the block itself is not, because
+ * without it a reduced-motion reader gets no cue at all that more text is
+ * coming — which is information, not decoration.
+ */
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--signal);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .caret {
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+}
+
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}

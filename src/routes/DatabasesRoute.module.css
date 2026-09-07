@@ -1,0 +1,515 @@
+/*
+ * Local to this route — Sheet.module.css/DataTable.module.css (src/
+ * components/) are out of this task's file list and their table has no
+ * room for a per-row action column, so this ports the mockup's table/pill
+ * language (agent-console.html: table, th/td, .pill) directly rather than
+ * bending a shared component to fit an interaction it wasn't built for.
+ * Card chrome itself still comes from Sheet — see DatabasesRoute.tsx.
+ */
+/* The page header is the shared `PageHeader` now — this route's own copy
+   of one was the only header in the console at a different size and on a
+   different line from its neighbours'. What is left here is the empty
+   invite's action, which is the same primary control PageHeader draws. */
+.primaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryAction:hover {
+  background: var(--signal-hover);
+}
+
+.primaryAction:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ── Empty invite (this route's own, real-action replacement for the
+   inert shared EmptyState — see DatabasesRoute.tsx's own comment) ──── */
+.empty {
+  max-width: 44ch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 2px;
+}
+
+.emptyGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-card);
+  background: var(--signal-soft);
+  color: var(--signal);
+  padding: 9px;
+}
+
+.emptyTitle {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h1);
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+.emptyBody {
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+/* ── Connect form ─────────────────────────────────────────────────── */
+.form {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-card);
+  margin-bottom: var(--stack);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+.formTitle {
+  grid-column: 1 / -1;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--text-h2);
+  margin: 0 0 2px;
+  color: var(--fg);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field.wide {
+  grid-column: 1 / -1;
+}
+
+.field label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+/* One text control. Single-line inputs and selects take the control
+   height so they sit level with the buttons in the same row; a textarea
+   is the one control that cannot, so it keeps the same inset as padding
+   and the same border, radius and type. */
+.field input[type="text"],
+.field input[type="password"],
+.field select {
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  color: var(--fg);
+  border-radius: var(--radius-control);
+}
+
+.field input:disabled,
+.field select:disabled {
+  opacity: 0.6;
+}
+
+.checkboxField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-body);
+  color: var(--fg-dim);
+}
+
+.formActions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: var(--signal);
+  color: var(--on-signal);
+  /* A border matching the fill, not `border: 0`: the outlined Cancel
+     beside it then has exactly the same box, so the two line up. */
+  border: 1px solid var(--signal);
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+}
+
+.testConnection {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+  /* Pushes Connect/Cancel to the trailing edge — Test connection reads as
+     the "check first" step, not competing with Connect's own emphasis. */
+  margin-right: auto;
+}
+
+.testConnection:hover {
+  background: var(--signal-soft);
+}
+
+.testConnection:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.formError {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+.formTestNote {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.formTestNote.good {
+  color: var(--good);
+}
+
+.formTestNote.critical {
+  color: var(--critical);
+}
+
+/* ── List table ───────────────────────────────────────────────────── */
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--text-body);
+}
+
+/* The cell inset is --pad-sheet-x, the same one the sheet header above
+   uses: that is what puts a table's first column and its sheet's title on
+   one vertical line. Measured at 249/250/251px on three neighbouring
+   screens before this was a token. */
+.table th,
+.table td {
+  padding: var(--pad-cell-y) var(--pad-sheet-x);
+  text-align: left;
+  vertical-align: top;
+}
+
+.table th {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-weight: 400;
+  border-bottom: 1px solid var(--rule);
+}
+
+.table td {
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The dense in-row action. Height, not vertical padding, so it cannot be
+   stretched by the flex row it sits in — Settings had two of these at
+   49.2px beside identical ones at 30.6px. See tokens.css. */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid var(--signal);
+}
+
+.actionBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.actionBtn.danger {
+  color: var(--critical);
+  border-color: var(--critical);
+}
+
+.rowNote {
+  margin-top: 6px;
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+.rowNote.good {
+  color: var(--good);
+}
+
+.rowNote.critical {
+  color: var(--critical);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-small);
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pill.neutral {
+  color: var(--chip);
+  background: var(--chip-soft);
+}
+
+.pill.good {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.pill.amber {
+  color: var(--amber);
+  background: var(--amber-soft);
+}
+
+.pill.critical {
+  color: var(--critical);
+  background: var(--critical-soft);
+}
+
+.loadError {
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+/* ── "Tables" detail panel — what a scan actually found ─────────────── */
+.tablesLink {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  background: transparent;
+  color: var(--signal);
+  border: 0;
+  padding: 0;
+  margin-left: 6px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tablesDetail {
+  background: var(--surface-sunk);
+  border-bottom: 1px solid var(--rule-soft);
+  padding: var(--pad-cell-y) var(--pad-sheet-x) var(--pad-sheet-x);
+}
+
+.tablesDetailNote {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.tablesSummaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tablesSummary {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.03em;
+  color: var(--fg-faint);
+}
+
+.tablesSearch {
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  color: var(--fg);
+  min-width: 220px;
+}
+
+.tablesList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.tableCard {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 9px 11px;
+}
+
+.tableCardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.tableCardName {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg);
+  word-break: break-word;
+}
+
+.tableKindTag {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--chip);
+  background: var(--chip-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+  flex: none;
+}
+
+.columnList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.columnRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-small);
+}
+
+.columnName {
+  color: var(--fg);
+}
+
+.columnType {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+}
+
+.columnSamples {
+  font-size: var(--text-micro);
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

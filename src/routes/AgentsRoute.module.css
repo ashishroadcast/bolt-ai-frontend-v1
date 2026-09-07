@@ -1,0 +1,223 @@
+/* No horizontal padding: Shell.module.css's `.thread` already supplies the
+   page's outer edge, and PageHeader.module.css does the same above this —
+   a second side margin here was compounding into real wasted space. */
+.body {
+  padding: 0;
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 10px;
+}
+
+/* Two cards abreast at desk width, one below it. `auto-fill` with a 340px
+   floor rather than a fixed count: a card whose description and wiring
+   list have to stay readable has a real minimum, and the shell's own
+   inspector can take a third of the width away without warning. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--stack);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Inactive is carried by the pill, and again here by a flatter, sunk card
+   — form as well as colour, so the state survives a screenshot (tokens.css
+   rule 2). Never a lower opacity: that would dim the text too, and an
+   inactive agent's description still has to be readable. */
+.cardIdle {
+  background: var(--surface-sunk);
+  box-shadow: none;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.name {
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+  min-width: 0;
+}
+
+/* An agent's name is an identifier: it must not wrap, because
+   "Zomato-Complaints" broken across two lines reads as two things. */
+.name a {
+  color: var(--fg);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.name a:hover {
+  color: var(--signal);
+  text-decoration: underline;
+}
+
+.description {
+  color: var(--fg-dim);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+/* ── What it's wired to ───────────────────────────────────────────────
+   Mono for the labels and the values alike: these are configuration, and
+   in this console mono is the voice of structure (tokens.css). */
+.wiring {
+  margin: 0 0 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  border-top: 1px solid var(--rule-soft);
+}
+
+.wiring div {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.wiring div:last-child {
+  border-bottom: 0;
+}
+
+.wiring dt {
+  color: var(--fg-faint);
+  flex: none;
+  width: 6.5ch;
+}
+
+.wiring dd {
+  margin: 0;
+  color: var(--fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* "Not set" is a real, correct state — quiet, never an error colour. */
+.unset {
+  color: var(--fg-faint);
+}
+
+.qualifier {
+  color: var(--fg-faint);
+}
+
+/* ── Actions ─────────────────────────────────────────────────────────── */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 2px;
+}
+
+.primaryAction,
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  height: var(--control-h-sm);
+  padding: 0 var(--control-pad-x-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.primaryAction {
+  background: var(--signal);
+  color: var(--on-signal);
+  border: 1px solid var(--signal);
+}
+
+.primaryAction:hover {
+  background: var(--signal-hover);
+  border-color: var(--signal-hover);
+}
+
+.action {
+  background: var(--surface);
+  color: var(--fg-dim);
+  border: 1px solid var(--fg-faint);
+}
+
+.action:hover:not(:disabled) {
+  background: var(--ground-lift);
+  color: var(--fg);
+  border-color: var(--fg-dim);
+}
+
+.action:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cardError {
+  margin: 0 0 10px;
+  font-size: var(--text-small);
+  color: var(--critical);
+  background: var(--critical-soft);
+  border-radius: var(--radius-control);
+  padding: 7px 9px;
+}
+
+/* ── Screen-level states ─────────────────────────────────────────────── */
+.empty {
+  padding: 28px 0;
+  color: var(--fg-dim);
+  font-size: var(--text-body);
+}
+
+.error {
+  padding: 12px 0;
+  color: var(--critical);
+  font-size: var(--text-body);
+}
+
+/* The wiring reads failed but the list did not — the cards below are
+   real and correct, just thinner. Amber, not critical: nothing is broken
+   for the operator who only wanted to see which agents exist. */
+.notice {
+  margin: 0 0 12px;
+  font-size: var(--text-small);
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+}
+
+.loading {
+  padding: 28px 0;
+  color: var(--fg-faint);
+  font-size: var(--text-body);
+  font-family: var(--font-mono);
+}

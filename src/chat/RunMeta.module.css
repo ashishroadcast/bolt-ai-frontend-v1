@@ -1,0 +1,98 @@
+/*
+ * One line, actions on the left and measurements on the right. It wraps
+ * rather than scrolls, because every item in it is independently useful
+ * and a horizontally-clipped cost is a cost nobody can read.
+ */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+/* Copy, Rerun and the two ratings are the same object as History's row
+   actions and a table's page buttons — see controls.module.css for why
+   that is now stated once instead of seven times. */
+.action {
+  composes: pill from "./controls.module.css";
+}
+
+/*
+ * A recorded rating keeps its state visible — filled tile plus the word,
+ * so the outcome survives a screenshot and does not rely on colour.
+ *
+ * Doubled, and naming `:hover` explicitly, per the shared control's
+ * cascade contract (controls.module.css) — a rating that lost that
+ * contest would revert to looking unrated the moment the pointer touched
+ * it.
+ */
+.rated.rated,
+.rated.rated:hover {
+  background: var(--signal-soft);
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.ratingError {
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  color: var(--critical);
+}
+
+/* The measurements. Mono and tabular so a column of answers lines up
+   vertically when a thread is scrolled. */
+.facts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.fact[data-tone="good"] {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.fact[data-tone="weak"] {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* Mono because it names a developer-facing drawer rather than an action on
+   the answer — the one deliberate difference from the shared control. */
+.debugToggle {
+  composes: pill from "./controls.module.css";
+}
+
+/* Doubled per the shared control's cascade contract (controls.module.css).
+   Mono because it names a developer-facing drawer rather than an action on
+   the answer — the one deliberate difference from the shared control. */
+.debugToggle.debugToggle {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+/*
+ * Retry without the cached plan. Shares the pill shape of the other
+ * actions but reads as the deliberate, less-common choice — it is the
+ * escape hatch a reader reaches for only when a reused plan did not help,
+ * so it carries a word and an icon rather than sitting mute beside Rerun.
+ */
+.retryFresh {
+  composes: pill from "./controls.module.css";
+}

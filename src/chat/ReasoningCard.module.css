@@ -1,0 +1,199 @@
+/*
+ * The reasoning card — inline at the top of an answer, full width, not a
+ * margin note. Rows are deliberately tight (24px): this is a scannable
+ * list of what happened, and airiness here pushes the answer itself below
+ * the fold, which is the complaint that started the redesign.
+ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--lift-card);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.head:hover {
+  background: var(--ground-lift);
+}
+
+.head:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.headLabel {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Who answered — the accent earns its place here because this is the one
+   label that identifies the speaker. */
+.agent {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--signal);
+  background: var(--signal-soft);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+
+.liveDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--signal);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liveDot {
+    animation: none;
+  }
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 6px;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  min-height: 24px;
+}
+
+.step[role="button"] {
+  cursor: pointer;
+}
+
+.step[role="button"]:hover {
+  background: var(--ground-lift);
+}
+
+.step[role="button"]:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -2px;
+}
+
+.selected {
+  background: var(--signal-soft);
+}
+
+/* The icon tile is the colour-free half of the state signal: it changes
+   glyph per step kind, so tone can be read from shape alone. */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  flex: none;
+  background: var(--chip-soft);
+  color: var(--chip);
+}
+
+.icon[data-tone="good"] {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.icon[data-tone="weak"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.icon[data-tone="cached"] {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+
+.label {
+  font-size: var(--text-small);
+  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex: none;
+  background: var(--chip-soft);
+  color: var(--chip);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip[data-tone="good"] {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.chip[data-tone="weak"] {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.chip[data-tone="cached"] {
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+
+.measure {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
