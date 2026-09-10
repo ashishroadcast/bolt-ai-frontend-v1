@@ -51,3 +51,28 @@ const RAW_AUTH_URL = import.meta.env.VITE_AUTH_URL || GATEWAY_URL;
  * Resolving here keeps that detail out of every call site.
  */
 export const AUTH_URL: string = absolute(RAW_AUTH_URL);
+
+/**
+ * bolt-v2's own auth-service GraphQL endpoint — where `AuthContext.
+ * signInWithPassword` posts `EmailOrMobileBasedOrganisations`/
+ * `PasswordLogin` directly, from the browser, rather than through
+ * anything this console's own backend proxies.
+ *
+ * A THIRD, independent URL rather than a third fallback onto `AUTH_URL`:
+ * `AUTH_URL` is POS's own gateway (`SIGN_IN_MUTATION`'s `login`), a
+ * different service with a different schema — bolt-v2's `PasswordLogin`/
+ * `EmailOrMobileBasedOrganisations` live only here, verified live against
+ * both `be-dev.track360.net.in` and `be-prod.track360.net.in` returning
+ * bolt-v2's own resolver errors verbatim ("user not found"). Defaults to
+ * the dev backend: this console is developed and tested locally, and a
+ * bare default pointed at prod would make "hit real production auth" the
+ * silent, un-opted-into behaviour of every `npm run dev` — a real deploy
+ * sets VITE_BOLTV2_AUTH_URL explicitly (see .env.example).
+ *
+ * No `absolute()` here: unlike `AUTH_URL`/`GATEWAY_URL`, this is never a
+ * same-origin dev-proxy path — bolt-v2's auth-service is a distinct,
+ * cross-origin host either way, so a relative value would only ever be a
+ * misconfiguration, not a legitimate local-proxy setup worth resolving.
+ */
+export const BOLTV2_AUTH_URL: string =
+  import.meta.env.VITE_BOLTV2_AUTH_URL || "https://be-dev.track360.net.in/graphql";

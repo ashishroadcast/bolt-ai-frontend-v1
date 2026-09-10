@@ -13,7 +13,7 @@ import { gatewayClient } from "../api/client.ts";
  * `dsn` field here at all, on purpose: a value this type doesn't have is a
  * value this screen cannot accidentally render.
  */
-export type DataSourceType = "postgres" | "mysql" | "knowledge";
+export type DataSourceType = "postgres" | "mysql" | "knowledge" | "redis";
 export type IsolationMode = "column" | "connection";
 export type SchemaMode = "prompt" | "index" | "unscanned";
 export type DataSourceStatus = "created" | "indexing" | "ready" | "error";
@@ -25,6 +25,25 @@ export interface DataSource {
   database_name: string;
   isolation_mode: IsolationMode;
   tenant_column: string | null;
+  // Glob key patterns (e.g. "session:*") — only ever populated for a
+  // `redis` datasource, null for every other type (app.datasource.models.
+  // DataSource.key_patterns's own "populated only for its own type"
+  // convention, same as tenant_column above).
+  key_patterns: string[] | null;
+  // True for a redis-cluster datasource (redis.asyncio.cluster.RedisCluster)
+  // rather than a standalone one. Meaningless (and always false) for every
+  // other type.
+  redis_cluster: boolean;
+  // {"internal_host:port": "local_host:port"} — only populated when
+  // redis_cluster is true and the cluster is reached through a tunnel whose
+  // forwarded ports differ from what CLUSTER SLOTS advertises internally.
+  redis_address_map: Record<string, string> | null;
+  // An explicit allow-list of ids substituted into every configured
+  // key_patterns entry in place of its "*" — see app.datasource.models.
+  // DataSource.allowed_key_ids's own docstring for why this exists (some
+  // Redis keyspaces carry no tenant boundary of their own). Null means no
+  // allowlist; every pattern's own glob scans normally.
+  allowed_key_ids: string[] | null;
   sample_values_enabled: boolean;
   schema_mode: SchemaMode;
   status: DataSourceStatus;
@@ -49,6 +68,15 @@ export interface DataSourceCreatePayload {
   dsn?: string;
   isolation_mode: IsolationMode;
   tenant_column?: string;
+  // Required (non-empty) for type: "redis", forbidden for every other type
+  // (app.api.datasources.create_datasource's own required/forbidden
+  // validation — see DatabasesRoute.tsx's own key-patterns field).
+  key_patterns?: string[];
+  // Forbidden for every type except "redis" (create_datasource's own
+  // required/forbidden validation, mirroring key_patterns above).
+  redis_cluster?: boolean;
+  redis_address_map?: Record<string, string>;
+  allowed_key_ids?: string[];
   sample_values_enabled?: boolean;
 }
 

@@ -18,6 +18,7 @@ function agentDetail(overrides: Partial<AgentDetail> = {}): AgentDetail {
     description: "d",
     pipeline_config: {},
     datasource_id: null,
+    secondary_datasource_id: null,
     llm_bindings: {},
     code_execution: "none",
     is_active: true,

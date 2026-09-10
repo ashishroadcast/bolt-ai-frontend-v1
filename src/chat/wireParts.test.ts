@@ -178,6 +178,137 @@ describe("currency and percent columns", () => {
   });
 });
 
+describe("timestamp columns render in IST", () => {
+  // Live incident this section exists to fix: an operator asking "which
+  // vehicle was updated a few minutes ago" got back a raw UTC timestamp
+  // with no timezone marker at all, in a table where every other figure
+  // (₹, lakhs/crores) is already India-first.
+
+  it("converts a Z-suffixed Redis timestamp to IST, labelled", () => {
+    const out = tableProps({
+      columns: ["lastUpdate"],
+      rows: [["2026-09-09T04:36:52Z"]],
+      row_count: 1,
+    });
+
+    expect(out.rows[0]!.lastUpdate).toBe("2026-09-09 10:06 IST");
+  });
+
+  it("converts an explicit-offset Postgres timestamp to IST", () => {
+    // The shape `_json_safe` produces once asyncpg's own timestamptz value
+    // has been stringified.
+    const out = tableProps({
+      columns: ["last_ping"],
+      rows: [["2026-01-09T12:00:29.715957+00:00"]],
+      row_count: 1,
+    });
+
+    expect(out.rows[0]!.last_ping).toBe("2026-01-09 17:30 IST");
+  });
+
+  it("leaves a naive timestamp — no Z, no offset — unconverted", () => {
+    // No timezone information to convert FROM; guessing UTC and shifting
+    // anyway would be exactly the invented convention this fix exists to
+    // remove, just moved from "no timezone marker" to "a wrong one".
+    const out = tableProps({
+      columns: ["lastUpdate"],
+      rows: [["2026-09-09T04:36:52"]],
+      row_count: 1,
+    });
+
+    expect(out.rows[0]!.lastUpdate).toBe("2026-09-09T04:36:52");
+  });
+
+  it("never mistakes a device name or a UUID for a timestamp", () => {
+    const out = tableProps({
+      columns: ["name", "id"],
+      rows: [["HR55AW2045", "019ba2a1-29a7-707a-bc6f-00a6749365a8"]],
+      row_count: 1,
+    });
+
+    expect(out.rows[0]!.name).toBe("HR55AW2045");
+    expect(out.rows[0]!.id).toBe("019ba2a1-29a7-707a-bc6f-00a6749365a8");
+  });
+
+  it("does not right-align a timestamp column the way a number is", () => {
+    const out = tableProps({
+      columns: ["lastUpdate"],
+      rows: [["2026-09-09T04:36:52Z"]],
+      row_count: 1,
+    });
+
+    expect(out.columns[0]!.type).toBeUndefined();
+  });
+
+  it("leaves a mixed column alone: one non-timestamp value is enough", () => {
+    const out = tableProps({
+      columns: ["value"],
+      rows: [["2026-09-09T04:36:52Z"], ["n/a"]],
+      row_count: 2,
+    });
+
+    expect(out.rows[0]!.value).toBe("2026-09-09T04:36:52Z");
+    expect(out.rows[1]!.value).toBe("n/a");
+  });
+});
+
+describe("updated_at/created_at are dropped from the generative UI table", () => {
+  // These are warehouse write-bookkeeping columns — when a sync job last
+  // touched the row — not the thing's own activity. Live against real
+  // fleet data they were the same 09-Jan sync run for every device,
+  // unrelated to (and far staler than) the true activity columns
+  // (`last_ping`, `lastUpdate`) sitting right next to them.
+
+  it("drops updated_at and created_at but keeps every other column, in order", () => {
+    const props = tableProps({
+      columns: ["id", "name", "updated_at", "last_ping", "created_at"],
+      rows: [["1", "HR55AW2045", "2026-01-09T12:00:00Z", "2026-09-09T04:36:52Z", "2026-01-01T00:00:00Z"]],
+      row_count: 1,
+    });
+
+    expect(props.columns.map((c) => c.key)).toEqual(["id", "name", "last_ping"]);
+    expect(props.rows[0]!.updated_at).toBeUndefined();
+    expect(props.rows[0]!.created_at).toBeUndefined();
+    expect(props.rows[0]!.last_ping).toBe("2026-09-09 10:06 IST");
+  });
+
+  it("matches case-insensitively and ignores surrounding whitespace", () => {
+    const props = tableProps({
+      columns: ["UPDATED_AT", " created_at "],
+      rows: [["2026-01-09T12:00:00Z", "2026-01-01T00:00:00Z"]],
+      row_count: 1,
+    });
+
+    expect(props.columns).toEqual([]);
+  });
+
+  it("never hides a real activity column merely because it mentions time", () => {
+    const props = tableProps({
+      columns: ["last_ping", "modified_on", "lastUpdate"],
+      rows: [["2026-09-09T04:00:00Z", "2026-09-09T04:00:00Z", "2026-09-09T04:00:00Z"]],
+      row_count: 1,
+    });
+
+    expect(props.columns.map((c) => c.key)).toEqual(["last_ping", "modified_on", "lastUpdate"]);
+  });
+
+  it("a hidden column never skews a kept column's own numeric/timestamp typing", () => {
+    // Regression guard for the refactor: `cells`/`kinds` must be re-indexed
+    // together after filtering, not just `columns` — an off-by-one here
+    // would silently apply the WRONG kind/values to a kept column.
+    const out = toUIPart("data-table", {
+      columns: ["updated_at", "net_sales"],
+      column_kinds: ["text", "currency"],
+      rows: [["2026-01-09T12:00:00Z", "944220.66"]],
+      row_count: 1,
+      truncated: false,
+    }).data as { rows: Record<string, unknown>[]; columns: { key: string; type?: string }[] };
+
+    expect(out.columns).toEqual([{ key: "net_sales", header: "Net sales", type: "number" }]);
+    expect(out.rows[0]!.net_sales).toBe("₹9,44,220.66");
+  });
+});
+
 describe("toUIPart / data-stats", () => {
   it("carries the server's already-rendered figures through untouched", () => {
     const part = toUIPart("data-stats", {

@@ -45,6 +45,24 @@ export interface Session {
   refreshToken?: string | null;
   user: SessionUser;
   /**
+   * What the backend said this caller may do, captured from `/agent/me` at
+   * sign-in. Optional: a session restored from a value stored by an older
+   * build, or built by the POS password path, carries none — so every reader
+   * must treat "absent" as "unknown", not as "nothing".
+   *
+   * Read ONLY to avoid firing requests that are certain to be refused. The
+   * Agents screen fans out one `GET /agent/agents/{id}` per agent for its
+   * wiring line, and every one of those 403s for a caller without
+   * `agent.agents` — five guaranteed-refused requests per page load, each
+   * paying the full auth cost.
+   *
+   * NEVER read to decide what a user may do. agent-service re-checks every
+   * request against the real principal; this is a hint for avoiding pointless
+   * traffic, not a boundary. A stale or forged value here can only make the
+   * console ask for less, never get more.
+   */
+  permissions?: string[];
+  /**
    * Decoded `exp` claim in ms epoch, or null if the token carried none.
    * Read only to decide *when to refresh* — see jwt.ts for why decoding a
    * claim locally is never a security decision. The gateway and

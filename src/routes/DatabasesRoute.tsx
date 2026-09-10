@@ -33,6 +33,7 @@ const DATASOURCE_TYPE_LABEL: Record<DataSourceType, string> = {
   postgres: "Postgres",
   mysql: "MySQL",
   knowledge: "Knowledge",
+  redis: "Redis",
 };
 
 const ISOLATION_LABEL: Record<IsolationMode, string> = {
@@ -60,6 +61,21 @@ interface CreateFormState {
   dsn: string;
   isolationMode: IsolationMode;
   tenantColumn: string;
+  // Raw textarea text, one glob key pattern per line (e.g. "session:*") —
+  // only meaningful when type === "redis"; parsed into DataSourceCreate
+  // Payload.key_patterns on submit (see handleSubmit).
+  keyPatterns: string;
+  // Only meaningful when type === "redis".
+  redisCluster: boolean;
+  // Raw textarea text, one "old_host:port=new_host:port" pair per line —
+  // only meaningful when redisCluster is true; parsed into
+  // DataSourceCreatePayload.redis_address_map on submit.
+  redisAddressMap: string;
+  // Raw textarea text, one id per line — substituted for every configured
+  // key_patterns entry's "*" (see DataSource.allowed_key_ids's own
+  // docstring). Optional even for redis; only meaningful when type ===
+  // "redis".
+  allowedKeyIds: string;
   sampleValuesEnabled: boolean;
 }
 
@@ -70,8 +86,44 @@ const BLANK_FORM: CreateFormState = {
   dsn: "",
   isolationMode: "connection",
   tenantColumn: "",
+  keyPatterns: "",
+  redisCluster: false,
+  redisAddressMap: "",
+  allowedKeyIds: "",
   sampleValuesEnabled: true,
 };
+
+/** Splits the "Key patterns"/"Allowed IDs" textarea into a clean list —
+ * mirrors the dedupe/strip app.api.datasources.create_datasource itself
+ * does server-side for key_patterns, so the operator sees the same list
+ * they're about to submit rather than a silently different one. */
+function parseLines(raw: string): string[] {
+  const seen = new Set<string>();
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed !== "") seen.add(trimmed);
+  }
+  return [...seen];
+}
+
+/** Parses "old_host:port=new_host:port" lines into the plain
+ * {"old_host:port": "new_host:port"} shape app.redis.clients.
+ * address_remap_from_map expects — one malformed line (no "=", or an
+ * empty side) is dropped rather than failing the whole parse, since a
+ * still-being-typed line is the common transient state while editing. */
+function parseAddressMap(raw: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0 || eq === trimmed.length - 1) continue;
+    const source = trimmed.slice(0, eq).trim();
+    const target = trimmed.slice(eq + 1).trim();
+    if (source !== "" && target !== "") map[source] = target;
+  }
+  return map;
+}
 
 interface RowState {
   testing: boolean;
@@ -261,6 +313,10 @@ export function DatabasesRoute() {
     const databaseName = form.databaseName.trim();
     const dsn = form.dsn.trim();
     const tenantColumn = form.tenantColumn.trim();
+    const isRedis = form.type === "redis";
+    const keyPatterns = parseLines(form.keyPatterns);
+    const addressMap = parseAddressMap(form.redisAddressMap);
+    const allowedKeyIds = parseLines(form.allowedKeyIds);
 
     if (name === "") {
       setSubmitError("Name is required.");
@@ -274,7 +330,12 @@ export function DatabasesRoute() {
       setSubmitError("A connection string is required to connect a database.");
       return;
     }
-    if (form.isolationMode === "column" && tenantColumn === "") {
+    if (isRedis) {
+      if (keyPatterns.length === 0) {
+        setSubmitError("At least one key pattern is required for a Redis datasource.");
+        return;
+      }
+    } else if (form.isolationMode === "column" && tenantColumn === "") {
       setSubmitError("A tenant column is required when scoping per column.");
       return;
     }
@@ -286,8 +347,23 @@ export function DatabasesRoute() {
         type: form.type,
         database_name: databaseName,
         dsn,
-        isolation_mode: form.isolationMode,
-        tenant_column: form.isolationMode === "column" ? tenantColumn : undefined,
+        // Redis only supports per-connection tenant scoping (app.api.
+        // datasources.create_datasource rejects isolation_mode=column for
+        // it) — forced here rather than trusting whatever the selector last
+        // held from a previous type.
+        isolation_mode: isRedis ? "connection" : form.isolationMode,
+        tenant_column: !isRedis && form.isolationMode === "column" ? tenantColumn : undefined,
+        key_patterns: isRedis ? keyPatterns : undefined,
+        redis_cluster: isRedis ? form.redisCluster : undefined,
+        // Forbidden server-side unless redis_cluster is also true (create_
+        // datasource) — only sent at all when both this agent's own
+        // redisCluster checkbox is on AND the operator actually typed a
+        // mapping, so an empty textarea never trips that validation.
+        redis_address_map:
+          isRedis && form.redisCluster && Object.keys(addressMap).length > 0
+            ? addressMap
+            : undefined,
+        allowed_key_ids: isRedis && allowedKeyIds.length > 0 ? allowedKeyIds : undefined,
         sample_values_enabled: form.sampleValuesEnabled,
       });
       setDatasources((prev) => [...(prev ?? []), created]);
@@ -449,11 +525,21 @@ export function DatabasesRoute() {
               disabled={submitting}
               onChange={(event) => {
                 resetConnectionTest();
-                setForm((prev) => ({ ...prev, type: event.target.value as DataSourceType }));
+                const nextType = event.target.value as DataSourceType;
+                setForm((prev) => ({
+                  ...prev,
+                  type: nextType,
+                  // Redis only supports per-connection scoping (see
+                  // handleSubmit) — reset away from a stale "Per column"
+                  // selection left over from a different type rather than
+                  // silently overriding it at submit with no visible change.
+                  isolationMode: nextType === "redis" ? "connection" : prev.isolationMode,
+                }));
               }}
             >
               <option value="postgres">Postgres</option>
               <option value="mysql">MySQL</option>
+              <option value="redis">Redis</option>
             </select>
           </div>
 
@@ -472,20 +558,25 @@ export function DatabasesRoute() {
             />
           </div>
 
-          <div className={styles.field}>
-            <label htmlFor="datasource-isolation-mode">Tenant scoping</label>
-            <select
-              id="datasource-isolation-mode"
-              value={form.isolationMode}
-              disabled={submitting}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, isolationMode: event.target.value as IsolationMode }))
-              }
-            >
-              <option value="connection">Per connection</option>
-              <option value="column">Per column</option>
-            </select>
-          </div>
+          {form.type !== "redis" && (
+            <div className={styles.field}>
+              <label htmlFor="datasource-isolation-mode">Tenant scoping</label>
+              <select
+                id="datasource-isolation-mode"
+                value={form.isolationMode}
+                disabled={submitting}
+                onChange={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    isolationMode: event.target.value as IsolationMode,
+                  }))
+                }
+              >
+                <option value="connection">Per connection</option>
+                <option value="column">Per column</option>
+              </select>
+            </div>
+          )}
 
           <div className={`${styles.field} ${styles.wide}`}>
             <label htmlFor="datasource-dsn">Connection string (DSN)</label>
@@ -499,6 +590,7 @@ export function DatabasesRoute() {
               // is the spec's own "do not offer to remember this value"
               // signal.
               autoComplete="off"
+              placeholder={form.type === "redis" ? "redis://[:password@]host:port[/db]" : undefined}
               value={form.dsn}
               disabled={submitting}
               onChange={(event) => {
@@ -508,18 +600,107 @@ export function DatabasesRoute() {
             />
           </div>
 
-          {form.isolationMode === "column" && (
-            <div className={styles.field}>
-              <label htmlFor="datasource-tenant-column">Tenant column</label>
-              <input
-                id="datasource-tenant-column"
-                type="text"
+          {form.type === "redis" ? (
+            <div className={`${styles.field} ${styles.wide}`}>
+              <label htmlFor="datasource-key-patterns">Key patterns</label>
+              <textarea
+                id="datasource-key-patterns"
                 autoComplete="off"
-                value={form.tenantColumn}
+                rows={3}
+                placeholder={"session:*\norder:*:items"}
+                value={form.keyPatterns}
                 disabled={submitting}
-                onChange={(event) => setForm((prev) => ({ ...prev, tenantColumn: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, keyPatterns: event.target.value }))
+                }
               />
+              <p className={styles.fieldHint}>
+                One glob pattern per line — only keys matching one of these are ever readable.
+              </p>
             </div>
+          ) : null}
+
+          {form.type === "redis" && (
+            <div className={`${styles.field} ${styles.wide}`}>
+              <label className={styles.checkboxField} htmlFor="datasource-redis-cluster">
+                <input
+                  id="datasource-redis-cluster"
+                  type="checkbox"
+                  checked={form.redisCluster}
+                  disabled={submitting}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, redisCluster: event.target.checked }))
+                  }
+                />
+                Cluster mode
+              </label>
+              <p className={styles.fieldHint}>
+                On for a multi-node Redis cluster (redis.asyncio.cluster.RedisCluster) — off for a
+                single standalone instance.
+              </p>
+            </div>
+          )}
+
+          {form.type === "redis" && form.redisCluster && (
+            <div className={`${styles.field} ${styles.wide}`}>
+              <label htmlFor="datasource-redis-address-map">Address remap (optional)</label>
+              <textarea
+                id="datasource-redis-address-map"
+                autoComplete="off"
+                rows={2}
+                placeholder={"10.139.148.254:7000=127.0.0.1:7000"}
+                value={form.redisAddressMap}
+                disabled={submitting}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, redisAddressMap: event.target.value }))
+                }
+              />
+              <p className={styles.fieldHint}>
+                One "internal_host:port=local_host:port" pair per line — only needed when the
+                cluster is reached through a tunnel whose forwarded ports differ from what the
+                cluster itself advertises.
+              </p>
+            </div>
+          )}
+
+          {form.type === "redis" && (
+            <div className={`${styles.field} ${styles.wide}`}>
+              <label htmlFor="datasource-allowed-key-ids">Allowed IDs (optional)</label>
+              <textarea
+                id="datasource-allowed-key-ids"
+                autoComplete="off"
+                rows={3}
+                placeholder={"11111111-0000-4000-8000-000000000101"}
+                value={form.allowedKeyIds}
+                disabled={submitting}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, allowedKeyIds: event.target.value }))
+                }
+              />
+              <p className={styles.fieldHint}>
+                One id per line, substituted for every key pattern's own "*" — when set, only
+                these exact keys are ever scanned or read, and no broader scan of the pattern ever
+                runs. Leave blank to let each pattern's own glob match normally.
+              </p>
+            </div>
+          )}
+
+          {form.type !== "redis" && (
+            form.isolationMode === "column" && (
+              <div className={styles.field}>
+                <label htmlFor="datasource-tenant-column">Tenant column</label>
+                <input
+                  id="datasource-tenant-column"
+                  type="text"
+                  autoComplete="off"
+                  value={form.tenantColumn}
+                  disabled={submitting}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, tenantColumn: event.target.value }))
+                  }
+                />
+              </div>
+            )
           )}
 
           <div className={`${styles.field} ${styles.wide}`}>

@@ -334,6 +334,13 @@ export function ConfigTab() {
   }
 
   const boundIds = new Set(detail.mcp_server_ids);
+  // Undefined when nothing is connected, or when the connected row is one
+  // this tenant's `listDatasources` did not return — in either case the
+  // second picker offers everything and lets the server be the judge, rather
+  // than filtering against a type it does not actually know.
+  const primaryDatasourceType = datasources.find(
+    (entry) => entry.id === detail.datasource_id,
+  )?.type;
   const compiledPhases = Object.keys(detail.compiled_programs).sort(
     (a, b) => PHASES.indexOf(a as (typeof PHASES)[number]) - PHASES.indexOf(b as (typeof PHASES)[number]),
   );
@@ -389,6 +396,53 @@ export function ConfigTab() {
             </select>
             <p className={styles.help}>What this agent queries and cites.</p>
             {statusFor("datasource")}
+          </div>
+
+          <div className={styles.control}>
+            <label className={styles.label} htmlFor="config-secondary-datasource">
+              Second datasource
+            </label>
+            <select
+              id="config-secondary-datasource"
+              className={styles.select}
+              value={
+                detail.secondary_datasource_id === null
+                  ? ""
+                  : String(detail.secondary_datasource_id)
+              }
+              disabled={savingField === "secondary-datasource"}
+              onChange={(event) => {
+                const raw = event.target.value;
+                void save("secondary-datasource", {
+                  secondary_datasource_id: raw === "" ? null : Number(raw),
+                });
+              }}
+            >
+              <option value="">None</option>
+              {/* The one already chosen above is filtered out, and so is
+                  anything of its kind: each tool resolves its connector by
+                  TYPE, so a second datasource of the same type is not a
+                  choice between two — it is one that runs and one that
+                  never does. The server refuses the pair (422); offering
+                  it here would just be a form that fails on submit. */}
+              {datasources
+                .filter(
+                  (datasource) =>
+                    datasource.id !== detail.datasource_id &&
+                    (primaryDatasourceType === undefined ||
+                      datasource.type !== primaryDatasourceType),
+                )
+                .map((datasource) => (
+                  <option key={datasource.id} value={datasource.id}>
+                    {datasource.type ? `${datasource.name} (${datasource.type})` : datasource.name}
+                  </option>
+                ))}
+            </select>
+            <p className={styles.help}>
+              A second store of a different kind, queried in the same run — a SQL warehouse
+              for who and what, a Redis store for current state, joined on the id they share.
+            </p>
+            {statusFor("secondary-datasource")}
           </div>
 
           <div className={styles.control}>

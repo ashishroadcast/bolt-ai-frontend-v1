@@ -38,6 +38,16 @@ export interface AgentDetail {
   description: string | null;
   pipeline_config: Record<string, unknown>;
   datasource_id: number | null;
+  /** A SECOND connector of a different kind, so one run can join across two
+   * stores. The fleet case is why it exists: device identity and org
+   * membership are rows in a SQL warehouse, live position and ignition are
+   * Redis keys under `device:<id>`, and a question about the state of named
+   * vehicles needs both in one trajectory. Which tool reaches which store is
+   * decided by the datasource's TYPE, not by which of the two fields holds
+   * it — so the pair is unordered, and the API refuses two of the same kind
+   * because each tool resolves its connector by kind and would silently
+   * ignore the second. */
+  secondary_datasource_id: number | null;
   /** phase name -> `llm_configs.id`. A phase absent here runs on the
    * tenant's default `LLMConfig` (`is_default=True`), not on "no model". */
   llm_bindings: Record<string, number>;
@@ -149,6 +159,9 @@ export interface AgentPatchInput {
   name?: string;
   description?: string | null;
   datasource_id?: number | null;
+  /** Honours an explicit `null` the same way `datasource_id` does — sending
+   * it unbinds the second connector, leaving the agent with one. */
+  secondary_datasource_id?: number | null;
   llm_bindings?: Record<string, number>;
   code_execution?: CodeExecutionCapability;
   pipeline_config?: Record<string, unknown>;

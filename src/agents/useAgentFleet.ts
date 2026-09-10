@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { GatewayError } from "../api/errors.ts";
+import { getSession } from "../auth/session.ts";
 import { listDatasources } from "../routes/datasourcesApi.ts";
 import { listLlmConfigs } from "../routes/llmConfigsApi.ts";
 import { listMcpServers } from "../routes/mcpServersApi.ts";
@@ -88,6 +89,26 @@ export function useAgentFleet(): UseAgentFleetResult {
         setRows(agents.map((agent) => ({ agent, wiring: null })));
         setLoading(false);
         listLanded = true;
+
+        // Do not fan out for a caller who cannot read configuration. The four
+        // reads below are all gated on permissions this session does not hold,
+        // so every one of them — including one `GET /agent/agents/{id}` PER
+        // AGENT — is a guaranteed 403 that still pays the full auth cost on the
+        // server. On the Agents screen that was nine simultaneous requests for
+        // a five-agent tenant, five of them refused before they were sent.
+        //
+        // `permissions === undefined` means "unknown" (a session restored from
+        // an older stored value, or the POS password path), and is deliberately
+        // NOT treated as "no". Skipping on unknown would silently hide wiring
+        // from operators who can see it; asking and getting a 403 costs one
+        // round trip and degrades to the same `wiringError` it always did.
+        const permitted = getSession()?.permissions;
+        if (permitted !== undefined && !permitted.includes("agent.agents")) {
+          setWiringError(
+            "Agent wiring needs the agent.agents permission, which this account does not have.",
+          );
+          return;
+        }
 
         const [details, datasources, llmConfigs, mcpServers] = await Promise.all([
           Promise.all(agents.map((agent) => getAgent(agent.id))),

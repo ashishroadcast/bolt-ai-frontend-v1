@@ -131,9 +131,27 @@
   border-radius: var(--radius-control);
 }
 
+.field textarea {
+  padding: var(--control-pad-x-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule);
+  color: var(--fg);
+  border-radius: var(--radius-control);
+  resize: vertical;
+}
+
 .field input:disabled,
-.field select:disabled {
+.field select:disabled,
+.field textarea:disabled {
   opacity: 0.6;
+}
+
+.fieldHint {
+  margin: 0;
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
 }
 
 .checkboxField {

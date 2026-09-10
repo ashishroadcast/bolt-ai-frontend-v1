@@ -147,13 +147,96 @@ function formatPlainNumber(value: string | number): string | number {
 }
 
 /**
+ * A warehouse-write bookkeeping column, never the operator's own concern.
+ *
+ * `updated_at`/`created_at` are ETL/row-management timestamps — when a
+ * sync job last touched the row, not when the thing it describes actually
+ * happened. Live against real fleet data they were the same 09-Jan sync
+ * run for every device, wildly unlike the true telematics activity
+ * (`last_ping`, `lastUpdate`) sitting right next to them in the same
+ * table — an operator reading them alongside real activity columns has no
+ * way to tell which is which. Exact name match only, case-insensitive:
+ * this hides the two specific columns named, never a real activity column
+ * this codebase has not been told is noise (`last_ping`, `modified_on`,
+ * `lastUpdate` all stay).
+ */
+const HIDDEN_TABLE_COLUMNS = new Set(["updated_at", "created_at"]);
+
+function isHiddenColumn(name: string): boolean {
+  return HIDDEN_TABLE_COLUMNS.has(name.trim().toLowerCase());
+}
+
+/**
+ * The one timestamp shape this codebase actually produces once a `Date`/
+ * `datetime` has been JSON-stringified: `app.stream.intents._json_safe`
+ * (a real SQL column) and a Redis hash field read undecoded (`app.
+ * datasource.redis_query`) both end up here — `YYYY-MM-DDTHH:MM:SS`, an
+ * optional fractional second, then either `Z` or an explicit `±HH:MM`
+ * offset. The offset is REQUIRED by this pattern on purpose: a value with
+ * no offset at all is not safe to reinterpret as UTC (mirrors `app.
+ * stream.columns._as_ist_aware_timestamp`'s identical rule on the Python
+ * side of this same wire), and anchoring on `^...$` is what keeps a UUID
+ * or a device name from ever matching — neither is date-shaped at all.
+ */
+const ISO_TIMESTAMP_WITH_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+function isIstTimestampCell(value: string | number): value is string {
+  return typeof value === "string" && ISO_TIMESTAMP_WITH_TZ.test(value.trim());
+}
+
+/**
+ * A column is a timestamp column when it has at least one value and every
+ * non-blank one matches — the same "seen at least one, and none of them
+ * disagree" rule `isNumericColumn` already uses, so one blank cell can't
+ * knock a real timestamp column back to plain text and one stray label
+ * can't force-format an unrelated column as a date.
+ */
+function isTimestampColumn(rows: readonly (string | number)[][], index: number): boolean {
+  let seen = false;
+  for (const row of rows) {
+    const value = row[index];
+    if (value === undefined || value === "") continue;
+    if (!isIstTimestampCell(value)) return false;
+    seen = true;
+  }
+  return seen;
+}
+
+const IST_FORMATTER = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/**
+ * A UTC-or-explicitly-offset timestamp string, shown the way every other
+ * figure in this table already is: India-first, and labelled so nobody
+ * reads a converted value as still being UTC. `"%Y-%m-%d %H:%M IST"` —
+ * the identical shape `app.stream.columns.render` produces for the same
+ * value on the model's own side of this wire, so the sentence and the
+ * table agree, not just the currency and percent columns that already had
+ * this property.
+ */
+function formatIstCell(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = IST_FORMATTER.formatToParts(date);
+  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} IST`;
+}
+
+/**
  * `table_intent`'s wire shape -> `DataTableProps`. No title travels on the
  * wire at all (`table_intent` never sets one) — "Query results" names what
  * the part honestly *is* rather than inventing a specific-sounding label
  * this module has no data to justify.
  */
 function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
-  const columns = Array.isArray(data.columns) ? (data.columns as unknown[]).map(String) : [];
+  const allColumns = Array.isArray(data.columns) ? (data.columns as unknown[]).map(String) : [];
   const rawRows = Array.isArray(data.rows) ? (data.rows as unknown[][]) : [];
   const rowCount = typeof data.row_count === "number" ? data.row_count : rawRows.length;
   const truncated = data.truncated === true;
@@ -161,20 +244,32 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
   // What the server says each column holds (app.stream.columns). Absent on
   // an older part, in which case every column falls back to the value-shape
   // guess below and simply gains no symbol — never a wrong one.
-  const kinds = Array.isArray(data.column_kinds)
+  const allKinds = Array.isArray(data.column_kinds)
     ? (data.column_kinds as unknown[]).map(String)
     : [];
 
-  const cells = rawRows.map((row) => columns.map((_name, index) => toCellValue(row[index])));
+  // Dropped before anything else below ever sees them — a hidden column's
+  // values never reach `isNumericColumn`/`isTimestampColumn`, so a stray
+  // `updated_at` full of identical sync timestamps can't skew a real
+  // column's own type inference by sharing an index with it.
+  const visible = allColumns
+    .map((name, index) => ({ name, index }))
+    .filter(({ name }) => !isHiddenColumn(name));
+  const columns = visible.map(({ name }) => name);
+  const kinds = visible.map(({ index }) => allKinds[index]);
+
+  const cells = rawRows.map((row) => visible.map(({ index }) => toCellValue(row[index])));
+  const timestamp = columns.map((_name, index) => isTimestampColumn(cells, index));
   // Typed once per column, off the whole column's values, not per cell:
   // one blank or one stray label must not knock a money column back to
   // left-aligned halfway down the table.
   const numeric = columns.map(
     (_name, index) =>
-      kinds[index] === "currency" ||
-      kinds[index] === "percent" ||
-      kinds[index] === "integer" ||
-      isNumericColumn(cells, index),
+      !timestamp[index] &&
+      (kinds[index] === "currency" ||
+        kinds[index] === "percent" ||
+        kinds[index] === "integer" ||
+        isNumericColumn(cells, index)),
   );
 
   return {
@@ -193,6 +288,9 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
     rows: cells.map((row) =>
       Object.fromEntries(
         columns.map((name, index) => {
+          if (timestamp[index]) {
+            return [name, formatIstCell(row[index] as string)];
+          }
           const kind = kinds[index];
           if (kind === "currency" || kind === "percent") {
             return [name, formatByKind(row[index]!, kind)];

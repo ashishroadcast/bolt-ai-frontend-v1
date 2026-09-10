@@ -235,8 +235,21 @@ export class GatewayClient {
       }
     }
 
-    if (response.status === 401 || response.status === 403) {
+    // ONLY a 401 clears the session. A 403 is "we know exactly who you are,
+    // and you may not do this" — an authenticated state, not a broken one, so
+    // signing the operator out on it is both wrong and unrecoverable: they
+    // land on sign-in, sign in again, and the next call 403s them straight
+    // back out. Observed the moment this console met bolt-v2: the token
+    // authenticates fine, but bolt-ai's own permission names (`agent.agents`,
+    // `agent.chat.use`) are not seeded in bolt-v2's RBAC, so every gated route
+    // answers 403 and the dashboard's first call bounced the operator to
+    // sign-in. The permission gap is a real deployment task; treating it as a
+    // sign-out hid it behind a login loop.
+    if (response.status === 401) {
       this.onUnauthorized();
+      throw new UnauthorizedError(response.status);
+    }
+    if (response.status === 403) {
       throw new UnauthorizedError(response.status);
     }
     if (!response.ok) {
@@ -264,8 +277,14 @@ export class GatewayClient {
     // layer and deny via the @auth directive inside a 200 response
     // (pkg/middleware/jwt.go) — but the gateway itself can still return a
     // bare 401/403 (e.g. its own JWT check), so both are handled here.
-    if (response.status === 401 || response.status === 403) {
+    // Same split as `agentFetch`: only a 401 is a session problem. See the
+    // comment there for why signing out on a 403 turns a missing permission
+    // into an unrecoverable login loop.
+    if (response.status === 401) {
       if (wasAuthed) this.onUnauthorized();
+      throw new UnauthorizedError(response.status);
+    }
+    if (response.status === 403) {
       throw new UnauthorizedError(response.status);
     }
     if (!response.ok) {

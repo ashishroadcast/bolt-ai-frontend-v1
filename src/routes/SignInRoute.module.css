@@ -141,3 +141,43 @@
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }
+
+/* The bolt-v2 token path's toggle. A button, not an anchor: it navigates
+   nowhere, it reveals a panel — and a real <button> keeps keyboard and
+   screen-reader behaviour correct without re-implementing either. Styled
+   quiet so it reads as the secondary route it is, next to .submit. */
+.link {
+  margin-top: 10px;
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: 4px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--fg);
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* A JWT is one long unbroken string, so it must wrap on any character —
+   the default word-based wrapping would run a single 800-character "word"
+   straight out of the card. Monospace because that is what makes a
+   truncated or doubled paste visible at a glance. */
+.tokenField {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+  word-break: break-all;
+}

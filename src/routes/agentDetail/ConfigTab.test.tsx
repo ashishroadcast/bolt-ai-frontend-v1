@@ -18,6 +18,7 @@ const AGENT = {
   description: "Answers a customer's own questions.",
   pipeline_config: {},
   datasource_id: 2,
+  secondary_datasource_id: null as number | null,
   llm_bindings: { plan: 5 } as Record<string, number>,
   code_execution: "none",
   is_active: true,
@@ -28,6 +29,7 @@ const AGENT = {
 const DATASOURCES = [
   { id: 2, name: "Restaurant Operations", type: "postgres" },
   { id: 6, name: "Reporting Warehouse", type: "postgres" },
+  { id: 8, name: "Fleet Positions", type: "redis" },
 ];
 
 const LLM_CONFIGS = [
@@ -403,5 +405,67 @@ describe("ConfigTab", () => {
     expect(
       screen.queryByText(/Plan and execute run as ReAct/),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("the second datasource", () => {
+  beforeEach(() => {
+    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setSession(null);
+  });
+
+  /**
+   * An agent may bind a SECOND connector of a different kind so one run can
+   * join across two stores — device identity from a SQL warehouse, live
+   * position from Redis, joined on the id they share. These tests are about
+   * the picker offering only pairs the server will actually accept: it
+   * resolves each tool's connector by TYPE and takes the first match, so a
+   * same-kind pair is one connector that runs and one that silently never
+   * does, and the API answers 422.
+   */
+  async function renderConfig(agent: Record<string, unknown> = {}) {
+    const routed = routeFetch({ agent });
+    vi.stubGlobal("fetch", routed.fetchMock);
+    render(<ConfigTab />);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Second datasource")).toBeInTheDocument(),
+    );
+    return routed;
+  }
+
+  it("offers only datasources of a different kind from the one already chosen", async () => {
+    await renderConfig();
+
+    const options = within(screen.getByLabelText("Second datasource")).getAllByRole("option");
+
+    // Both postgres rows are gone — the one already bound, and the other
+    // one, which would be refused for being the same kind.
+    expect(options.map((option) => option.textContent)).toEqual([
+      "None",
+      "Fleet Positions (redis)",
+    ]);
+  });
+
+  it("binding one PATCHes only that field", async () => {
+    const { writes } = await renderConfig();
+
+    fireEvent.change(screen.getByLabelText("Second datasource"), { target: { value: "8" } });
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].method).toBe("PATCH");
+    expect(writes[0].body).toEqual({ secondary_datasource_id: 8 });
+  });
+
+  it("unbinding sends an explicit null, not an omitted field", async () => {
+    const { writes } = await renderConfig({ secondary_datasource_id: 8 });
+
+    fireEvent.change(screen.getByLabelText("Second datasource"), { target: { value: "" } });
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].body).toEqual({ secondary_datasource_id: null });
   });
 });
