@@ -1,4 +1,4 @@
-import { Sheet } from "../../components/Sheet.tsx";
+import { Sheet } from "../../ask/parts/Sheet.tsx";
 import { Pill } from "./Pill.tsx";
 import type { AgentTestCase } from "./types.ts";
 import styles from "./TestCaseList.module.css";

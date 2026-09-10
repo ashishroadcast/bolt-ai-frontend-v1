@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gatewayClient } from "../../api/client.ts";
-import { AgentApiError } from "../../api/gatewayClient.ts";
+import { AgentApiError } from "../../ask/http/gatewayClient.ts";
 import type { AgentDetail } from "../../agents/types.ts";
 import { setSession } from "../../auth/session.ts";
 import type { LLMConfig } from "../llmConfigsApi.ts";
@@ -153,7 +153,7 @@ function renderLearningTab() {
 
 describe("LearningTab", () => {
   beforeEach(() => {
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

@@ -1,0 +1,93 @@
+/* Sits above the thread on the Ask screen only (AskRoute.tsx) — a small
+   bar, not another card, since it's a control rather than data. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Same tinted-tile pairing as EmptyState/DashboardRoute — --signal-soft
+   behind a --signal icon — so the accent shows up here too rather than
+   only on data cards. */
+.iconTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.select {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.loading {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}
+
+.warning {
+  font-size: var(--text-small);
+  color: var(--amber);
+}
+
+.warning a {
+  color: var(--signal);
+  font-weight: 600;
+}
+
+/* Narrow column — see Composer.module.css for why this is `@container`. */
+@container ask (max-width: 34rem) {
+  /*
+   * "CHATTING WITH" goes; the select stays and grows.
+   *
+   * The label names what the control beside it obviously is, and at this
+   * width it was taking a third of the row from the one thing that carries
+   * information — the agent's name, which was truncating while the label sat
+   * beside it at full length.
+   */
+  .label {
+    display: none;
+  }
+
+  .select {
+    flex: 1;
+    min-width: 0;
+    /* Taller target and a little more inset — this is the panel's primary
+       control and it was reading as a cramped native select. */
+    padding-block: 7px;
+  }
+
+  .bar {
+    flex: 1;
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+}

@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { PhaseSegment } from "../chat/phaseTimeline.ts";
+import type { PhaseSegment } from "../ask/chat/phaseTimeline.ts";
 import { Inspector } from "./Inspector.tsx";
 import { InspectorProvider, useInspector } from "./InspectorContext.tsx";
 

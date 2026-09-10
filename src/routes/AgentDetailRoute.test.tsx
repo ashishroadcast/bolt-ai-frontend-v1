@@ -3,14 +3,15 @@ import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gatewayClient } from "../api/client.ts";
 import { setSession } from "../auth/session.ts";
-import { ChatProvider, useChatContext } from "../chat/ChatContext.tsx";
-import type { UseChatResult } from "../chat/useChat.ts";
+import { ChatProvider, useChatContext } from "../ask/chat/ChatContext.tsx";
+import type { UseChatResult } from "../ask/chat/useChat.ts";
 import type { AgentTestCase } from "./testing/types.ts";
 import { AgentDetailRoute } from "./AgentDetailRoute.tsx";
 import { ConfigTab } from "./agentDetail/ConfigTab.tsx";
 import { LearningTab } from "./agentDetail/LearningTab.tsx";
 import { PromptsTab } from "./agentDetail/PromptsTab.tsx";
 import { TestsTab } from "./agentDetail/TestsTab.tsx";
+import { TestAskProvider } from "../ask/testing.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -49,7 +50,7 @@ function renderAgentDetail(initialPath: string) {
 
   const result = render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <ChatProvider>
+      <TestAskProvider><ChatProvider>
         <Capture />
         <Routes>
           <Route path="/agents/:agentId" element={<AgentDetailRoute />}>
@@ -62,7 +63,7 @@ function renderAgentDetail(initialPath: string) {
           </Route>
           <Route path="/ask" element={<div>Ask screen</div>} />
         </Routes>
-      </ChatProvider>
+      </ChatProvider></TestAskProvider>
     </MemoryRouter>,
   );
   return { ...result, chatRef };
@@ -79,7 +80,7 @@ describe("AgentDetailRoute", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill } from "../agents/StatusPill.tsx";
 import { useAgentFleet, type AgentFleetRow } from "../agents/useAgentFleet.ts";
-import { useChatContext } from "../chat/ChatContext.tsx";
+import { useChatContext } from "../ask/chat/ChatContext.tsx";
 import styles from "./AgentsRoute.module.css";
 
 /**

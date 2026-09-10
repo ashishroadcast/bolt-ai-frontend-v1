@@ -1,0 +1,136 @@
+.root {
+  position: relative;
+}
+
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: 500;
+  background: transparent;
+  color: var(--fg-dim);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.trigger:hover {
+  color: var(--fg);
+  border-color: var(--fg-faint);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* The name is the only part that must survive a narrow bar; the caret is
+   two characters and the padding is what tells you it is a control. */
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caret {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 320px;
+  max-width: 460px;
+  /* A root account sees four figures' worth of organisations. The list
+     scrolls inside itself rather than growing the page — the bar it hangs
+     from is fixed, so a menu taller than the viewport would be unreachable
+     at both ends. */
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+
+.filter {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 4px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  padding: 6px 8px;
+}
+
+.filter:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  background: transparent;
+  color: var(--fg);
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.option:hover {
+  background: var(--rule);
+}
+
+.option:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: -1px;
+}
+
+.optionCurrent {
+  font-weight: 600;
+}
+
+.optionPath {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.optionMeta {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.note,
+.error {
+  padding: 8px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--fg-dim);
+}
+
+.error {
+  color: var(--danger, #b3261e);
+}

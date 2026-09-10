@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight, MousePointerClick } from "lucide-react";
 import type { ReactNode } from "react";
-import type { PhaseDetail, PhaseSegment } from "../chat/phaseTimeline.ts";
+import type { PhaseDetail, PhaseSegment } from "../ask/chat/phaseTimeline.ts";
 import { useInspector } from "./InspectorContext.tsx";
 import styles from "./Inspector.module.css";
 

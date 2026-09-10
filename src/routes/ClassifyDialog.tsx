@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Lock, Unlock, X } from "lucide-react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { setDocumentClassification, type DocumentRecord, type TagNode } from "./documentsApi.ts";
 import styles from "./ClassifyDialog.module.css";
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { listLlmConfigs, type LLMConfig } from "../routes/llmConfigsApi.ts";
 
 /**

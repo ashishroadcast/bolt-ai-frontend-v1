@@ -1,4 +1,5 @@
 import { useAuth } from "../auth/AuthContext.tsx";
+import { OrganisationPicker } from "./OrganisationPicker.tsx";
 import styles from "./TopBar.module.css";
 
 /**
@@ -6,7 +7,7 @@ import styles from "./TopBar.module.css";
  *
  * **What was removed, and why it had to be.** This bar used to carry a
  * service day, a trading-window strip and a wall clock — the till-roll
- * furniture of a restaurant POS. Reckoner is not that: anyone attaches
+ * furniture of a restaurant POS. Bolty is not that: anyone attaches
  * their own database, and there is no reason to assume their business has
  * a service day at all, let alone one that runs 10:00 to 02:00. It was
  * three pieces of chrome asserting a vertical the product had already
@@ -25,12 +26,17 @@ export function TopBar() {
 
   return (
     <header className={styles.topbar}>
-      <div className={styles.mark}>reckoner</div>
+      <div className={styles.mark}>bolty</div>
 
       <div className={styles.spacer} />
 
       {session ? (
         <div className={styles.identity}>
+          {/* Beside the identity, not instead of it: in a multi-tenant
+              console "who am I" and "whose data is this" are two facts, and
+              the second only became a question the operator can change now
+              that the `Organisation` header is actually sent. */}
+          <OrganisationPicker />
           <span className={styles.who}>{session.user.name}</span>
           <button type="button" className={styles.signOut} onClick={signOut}>
             Sign out

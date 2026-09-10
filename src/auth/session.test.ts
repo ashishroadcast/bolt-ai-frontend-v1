@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSession, getToken, setSession, subscribeSession } from "./session.ts";
+import { getSession, getApiKey, setSession, subscribeSession } from "./session.ts";
 
 const user = { id: "1", email: "a@b.com", name: "A B" };
-const STORAGE_KEY = "agent-console.session.v1";
+// v2: the stored shape lost `token`/`refreshToken`/`expiresAt` for an
+// `apiKey`, so a v1 value would fail `isSession` on every boot. A new key
+// lands an operator with an old session on sign-in once instead of leaving
+// a silently-ignored blob in storage forever.
+const STORAGE_KEY = "agent-console.session.v2";
 
 beforeEach(() => {
   setSession(null);
@@ -11,43 +15,43 @@ beforeEach(() => {
 describe("session store", () => {
   it("starts signed out", () => {
     expect(getSession()).toBeNull();
-    expect(getToken()).toBeNull();
+    expect(getApiKey()).toBeNull();
   });
 
   it("holds what setSession is given", () => {
-    setSession({ token: "tok", user, expiresAt: null });
-    expect(getSession()).toEqual({ token: "tok", user, expiresAt: null });
-    expect(getToken()).toBe("tok");
+    setSession({ apiKey: "tok", user});
+    expect(getSession()).toEqual({ apiKey: "tok", user });
+    expect(getApiKey()).toBe("tok");
   });
 
   it("notifies subscribers on every change, including sign-out", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeSession(listener);
 
-    setSession({ token: "tok", user, expiresAt: null });
+    setSession({ apiKey: "tok", user});
     setSession(null);
 
     expect(listener).toHaveBeenCalledTimes(2);
     unsubscribe();
-    setSession({ token: "tok2", user, expiresAt: null });
+    setSession({ apiKey: "tok2", user});
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
   // This used to silently turn an expired session into "not signed in" —
-  // exactly the bug this task fixes. getToken() now hands the token out
+  // exactly the bug this task fixes. getApiKey() now hands the token out
   // regardless of expiry; staleness is handled by refreshing (client.ts's
   // getFreshToken, checked against getSession().expiresAt) or by reacting
   // to the 401 a stale token eventually draws, never by pretending the
   // session doesn't exist.
   it("keeps handing out the token past expiresAt instead of silently signing out", () => {
-    setSession({ token: "tok", user, expiresAt: Date.now() - 1000 });
-    expect(getToken()).toBe("tok");
+    setSession({ apiKey: "tok", user});
+    expect(getApiKey()).toBe("tok");
     expect(getSession()).not.toBeNull();
   });
 
   it("keeps handing out the token before expiresAt", () => {
-    setSession({ token: "tok", user, expiresAt: Date.now() + 60_000 });
-    expect(getToken()).toBe("tok");
+    setSession({ apiKey: "tok", user});
+    expect(getApiKey()).toBe("tok");
   });
 });
 
@@ -59,13 +63,13 @@ describe("session persistence across a reload", () => {
   // restore-on-load wiring is removed, not just if some helper stops
   // being called.
   it("restores a signed-in session when the module is re-initialised against populated storage", async () => {
-    setSession({ token: "tok", refreshToken: "refresh-1", user, expiresAt: null });
+    setSession({ apiKey: "tok", user});
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
 
-    expect(reloaded.getSession()).toEqual({ token: "tok", refreshToken: "refresh-1", user, expiresAt: null });
-    expect(reloaded.getToken()).toBe("tok");
+    expect(reloaded.getSession()).toEqual({ apiKey: "tok", user });
+    expect(reloaded.getApiKey()).toBe("tok");
   });
 
   it("boots signed out when storage holds unparseable JSON, rather than throwing", async () => {
@@ -75,7 +79,7 @@ describe("session persistence across a reload", () => {
     const reloaded = await import("./session.ts");
 
     expect(reloaded.getSession()).toBeNull();
-    expect(reloaded.getToken()).toBeNull();
+    expect(reloaded.getApiKey()).toBeNull();
   });
 
   // Regression: caught live in a real browser, not by any prior unit
@@ -89,14 +93,14 @@ describe("session persistence across a reload", () => {
   it("restores a persisted session whose user.id is a JSON number, not a string", async () => {
     sessionStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ token: "tok", refreshToken: "refresh-1", user: { id: 1, email: "a@b.com", name: "A" }, expiresAt: null }),
+      JSON.stringify({ apiKey: "tok", user: { id: 1, email: "a@b.com", name: "A" } }),
     );
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
 
     expect(reloaded.getSession()).not.toBeNull();
-    expect(reloaded.getToken()).toBe("tok");
+    expect(reloaded.getApiKey()).toBe("tok");
   });
 
   it("boots signed out when storage holds well-formed JSON in the wrong shape", async () => {
@@ -123,7 +127,7 @@ describe("session persistence across a reload", () => {
   });
 
   it("sign-out (setSession(null)) leaves nothing behind in storage", () => {
-    setSession({ token: "tok", refreshToken: "refresh-1", user, expiresAt: null });
+    setSession({ apiKey: "tok", user});
     expect(sessionStorage.getItem(STORAGE_KEY)).not.toBeNull();
 
     setSession(null);

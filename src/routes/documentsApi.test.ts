@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
-import { AgentApiError } from "../api/gatewayClient.ts";
-import { UnauthorizedError } from "../api/errors.ts";
+import { AgentApiError } from "../ask/http/gatewayClient.ts";
+import { UnauthorizedError } from "../ask/http/errors.ts";
 import {
   ACCEPTED_EXTENSIONS,
   MAX_UPLOAD_BYTES,
@@ -80,7 +80,7 @@ describe("uploadDocument", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {
@@ -151,7 +151,7 @@ describe("listDocumentChunks", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

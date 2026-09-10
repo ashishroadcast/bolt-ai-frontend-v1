@@ -2,7 +2,7 @@ import { Plug } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill } from "../agents/StatusPill.tsx";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import {
   createMcpServer,

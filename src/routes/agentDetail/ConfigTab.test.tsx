@@ -114,7 +114,7 @@ function routeFetch(options: { failWrites?: boolean; agent?: Record<string, unkn
 
 describe("ConfigTab", () => {
   beforeEach(() => {
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {
@@ -410,7 +410,7 @@ describe("ConfigTab", () => {
 
 describe("the second datasource", () => {
   beforeEach(() => {
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

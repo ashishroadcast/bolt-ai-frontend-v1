@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import { attachMcpServer, detachMcpServer, getAgent, updateAgent } from "../../agents/api.ts";
 import type { AgentDetail, AgentPatchInput, CodeExecutionCapability } from "../../agents/types.ts";
 import { StatusPill } from "../../agents/StatusPill.tsx";
-import { GatewayError } from "../../api/errors.ts";
+import { GatewayError } from "../../ask/http/errors.ts";
 import { listDatasources, type DataSource } from "../datasourcesApi.ts";
 import { listLlmConfigs, type LLMConfig } from "../llmConfigsApi.ts";
 import { listMcpServers, type McpServer } from "../mcpServersApi.ts";

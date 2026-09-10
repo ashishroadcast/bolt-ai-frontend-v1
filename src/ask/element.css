@@ -1,0 +1,82 @@
+/*
+ * What `body` used to do, for a tree that has no body.
+ *
+ * `styles/global.css` paints the console's background and sets its base
+ * typography on `html, body`. Inside a shadow root neither element exists, so
+ * those rules match nothing and the HOST's background shows through the
+ * widget — observed against a deliberately hostile demo page: Ask rendered
+ * correctly but sat on the host's aubergine instead of its own paper.
+ *
+ * `:host` is the shadow-root equivalent and the only place these can go. It
+ * is a low-specificity selector, so a host that genuinely wants to override
+ * the widget's frame still can (`bolt-ai-ask { background: … }`), which is
+ * the right way round: isolation by default, escape hatch on request.
+ */
+:host {
+  display: block;
+  /* Ask's layout is a column with a scrolling middle, so it needs a definite
+     height. The host sizes the tag; 100% only inherits something useful when
+     it does, so this is a floor rather than a guess at the host's layout. */
+  min-height: 0;
+  background: var(--ground);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-body, 14px);
+  line-height: 1.45;
+  /* The widget owns its own box model regardless of what the host set — the
+     demo host uses `content-box`, and inheriting that shifted every padded
+     element inside Ask. */
+  box-sizing: border-box;
+  /* Nothing inside Ask is meant to escape its frame: the history drawer and
+     the scrim are positioned against it, and a host with no `overflow` rule
+     of its own would otherwise grow a page-level scrollbar. */
+  contain: layout paint;
+  /*
+   * The widget sizes itself to ITSELF, not to the page.
+   *
+   * This is the whole reason the responsive rules inside use `@container`
+   * rather than `@media`. A shadow root's media queries still resolve
+   * against the VIEWPORT, so a 420px side panel on a 1440px page matches
+   * every desktop breakpoint and none of the narrow ones — the layout would
+   * be built for a width it does not have. `container-type: inline-size`
+   * makes the element its own query container, so `@container` sees 420px
+   * and the panel lays out like the narrow column it actually is.
+   */
+  container-type: inline-size;
+  container-name: ask;
+}
+
+/* Belt and braces for the box model: `global.css`'s own `*` reset is adopted
+   into the shadow tree too, but only this one is guaranteed to outrank a
+   host that set `all: revert` on descendants. */
+:host *,
+:host *::before,
+:host *::after {
+  box-sizing: border-box;
+}
+
+/*
+ * This host pads nothing, so the composer bar must not bleed outward.
+ *
+ * See `--ask-bleed` in `Ask.module.css`: the console's shell pads its thread
+ * column and the bar reaches past that padding to meet the pane edge. Inside
+ * a panel there is no padding to reach past, and the same negative margin
+ * hung the Ask button off the right edge and clipped the input on the left.
+ */
+:host {
+  --ask-host-padding: 0px;
+}
+
+/*
+ * This host gives the widget a fixed box, so the widget owns its scrolling.
+ *
+ * See "WHO SCROLLS" in `Ask.module.css`. In the console an ancestor scrolls
+ * and the screen grows; in a panel nothing above it scrolls, so without
+ * these a conversation longer than the panel was simply clipped — no
+ * scrollbar, no way to reach the earlier messages.
+ */
+:host {
+  --ask-screen-min-height: 0;
+  --ask-screen-height: 100%;
+  --ask-scroll-overflow: auto;
+}

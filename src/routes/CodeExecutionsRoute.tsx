@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
 import { useAgents } from "../agents/useAgents.ts";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import {
   getCodeExecution,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Search, TriangleAlert, X } from "lucide-react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import {
   chunkKindLabel,
   ingestPhase,

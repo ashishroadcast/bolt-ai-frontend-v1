@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { listOrchestrators } from "./api.ts";
 import type { Orchestrator } from "./types.ts";
 

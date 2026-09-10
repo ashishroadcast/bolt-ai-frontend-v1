@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { ChunksPanel } from "./ChunksPanel.tsx";
 import * as documentsApi from "./documentsApi.ts";
 import type { DocumentChunk, DocumentChunkPage, DocumentRecord } from "./documentsApi.ts";

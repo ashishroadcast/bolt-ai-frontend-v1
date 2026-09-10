@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RequireAuth } from "./auth/RequireAuth.tsx";
-import { ChatProvider } from "./chat/ChatContext.tsx";
+import { AskProvider, ChatProvider } from "./ask/index.ts";
+import { consoleAskConfig } from "./askConfig.ts";
 import { Shell } from "./shell/Shell.tsx";
 import { SignInRoute } from "./routes/SignInRoute.tsx";
 import { DashboardRoute } from "./routes/DashboardRoute.tsx";
@@ -35,9 +36,17 @@ function App() {
                 Shell's global chrome onto AskRoute — see Shell.module.css's
                 own docstring — but the provider still has to outlive route
                 changes for that guarantee to hold.) */}
-            <ChatProvider>
-              <Shell />
-            </ChatProvider>
+            {/* `AskProvider` outside `ChatProvider` because `useChat`
+                needs the HTTP client the moment it mounts, and
+                `ChatProvider` mounts here rather than at /ask so a run
+                survives navigating away. The console is a HOST of the Ask
+                package now — `consoleAskConfig` is the whole of what it
+                tells it. */}
+            <AskProvider config={consoleAskConfig}>
+              <ChatProvider>
+                <Shell />
+              </ChatProvider>
+            </AskProvider>
           </RequireAuth>
         }
       >

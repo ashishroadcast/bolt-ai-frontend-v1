@@ -3,9 +3,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gatewayClient } from "../api/client.ts";
 import { setSession } from "../auth/session.ts";
-import { ChatProvider, useChatContext } from "../chat/ChatContext.tsx";
-import type { UseChatResult } from "../chat/useChat.ts";
+import { ChatProvider, useChatContext } from "../ask/chat/ChatContext.tsx";
+import type { UseChatResult } from "../ask/chat/useChat.ts";
 import { AgentsRoute } from "./AgentsRoute.tsx";
+import { TestAskProvider } from "../ask/testing.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -53,13 +54,13 @@ function renderAgentsRoute() {
   }
   const result = render(
     <MemoryRouter initialEntries={["/agents"]}>
-      <ChatProvider>
+      <TestAskProvider><ChatProvider>
         <Capture />
         <Routes>
           <Route path="/agents" element={<AgentsRoute />} />
           <Route path="/ask" element={<div>Ask screen</div>} />
         </Routes>
-      </ChatProvider>
+      </ChatProvider></TestAskProvider>
     </MemoryRouter>,
   );
   return { ...result, chatRef };
@@ -77,7 +78,7 @@ describe("AgentsRoute", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

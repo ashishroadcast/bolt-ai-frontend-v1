@@ -1,6 +1,6 @@
 import { gatewayClient } from "../../api/client.ts";
-import { submitFeedback, type FeedbackResult } from "../../chat/feedbackApi.ts";
-import { AgentApiError, stringDetailMessage } from "../../api/gatewayClient.ts";
+import { submitFeedback, type FeedbackResult } from "../../ask/chat/feedbackApi.ts";
+import { AgentApiError, stringDetailMessage } from "../../ask/http/gatewayClient.ts";
 import type {
   AgentSummary,
   AgentTestCase,
@@ -185,5 +185,9 @@ export function listFeedback(agentId: number): Promise<FeedbackList> {
  * `CorrectionMeta` row that `POST /agent/admin/tune` reads.
  */
 export function recordFeedbackReason(messageId: number, comment: string): Promise<FeedbackResult> {
-  return submitFeedback(messageId, "down", comment);
+  // The console's own client. `submitFeedback` moved into the Ask package
+  // and takes its client explicitly now, precisely so it has no opinion
+  // about whose it is — the console passes the console's, an embedded Ask
+  // passes the host's.
+  return submitFeedback(gatewayClient, messageId, "down", comment);
 }

@@ -3,21 +3,30 @@
  * `sessionStorage` so it survives a reload. Nothing outside this file may
  * read or write `current` directly — the gateway client and every React
  * component go through the functions below, so there is exactly one place
- * a token can end up.
+ * a credential can end up.
  *
- * sessionStorage, not localStorage: a reload is what was actually breaking
- * (Saurabh: "keeps on logging out") and sessionStorage fixes that — it
- * survives a reload because it's scoped to the tab, not to a single
- * in-memory variable. localStorage would also survive a browser restart,
- * which is what most consoles do, but this one holds an operator's bearer
- * token for a multi-tenant POS backend, and the codebase's existing
- * posture here is already cautious (memory-only was the previous call,
- * Turnstile gates production sign-in, tokens are independently re-verified
- * by every service). Capping exposure at the tab's lifetime is the more
- * conservative of two defensible choices, and it's the one consistent
- * with that posture. Both options are equally readable by injected
- * script — persistence was never the XSS mitigation, verification on the
- * server is.
+ * **What it holds is an API KEY now, not a token.** The distinction matters
+ * to this file specifically, because three of its fields existed only to
+ * manage a token's lifetime and are gone with it:
+ *
+ * * `refreshToken` — a key is not refreshed. There is nothing to rotate and
+ *   no endpoint to rotate it at; rotation is an operator issuing a second key
+ *   and revoking the first.
+ * * `expiresAt` — a key does not expire. The whole staleness-and-refresh
+ *   machinery in `src/api/client.ts` went with it.
+ * * `tokenOrganisationId` — it recorded which organisation a bolt-v2 login
+ *   had minted the token against, so a refresh could not silently move the
+ *   console elsewhere. No login, no refresh, nothing to guard.
+ *
+ * sessionStorage, not localStorage — and the reasoning CHANGED with the
+ * credential, so it is worth restating rather than inheriting. It used to be
+ * a balance: a 15-minute bearer token, capped at the tab's lifetime out of
+ * caution. An API key is long-lived and tenant-wide, which makes the same
+ * choice a stronger one, not a weaker one: closing the tab should not leave a
+ * credential that outlives the session on disk for the next person at the
+ * machine. It still survives a reload, which is the thing that was actually
+ * breaking. Both stores are equally readable by injected script —
+ * persistence was never the XSS mitigation, verification on the server is.
  *
  * Restoring on boot is defensive by construction: `loadPersisted()` below
  * treats a missing key, a `JSON.parse` failure, a wrong-shaped value, and
@@ -34,27 +43,41 @@ export interface SessionUser {
 }
 
 export interface Session {
-  token: string;
   /**
-   * Optional so every existing call site that builds a Session without
-   * knowing a refresh token (test fixtures across the app, the dev
-   * token-paste path) keeps compiling. `null`/`undefined` both mean "no
-   * refresh available" — a token that expires becomes an unrecoverable
-   * sign-out, same as before this file grew a refresh flow.
+   * The credential every `/agent/*` call carries.
+   *
+   * Named for what it is. It was `token` while the console held a bolt-v2
+   * JWT that agent-service verified against a shared secret; agent-service
+   * issues and checks its own keys now, and a field called `token` would
+   * keep inviting code that decodes it, checks its expiry, or tries to
+   * refresh it — all three of which this credential does not support.
    */
-  refreshToken?: string | null;
+  apiKey: string;
   user: SessionUser;
+  /**
+   * The organisation the console is ACTING AS — sent as the `Organisation`
+   * header on every `/agent/*` call.
+   *
+   * A hint, never a grant. agent-service re-validates it against the key's
+   * own subtree on every request and refuses anything outside it, so a stale
+   * or tampered value here fails closed. It exists because a key is issued to
+   * the root of a tree and the operator has to be able to say which
+   * organisation beneath it they are reading.
+   *
+   * Optional: absent means "send no header", which agent-service reads as the
+   * key's own root organisation.
+   */
+  organisationId?: string;
   /**
    * What the backend said this caller may do, captured from `/agent/me` at
    * sign-in. Optional: a session restored from a value stored by an older
-   * build, or built by the POS password path, carries none — so every reader
-   * must treat "absent" as "unknown", not as "nothing".
+   * build carries none — so every reader must treat "absent" as "unknown",
+   * not as "nothing".
    *
    * Read ONLY to avoid firing requests that are certain to be refused. The
    * Agents screen fans out one `GET /agent/agents/{id}` per agent for its
    * wiring line, and every one of those 403s for a caller without
-   * `agent.agents` — five guaranteed-refused requests per page load, each
-   * paying the full auth cost.
+   * `agent.agents` — five guaranteed-refused requests per page load.
    *
    * NEVER read to decide what a user may do. agent-service re-checks every
    * request against the real principal; this is a hint for avoiding pointless
@@ -62,19 +85,15 @@ export interface Session {
    * console ask for less, never get more.
    */
   permissions?: string[];
-  /**
-   * Decoded `exp` claim in ms epoch, or null if the token carried none.
-   * Read only to decide *when to refresh* — see jwt.ts for why decoding a
-   * claim locally is never a security decision. The gateway and
-   * agent-service each verify the signature themselves; nothing here
-   * substitutes for that.
-   */
-  expiresAt: number | null;
 }
 
 type Listener = () => void;
 
-const STORAGE_KEY = "agent-console.session.v1";
+// Bumped from `.v1`: the stored shape changed name and lost three fields, and
+// a v1 value would fail `isSession` on every boot anyway. A new key means an
+// operator with an old session lands on sign-in once, rather than on a
+// silently-ignored blob that stays in storage forever.
+const STORAGE_KEY = "agent-console.session.v2";
 
 function getStorage(): Storage | null {
   if (typeof window === "undefined") return null;
@@ -92,14 +111,12 @@ function isSessionUser(value: unknown): value is SessionUser {
   if (typeof value !== "object" || value === null) return false;
   const user = value as Record<string, unknown>;
   // `id` accepts number too, not just this interface's declared `string`:
-  // auth's `User.id` is an ent int id, and neither the login GraphQL
-  // response nor AuthContext.tsx's signIn() ever coerces it — `id: user.id`
-  // passes whatever JSON type the server actually sent straight through.
-  // This caught a real bug live: a freshly persisted session (id: 1, a
-  // JSON number) failed this check on the very next reload and silently
-  // signed the operator back out — exactly the bug this task exists to
-  // fix, reintroduced by validating against the aspirational type instead
-  // of the one that actually flows through the app.
+  // nothing coerces it on the way in, so whatever JSON type the server sent
+  // passes straight through. This caught a real bug live — a freshly
+  // persisted session (id: 1, a JSON number) failed this check on the very
+  // next reload and silently signed the operator back out, exactly the bug
+  // the check exists to prevent, reintroduced by validating against the
+  // aspirational type instead of the one that actually flows through.
   return (
     (typeof user.id === "string" || typeof user.id === "number") &&
     typeof user.email === "string" &&
@@ -114,11 +131,15 @@ function isSessionUser(value: unknown): value is SessionUser {
 function isSession(value: unknown): value is Session {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  if (typeof candidate.token !== "string" || candidate.token === "") return false;
-  if (candidate.refreshToken !== undefined && candidate.refreshToken !== null && typeof candidate.refreshToken !== "string") {
+  if (typeof candidate.apiKey !== "string" || candidate.apiKey === "") return false;
+  // Optional-but-typed: absent is a legitimate session, a present non-string
+  // is a corrupt one. Rejecting the second matters more than it looks — a
+  // non-string here would be sent verbatim as the `Organisation` header, and
+  // agent-service answers a malformed header with a 401 rather than ignoring
+  // it, so a bad stored value would lock the tab out of every request.
+  if (candidate.organisationId !== undefined && typeof candidate.organisationId !== "string") {
     return false;
   }
-  if (candidate.expiresAt !== null && typeof candidate.expiresAt !== "number") return false;
   return isSessionUser(candidate.user);
 }
 
@@ -159,18 +180,39 @@ export function getSession(): Session | null {
 }
 
 /**
- * The bearer token for the next request, or null if there is no session
- * at all. Deliberately does *not* check `expiresAt` — that used to make
- * an expired session look identical to "never signed in" and silently
- * sign the operator out on the next call. Staleness is now the caller's
- * problem to solve by refreshing (see `src/api/client.ts`'s
- * `getFreshToken`, which checks `expiresAt` before deciding whether to
- * hand this token out or refresh first) or by reacting to a 401
- * (`GatewayClient`'s retry-once-then-give-up). This function just
- * reports what the session currently holds.
+ * The credential for the next request, or null if there is no session.
+ *
+ * No staleness check, and now nothing to check: an API key has no expiry, so
+ * the proactive-refresh dance this used to be half of is gone. A key that
+ * stops working (revoked) surfaces as a 401, which `GatewayClient` turns into
+ * a sign-out — the one path that remains.
  */
-export function getToken(): string | null {
-  return current?.token ?? null;
+export function getApiKey(): string | null {
+  return current?.apiKey ?? null;
+}
+
+/**
+ * The organisation to send as the `Organisation` header on the next request,
+ * or null when there is no session or none was chosen.
+ *
+ * Omitting the header entirely already means "the key's own root
+ * organisation" to agent-service, so there is no fallback to invent here.
+ */
+export function getOrganisationId(): string | null {
+  return current?.organisationId ?? null;
+}
+
+/**
+ * Switches the organisation the console acts as, in place.
+ *
+ * A no-op without a session, so a picker firing during sign-out cannot
+ * resurrect one. Nothing else about the session changes — the key is still
+ * the same key, and the backend still decides whether this organisation is
+ * reachable from it.
+ */
+export function setOrganisation(organisationId: string): void {
+  if (current === null) return;
+  setSession({ ...current, organisationId });
 }
 
 export function setSession(next: Session | null): void {

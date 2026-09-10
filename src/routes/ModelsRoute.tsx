@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../agents/PageHeader.tsx";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { listLlmConfigs, listModelCatalogue, type CatalogueModel } from "./llmConfigsApi.ts";
 import {
   formatContext,

@@ -3,10 +3,11 @@ import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
-import { ChatProvider, useChatContext } from "../chat/ChatContext.tsx";
+import { ChatProvider, useChatContext } from "../ask/chat/ChatContext.tsx";
 import { InspectorProvider } from "../shell/InspectorContext.tsx";
 import { AskRoute } from "./AskRoute.tsx";
-import type { UseChatResult } from "../chat/useChat.ts";
+import type { UseChatResult } from "../ask/chat/useChat.ts";
+import { TestAskProvider } from "../ask/testing.tsx";
 
 function sseResponse(frames: string[]): Response {
   const text = frames.map((frame) => `${frame}\n\n`).join("");
@@ -87,10 +88,10 @@ function renderAskRoute(fetchMock: ReturnType<typeof vi.fn>, initialEntry = "/as
     <StrictMode>
       <MemoryRouter initialEntries={[initialEntry]}>
         <InspectorProvider>
-          <ChatProvider>
+          <TestAskProvider><ChatProvider>
             <Capture />
             <AskRoute />
-          </ChatProvider>
+          </ChatProvider></TestAskProvider>
         </InspectorProvider>
       </MemoryRouter>
     </StrictMode>,
@@ -100,7 +101,7 @@ function renderAskRoute(fetchMock: ReturnType<typeof vi.fn>, initialEntry = "/as
 
 describe("AskRoute", () => {
   beforeEach(() => {
-    setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

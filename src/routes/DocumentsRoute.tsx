@@ -1,9 +1,9 @@
 import { FileText, Folder, Lock, Tag } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { PageHeader } from "../agents/PageHeader.tsx";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
-import { Sheet } from "../components/Sheet.tsx";
+import { Sheet } from "../ask/parts/Sheet.tsx";
 import { ChunksPanel } from "./ChunksPanel.tsx";
 import { ClassifyDialog } from "./ClassifyDialog.tsx";
 import { createDatasource, listDatasources, type DataSource } from "./datasourcesApi.ts";

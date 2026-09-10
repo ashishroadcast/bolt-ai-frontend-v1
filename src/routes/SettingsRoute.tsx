@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
 import { PageHeader } from "../agents/PageHeader.tsx";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import {
   createLlmConfig,
   deleteLlmConfig,

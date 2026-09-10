@@ -7,7 +7,7 @@ import type { Orchestrator } from "../agents/types.ts";
 import { useAgents } from "../agents/useAgents.ts";
 import { selectableChatConfigs, useLlmConfigs } from "../agents/useLlmConfigs.ts";
 import { useOrchestrators } from "../agents/useOrchestrators.ts";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import styles from "./OrchestratorsRoute.module.css";
 
 function errorMessage(err: unknown): string {

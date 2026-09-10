@@ -3,7 +3,7 @@ import { InspectorProvider, useInspector } from "./InspectorContext.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { Rail } from "./Rail.tsx";
 import { Inspector } from "./Inspector.tsx";
-import { SCROLL_REGION_ATTR } from "../chat/useStickToBottom.ts";
+import { SCROLL_REGION_ATTR } from "../ask/chat/useStickToBottom.ts";
 import styles from "./Shell.module.css";
 
 /*

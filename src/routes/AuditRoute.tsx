@@ -2,7 +2,7 @@ import { ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { listAuditEntries, type ConfigAuditAction, type ConfigAuditEntry } from "./auditApi.ts";
 import styles from "./AuditRoute.module.css";

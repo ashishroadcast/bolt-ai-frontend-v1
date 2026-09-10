@@ -76,9 +76,8 @@ describe("CodeExecutionsRoute", () => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     setSession({
-      token: "tok",
+      apiKey: "tok",
       user: { id: "1", email: "a@b.com", name: "A" },
-      expiresAt: null,
     });
   });
 

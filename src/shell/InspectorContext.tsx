@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
-import type { PhaseSegment } from "../chat/phaseTimeline.ts";
+import type { PhaseSegment } from "../ask/chat/phaseTimeline.ts";
 
 /*
  * The inspector opens on a phase or a result (design plan, "Layout"). Task 1

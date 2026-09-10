@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bolt-ai-ask embed demo</title>
+    <!--
+      A host page for `<bolt-ai-ask>`, standing in for bolt-v2-frontend.
+
+      Lives at the repo ROOT, not in dist-element/: that directory is emptied
+      on every `pnpm build:element`, which silently deleted this file the
+      first time the bundle was rebuilt.
+
+        pnpm build:element
+        # serve this directory, then open:
+        #   /embed-demo.html?key=<agent-service api key>
+
+      Its own styles are deliberately hostile. If any of them reach inside the
+      widget, the shadow root is not doing its job — and that isolation is the
+      whole reason a 1236-file Angular app can take this without a re-test.
+    -->
+    <style>
+      * {
+        box-sizing: content-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Comic Sans MS", cursive;
+        background: #2b2b3a;
+        color: #ff66cc;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        border: 3px dashed #ff00ff !important;
+        font-family: "Comic Sans MS", cursive !important;
+        background: #440044 !important;
+        color: #ff00ff !important;
+      }
+      header {
+        padding: 10px 16px;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .frame {
+        /* The host sizes the tag; the tag fills it. Ask's layout is a column
+           with a scrolling middle, so it needs a definite height from
+           somewhere. */
+        height: calc(100vh - 108px);
+        margin: 0 16px 16px;
+        border: 2px solid #ff00ff;
+      }
+      bolt-ai-ask {
+        display: block;
+        height: 100%;
+      }
+      code {
+        color: #9fe;
+      }
+      .host-control {
+        margin-left: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      Pretend host page — <code>Comic Sans</code> on aubergine, magenta dashed
+      borders forced onto every control, <code>box-sizing: content-box</code>.
+      None of it should appear inside the frame.
+      <button class="host-control" type="button">a host button</button>
+    </header>
+
+    <div class="frame">
+      <bolt-ai-ask id="ask" base-url="http://localhost:8100" setup-agents-href="#"></bolt-ai-ask>
+    </div>
+
+    <script type="module">
+      import "./dist-element/bolt-ai-ask.js";
+
+      // Exactly what the Angular host does: assign the providers as
+      // PROPERTIES. A credential is a callback answered per request, not a
+      // string that belongs in an attribute where any script can read it.
+      const ask = document.getElementById("ask");
+
+      // Typed in or passed as ?key=, never baked in — this file is committed.
+      const key =
+        new URLSearchParams(location.search).get("key") ??
+        window.prompt("agent-service API key");
+
+      ask.credentialProvider = () => key;
+      ask.organisationProvider = () => null;
+      ask.onUnauthorized = () => console.warn("[host] agent-service refused the credential");
+    </script>
+  </body>
+</html>

@@ -3,7 +3,7 @@ import { useAgents } from "../agents/useAgents.ts";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill } from "../agents/StatusPill.tsx";
 import type { AgentSummary } from "../agents/types.ts";
-import { useChatContext } from "../chat/ChatContext.tsx";
+import { useChatContext } from "../ask/chat/ChatContext.tsx";
 import styles from "./AgentDetailRoute.module.css";
 
 /** What every tab reads via `useOutletContext<AgentDetailContext>()`. */

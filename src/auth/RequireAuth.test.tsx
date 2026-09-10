@@ -46,7 +46,7 @@ describe("RequireAuth", () => {
 
   it("renders the protected route once signed in", () => {
     act(() => {
-      setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+      setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
     });
     renderProtectedApp();
     expect(screen.getByText("PROTECTED CONTENT")).toBeInTheDocument();
@@ -59,7 +59,7 @@ describe("RequireAuth", () => {
   // useSyncExternalStore — no mocking of the auth wiring itself.
   it("routes back to sign-in once a live session's token is rejected with 401", async () => {
     act(() => {
-      setSession({ token: "tok", user: { id: "1", email: "a@b.com", name: "A" }, expiresAt: null });
+      setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
     });
     renderProtectedApp();
     expect(screen.getByText("PROTECTED CONTENT")).toBeInTheDocument();

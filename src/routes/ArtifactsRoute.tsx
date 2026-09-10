@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { useAgents } from "../agents/useAgents.ts";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { getArtifactDownload, listArtifacts, type ArtifactDownload, type ArtifactSummary } from "./artifactsApi.ts";
 import styles from "./ArtifactsRoute.module.css";

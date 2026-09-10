@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { PageHeader } from "../agents/PageHeader.tsx";
-import { Sheet } from "../components/Sheet.tsx";
+import { Sheet } from "../ask/parts/Sheet.tsx";
 import {
   createDatasource,
   deleteDatasource,

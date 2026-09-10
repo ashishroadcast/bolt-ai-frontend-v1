@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { GatewayError } from "../api/errors.ts";
+import { GatewayError } from "../ask/http/errors.ts";
 import { getSession } from "../auth/session.ts";
 import { listDatasources } from "../routes/datasourcesApi.ts";
 import { listLlmConfigs } from "../routes/llmConfigsApi.ts";
