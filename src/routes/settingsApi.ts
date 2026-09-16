@@ -31,11 +31,39 @@ export interface AgentCodeExecution {
   code_execution: CodeExecutionCapability;
 }
 
+/**
+ * How much of a run Ask shows this tenant's readers.
+ *
+ * Both off unless someone turns them on — see `TenantUiSettings` in
+ * agent-service for why. The people these govern are mostly operators who
+ * cannot configure anything, so the decision is a tenant-wide one made here.
+ */
+export interface AskDisclosure {
+  show_reasoning: boolean;
+  show_query_results: boolean;
+}
+
 export interface SettingsSnapshot {
   sandbox: SandboxLimits;
   agents: AgentCodeExecution[];
+  ask: AskDisclosure;
 }
 
 export function fetchSettings(): Promise<SettingsSnapshot> {
   return gatewayClient.agentFetch<SettingsSnapshot>("/agent/settings");
+}
+
+/**
+ * Turn one of Ask's panels on or off for the whole tenant.
+ *
+ * Only the changed flag is sent: agent-service reads `model_fields_set`, so
+ * an omitted field is left alone rather than reset to a default the caller
+ * never chose.
+ */
+export function updateAskDisclosure(patch: Partial<AskDisclosure>): Promise<AskDisclosure> {
+  return gatewayClient.agentFetch<AskDisclosure>("/agent/settings/ask", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
 }

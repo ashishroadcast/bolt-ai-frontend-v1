@@ -1,0 +1,85 @@
+/* The quiet substitute for the reasoning card.
+   A reader who has not asked for the machinery still needs to know the thing
+   is working and roughly where it has got to — silence for 60 seconds reads
+   as broken. This is the smallest honest version of that: one line, one
+   moving element, and the current phase in plain words. */
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0;
+  color: var(--ask-muted, #667085);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Three dots rather than a spinner. A spinner says "blocked"; a pulse says
+   "working", which is what a multi-step run actually is. */
+.dots {
+  display: inline-flex;
+  gap: 0.1875rem;
+  flex: none;
+}
+
+.dot {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-0.125rem);
+  }
+}
+
+/* The label crossfades as phases change, so the line does not jump between
+   words of different lengths hard enough to catch the eye. */
+.label {
+  animation: fade 0.24s ease-out;
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.elapsed {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  flex: none;
+}
+
+/* Respect a reader who has asked the OS for less movement. The dots stop
+   animating and simply sit at a readable opacity; the line still says what is
+   happening, which is the part that carries the meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .dot,
+  .label {
+    animation: none;
+    opacity: 0.6;
+  }
+}

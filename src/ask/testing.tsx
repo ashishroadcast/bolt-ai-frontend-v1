@@ -29,6 +29,11 @@ export const testAskConfig: AskConfig = {
     getOrganisationId: () => null,
   },
   setupAgentsHref: "/agents",
+  // PINNED, so a test about rendering a reasoning card or a result table
+  // mounts one without also having to stub `/agent/settings/ask`. The
+  // product default is the opposite — both off — and the tests that care
+  // about THAT override this deliberately (see Thread.test.tsx).
+  disclosure: { showReasoning: true, showQueryResults: true },
 };
 
 /** A client on `testAskConfig`, for the plain functions that take one. */

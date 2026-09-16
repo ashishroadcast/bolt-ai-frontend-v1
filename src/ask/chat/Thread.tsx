@@ -13,6 +13,8 @@ import { arrangeParts } from "./partLayout.ts";
 import type { PhaseSegment } from "./phaseTimeline.ts";
 import { answerQuestion, forgetCachedPlan } from "./feedbackApi.ts";
 import { ReasoningCard } from "./ReasoningCard.tsx";
+import { Thinking } from "./Thinking.tsx";
+import { useAskDisclosure } from "./useDisclosure.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
 import { RerunButton, RunMeta } from "./RunMeta.tsx";
@@ -268,6 +270,7 @@ function AnsweredTurn({
   const summary = message.runSummary;
   // The run's own record first (this session watched it), the persisted
   // agent_id second. Never the current picker selection.
+  const disclosure = useAskDisclosure();
   const agentName = summary?.agentName ?? hydratedAgentName;
   const trace: RunTrace = summary?.trace ?? EMPTY_TRACE;
   const hasDebug = trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null;
@@ -280,7 +283,7 @@ function AnsweredTurn({
         </p>
       )}
 
-      {trace.steps.length > 0 && summary !== undefined && (
+      {disclosure.showReasoning && trace.steps.length > 0 && summary !== undefined && (
         <ReasoningCard
           steps={trace.steps}
           agentName={agentName}
@@ -300,7 +303,7 @@ function AnsweredTurn({
           it reads has to restate it to make sense. Putting them this way
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
-      <Sheets parts={message.parts} />
+      {disclosure.showQueryResults && <Sheets parts={message.parts} />}
       {!rendersItsOwnProse(message.parts) && (
         <RevealedAnswer
           messageId={message.id}
@@ -340,24 +343,34 @@ function LiveTurn(): ReactElement | null {
   const client = useAskClient();
   const { activeRun } = useChatContext();
   const { selection, selectPhase } = useAskInspector();
+  const disclosure = useAskDisclosure();
 
   if (activeRun === null) return null;
 
   return (
     <AgentTurn>
-      <ReasoningCard
-        steps={activeRun.trace.steps}
-        agentName={activeRun.agentName}
-        isStreaming
-        onSelectPhase={selectByPhaseName(activeRun.segments, selectPhase)}
-        selectedPhase={selection?.phase ?? null}
-      />
+      {/* One or the other, never both: the card IS the detailed version of
+          what `Thinking` says in a line, and showing both would be the
+          machinery this setting exists to remove, plus a duplicate. */}
+      {disclosure.showReasoning ? (
+        <ReasoningCard
+          steps={activeRun.trace.steps}
+          agentName={activeRun.agentName}
+          isStreaming
+          onSelectPhase={selectByPhaseName(activeRun.segments, selectPhase)}
+          selectedPhase={selection?.phase ?? null}
+        />
+      ) : (
+        activeRun.text === "" && (
+          <Thinking steps={activeRun.trace.steps} startedAt={activeRun.startedAt} />
+        )
+      )}
       {/* What it is doing and for how long, plus the reasoning while it is
           being written — and only until the answer starts. A status line
           still counting beside a finished answer is worse than none, and
           two blocks of live text at once would leave a reader working out
           which one they asked for. */}
-      {activeRun.text === "" && (
+      {disclosure.showReasoning && activeRun.text === "" && (
         <RunWaiting
           trace={activeRun.trace}
           startedAt={activeRun.startedAt}
@@ -371,7 +384,9 @@ function LiveTurn(): ReactElement | null {
           rather than an identifier. It used to hand over the run's MESSAGE
           id, which the endpoint accepted only because it never read the
           run segment at all. */}
-      <Sheets parts={withAnswering(client, activeRun.parts, true)} />
+      {disclosure.showQueryResults && (
+        <Sheets parts={withAnswering(client, activeRun.parts, true)} />
+      )}
       {!rendersItsOwnProse(activeRun.parts) && (
         <RevealedAnswer messageId={activeRun.messageId} text={activeRun.text} animate />
       )}

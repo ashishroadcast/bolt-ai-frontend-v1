@@ -6,7 +6,7 @@ import { defineConfig, type Plugin } from "vite";
  * host, React or not. See `src/ask/element.tsx` for why a custom element
  * rather than an iframe or a second Angular implementation.
  *
- *     pnpm build:element   ->   dist-element/bolt-ai-ask.js
+ *     npm run build:element   ->   packages/ask-element/dist/bolt-ai-ask.js
  *
  * Separate from `vite.config.ts` (which builds the console) because the two
  * are different products from one source tree: the console is an app with an
@@ -85,9 +85,20 @@ export default defineConfig({
   // development build into a host drags its whole warning apparatus along
   // (and, here, 540kB of it — the bundle halved when this was set).
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  // No `public/`. That directory is the CONSOLE's — its favicon was being
+  // copied into the package and published as though the widget had one, which
+  // a widget cannot: it has no document of its own.
+  publicDir: false,
   build: {
-    outDir: "dist-element",
-    // The console's own build must not be wiped by building the element.
+    // Into the npm package, not a bare `dist-element/`. The artifact used to
+    // be copied by hand into each consumer's own static assets, which meant a
+    // checked-in duplicate per host and a hand-bumped `?v=` query to defeat
+    // the cache. As a package it is a versioned dependency instead: consumers
+    // `npm install` it, their bundler hashes it, and `packages/ask-element`'s
+    // `version` is the only thing to bump.
+    outDir: "packages/ask-element/dist",
+    // Only `dist/` — the package's `package.json`, README and `index.d.ts`
+    // are hand-written sources that live beside it and must survive a build.
     emptyOutDir: true,
     lib: {
       entry: "src/ask/element-entry.ts",

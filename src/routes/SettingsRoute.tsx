@@ -12,7 +12,13 @@ import {
   type LLMConfig,
   type LLMConfigKind,
 } from "./llmConfigsApi.ts";
-import { fetchSettings, type CodeExecutionCapability, type SettingsSnapshot } from "./settingsApi.ts";
+import {
+  fetchSettings,
+  updateAskDisclosure,
+  type AskDisclosure,
+  type CodeExecutionCapability,
+  type SettingsSnapshot,
+} from "./settingsApi.ts";
 import styles from "./SettingsRoute.module.css";
 
 function errorMessage(err: unknown): string {
@@ -370,6 +376,8 @@ export function SettingsRoute() {
 
   const [settings, setSettings] = useState<SettingsSnapshot | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [askSaving, setAskSaving] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
 
   const [keyDraft, setKeyDraft] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
@@ -391,6 +399,25 @@ export function SettingsRoute() {
       .then(setSettings)
       .catch((err: unknown) => setSettingsError(errorMessage(err)));
   }, []);
+
+  /**
+   * Writes one flag, then keeps the checkbox in step with what the server
+   * actually stored — not with what was clicked. The two differ exactly when
+   * the write fails, which is the moment a checkbox showing the new value
+   * would be lying about the state of the tenant.
+   */
+  async function saveAsk(patch: Partial<AskDisclosure>) {
+    setAskSaving(true);
+    setAskError(null);
+    try {
+      const saved = await updateAskDisclosure(patch);
+      setSettings((prev) => (prev === null ? prev : { ...prev, ask: saved }));
+    } catch (err) {
+      setAskError(errorMessage(err));
+    } finally {
+      setAskSaving(false);
+    }
+  }
 
   function rowState(id: number): RowState {
     return rowStates[id] ?? BLANK_ROW_STATE;
@@ -664,6 +691,62 @@ export function SettingsRoute() {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+        </section>
+
+        <section className={styles.sheet}>
+          <header className={styles.sheetHead}>
+            <h3>Ask — what readers see</h3>
+            <span className={styles.sub}>applies to everyone in this tenant</span>
+          </header>
+
+          <p className={styles.sub}>
+            Ask answers in one or two sentences. These add the working behind it — useful
+            while you are building an agent, noise for everyone else, so both are off by
+            default.
+          </p>
+
+          {settingsError === null && settings === null && (
+            <p className={styles.loading}>Loading…</p>
+          )}
+          {askError !== null && (
+            <p role="alert" className={styles.error}>
+              {askError}
+            </p>
+          )}
+          {settings !== null && (
+            <div className={styles.toggles}>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={settings.ask.show_reasoning}
+                  disabled={askSaving}
+                  onChange={(event) => void saveAsk({ show_reasoning: event.target.checked })}
+                />
+                <span>
+                  <strong>Reasoning steps</strong>
+                  <span className={styles.sub}>
+                    The phase-by-phase card, live as the run happens. Off, readers see a single
+                    line saying it is thinking and how long it has been.
+                  </span>
+                </span>
+              </label>
+              <label className={styles.toggle}>
+                <input
+                  type="checkbox"
+                  checked={settings.ask.show_query_results}
+                  disabled={askSaving}
+                  onChange={(event) => void saveAsk({ show_query_results: event.target.checked })}
+                />
+                <span>
+                  <strong>Query result tables</strong>
+                  <span className={styles.sub}>
+                    Every row a tool returned, rendered above the answer. A fleet-wide read is
+                    hundreds of rows, which is why this is off by default.
+                  </span>
+                </span>
+              </label>
             </div>
           )}
         </section>

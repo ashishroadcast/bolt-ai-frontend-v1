@@ -62,6 +62,21 @@ export interface AskConfig {
    * empty state says what is wrong without offering a link that goes nowhere.
    */
   setupAgentsHref?: string;
+  /**
+   * Pins how much of a run this embed shows, overriding the tenant's own
+   * setting in agent-service.
+   *
+   * Omitted — the normal case — Ask asks agent-service
+   * (`/agent/settings/ask`) and uses the tenant's answer, so the same
+   * choice holds in bolt-v2's panel and in the console without either
+   * being configured twice.
+   *
+   * Set it only for an embed whose audience differs from the tenant's
+   * default: a debugging surface that always wants the machinery, or a
+   * customer-facing page that must never show it whatever the tenant
+   * chose. A pinned value is never overruled by the server.
+   */
+  disclosure?: { showReasoning: boolean; showQueryResults: boolean };
 }
 
 /**

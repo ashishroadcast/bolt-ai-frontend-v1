@@ -7,13 +7,19 @@
     <!--
       A host page for `<bolt-ai-ask>`, standing in for bolt-v2-frontend.
 
-      Lives at the repo ROOT, not in dist-element/: that directory is emptied
-      on every `pnpm build:element`, which silently deleted this file the
-      first time the bundle was rebuilt.
+      Lives at the repo ROOT, not beside the build output: that directory is
+      emptied on every build, which silently deleted this file the first time
+      the bundle was rebuilt.
 
-        pnpm build:element
+        npm run build:element
         # serve this directory, then open:
         #   /embed-demo.html?key=<agent-service api key>
+
+      It imports the built file by PATH rather than by package name, unlike a
+      real host: this page is served as a static file with no bundler to
+      resolve `@bolt-ai/ask-element` for it. Consumers should install the
+      package (see packages/ask-element/README.md) — the point of this page is
+      to prove the artifact works, not to model how to depend on it.
 
       Its own styles are deliberately hostile. If any of them reach inside the
       widget, the shadow root is not doing its job — and that isolation is the
@@ -76,7 +82,7 @@
     </div>
 
     <script type="module">
-      import "./dist-element/bolt-ai-ask.js";
+      import "./packages/ask-element/dist/bolt-ai-ask.js";
 
       // Exactly what the Angular host does: assign the providers as
       // PROPERTIES. A credential is a callback answered per request, not a

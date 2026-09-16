@@ -456,3 +456,40 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Ask disclosure toggles. Two checkboxes with enough prose beside each to
+   say what a reader will actually see, because "Reasoning steps" alone does
+   not tell an operator whether turning it on helps them or buries them. */
+.toggles {
+  display: grid;
+  gap: 0.875rem;
+  padding: 0.25rem 0 0.5rem;
+}
+
+.toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.625rem;
+  align-items: start;
+  cursor: pointer;
+}
+
+.toggle input {
+  margin-top: 0.2rem;
+  cursor: pointer;
+}
+
+.toggle > span {
+  display: grid;
+  gap: 0.1875rem;
+}
+
+.toggle strong {
+  font-weight: 600;
+}
+
+.toggle input:disabled,
+.toggle input:disabled + span {
+  opacity: 0.6;
+  cursor: default;
+}

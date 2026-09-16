@@ -35,6 +35,7 @@ const SNAPSHOT: SettingsSnapshot = {
     concurrent_slot_ttl_seconds: 45,
     concurrency_configured: false,
   },
+  ask: { show_reasoning: false, show_query_results: false },
   agents: [
     { id: 1, name: "Analytics", code_execution: "interpreter" },
     { id: 2, name: "Complaint Broker", code_execution: "none" },

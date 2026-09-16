@@ -4,11 +4,13 @@ node_modules/
 # Build output
 dist/
 dist-ssr/
-# The embeddable `<bolt-ai-ask>` bundle (vite.element.config.ts). Build output
-# like dist/, and deliberately not tracked here even though bolt-v2 vendors a
-# copy at its own public/bolt-ai/ — one checked-in copy per consumer is a copy
-# to forget to refresh.
-dist-element/
+# The embeddable `<bolt-ai-ask>` bundle (vite.element.config.ts). Generated
+# into the npm package that ships it; the package's own package.json, README
+# and index.d.ts beside it ARE tracked, because those are hand-written.
+packages/ask-element/dist/
+
+# Tarballs from `npm run pack:element`.
+*.tgz
 
 # Firebase CLI deploy cache — a local hash of what was last uploaded. Machine
 # specific, rewritten on every deploy, and says nothing a reader needs.

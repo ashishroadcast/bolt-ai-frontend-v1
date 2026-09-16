@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc -b --noEmit",
-    "build:element": "vite build --config vite.element.config.ts"
+    "build:element": "vite build --config vite.element.config.ts",
+    "pack:element": "npm run build:element && cd packages/ask-element && npm pack --pack-destination ../.."
   },
   "dependencies": {
     "lucide-react": "^1.34.0",
