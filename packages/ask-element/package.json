@@ -1,18 +1,8 @@
 {
-  "name": "@roadcast/ask-element",
+  "name": "@bolt-ai/ask-element",
   "version": "1.0.0",
   "description": "Ask, as a <bolt-ai-ask> custom element — one self-contained file that embeds the assistant in any host, React or not.",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Roadcast/bolt-ai-frontend.git"
-  },
-  "//repository": "Required by GitHub Packages: it resolves the owning repository from this field and refuses a publish that does not name one. It is also what makes the package page link back to the source.",
   "license": "UNLICENSED",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
-  },
-  "//publishConfig": "Pinned to GitHub Packages so a stray `npm publish` cannot put an UNLICENSED first-party component on the public registry. `restricted` is GitHub Packages' default for an org scope and is stated rather than assumed, because the failure mode of getting it wrong is public.",
   "type": "module",
   "types": "./index.d.ts",
   "main": "./dist/bolt-ai-ask.js",
