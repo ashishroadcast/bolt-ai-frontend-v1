@@ -1,4 +1,4 @@
-# `@bolt-ai/ask-element`
+# `@roadcast/ask-element`
 
 Ask — the assistant surface from the Bolty console — as a `<bolt-ai-ask>`
 custom element. One self-contained ES module: React, every dependency, and
@@ -9,15 +9,30 @@ Built from `src/ask/` in this repo by `npm run build:element`. **Do not edit
 
 ## Install
 
+Published to **GitHub Packages**, not the public registry — it is a
+first-party, `UNLICENSED` component. A consumer therefore needs the scope
+pointed at that registry once, in its own `.npmrc`:
+
 ```
-npm install @bolt-ai/ask-element
+@roadcast:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
+
+then:
+
+```
+npm install @roadcast/ask-element
+```
+
+The token needs `read:packages` only. Without the scope line the install fails
+against npmjs.com with a 404, which reads as "no such package" rather than
+"wrong registry" — so that is the first thing to check.
 
 ## Use
 
 ```ts
-import '@bolt-ai/ask-element';           // registers <bolt-ai-ask>
-import type { BoltAiAskElement } from '@bolt-ai/ask-element';
+import '@roadcast/ask-element';           // registers <bolt-ai-ask>
+import type { BoltAiAskElement } from '@roadcast/ask-element';
 
 const ask = document.createElement('bolt-ai-ask');
 ask.baseUrl = 'https://bolt-ai.example.com';
@@ -27,7 +42,7 @@ document.body.append(ask);
 ```
 
 The import is a **side effect** — it defines the element and returns nothing
-you need. In a host that code-splits, `await import('@bolt-ai/ask-element')`
+you need. In a host that code-splits, `await import('@roadcast/ask-element')`
 at the moment the widget is first shown keeps ~1.1MB out of the entry chunk.
 
 `index.d.ts` is the contract; everything settable is documented there.
@@ -49,7 +64,21 @@ same families.
 
 ## Releasing
 
-1. `npm run build:element` in `bolt-ai-frontend/`
-2. Bump `version` here — consumers pin it, and this is what replaced the
-   hand-bumped `?v=` cache-buster the raw asset needed.
-3. Publish, or `npm run pack:element` for a tarball.
+**Automatic.** `.github/workflows/publish-ask-element.yml` publishes on every
+push that touches `src/`, this package, or the element's vite config. A
+consumer on `^1.0.0` picks the new build up with `npm install` — there is
+nothing to copy by hand.
+
+The published version is `major.minor` from the `version` field here, with the
+**patch taken from the CI run number**. So `version` in this file is not what
+ships: it is the source of truth for the first two numbers only. Bump it by
+hand for a feature or a breaking change; leave the patch alone.
+
+Publishing from a laptop is not the path, and `npm publish` here will be
+rejected by the registry as a duplicate version more often than not. If a run
+fails, re-run the workflow (`workflow_dispatch`) rather than publishing
+locally — a hand-published version the workflow does not know about makes the
+run number ambiguous.
+
+`npm run pack:element` still produces a tarball, for a consumer that cannot
+reach the registry at all.
