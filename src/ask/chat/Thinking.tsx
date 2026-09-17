@@ -1,3 +1,4 @@
+import { Bot } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import type { RunStep } from "./runTrace.ts";
 import styles from "./Thinking.module.css";
@@ -26,6 +27,12 @@ export interface ThinkingProps {
  * **Elapsed, because the absence of a number is what makes waiting feel
  * broken.** A reader who can see 40s tick past knows it is working; the same
  * 40s with no counter feels like a hang.
+ *
+ * Visually, this is Figma's "Thinking response" tile: a bordered card
+ * rather than a bare line, an orb ring standing in for the agent's own
+ * avatar, and a gradient label — matching the rest of the redesigned
+ * conversation surface (Thread.module.css's `.failure`/`.networkLost` use
+ * the same card shape).
  */
 export function Thinking({ steps, startedAt }: ThinkingProps): ReactElement {
   const current = steps.length > 0 ? steps[steps.length - 1] : null;
@@ -33,19 +40,20 @@ export function Thinking({ steps, startedAt }: ThinkingProps): ReactElement {
 
   return (
     <div className={styles.thinking} role="status" aria-live="polite">
+      <span className={styles.ring} aria-hidden="true">
+        <Bot size={14} strokeWidth={2} />
+      </span>
+      {/* Keyed on the label so React remounts it and the crossfade replays;
+          without the key the text swaps in place with no transition at all. */}
+      <span className={styles.label} key={current?.label ?? "thinking"}>
+        {current?.label ?? "Thinking..."}
+      </span>
       <span className={styles.dots} aria-hidden="true">
         <span className={styles.dot} />
         <span className={styles.dot} />
         <span className={styles.dot} />
       </span>
-      {/* Keyed on the label so React remounts it and the crossfade replays;
-          without the key the text swaps in place with no transition at all. */}
-      <span className={styles.label} key={current?.label ?? "thinking"}>
-        {current?.label ?? "Thinking"}
-      </span>
-      {elapsed !== null && (
-        <span className={styles.elapsed}>{elapsed}</span>
-      )}
+      {elapsed !== null && <span className={styles.elapsed}>{elapsed}</span>}
     </div>
   );
 }

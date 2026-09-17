@@ -21,6 +21,34 @@
 }
 
 /*
+ * Doubled per the shared control's cascade contract (controls.module.css).
+ * Figma's own answer footer shows Copy/Rerun/the ratings as bare icons,
+ * no border — lighter than the bordered pill this control shares with
+ * History's row actions and a table's page buttons. Overridden here
+ * rather than in controls.module.css itself, since those other consumers
+ * (a destructive Delete, a page button) still read better bordered.
+ */
+.action.action {
+  border-color: transparent;
+  background: transparent;
+  padding: 3px 6px;
+}
+
+.action.action:hover {
+  background: var(--ground-lift);
+  border-color: transparent;
+}
+
+/* "Was this helpful?", ahead of the two rating icons — Figma's own
+   microcopy for this row. */
+.ratingPrompt {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+/*
  * A recorded rating keeps its state visible — filled tile plus the word,
  * so the outcome survives a screenshot and does not rely on colour.
  *
@@ -32,8 +60,8 @@
 .rated.rated,
 .rated.rated:hover {
   background: var(--signal-soft);
-  border-color: var(--signal);
-  color: var(--signal);
+  border-color: transparent;
+  color: var(--ask-accent-from, var(--signal));
 }
 
 .ratingError {

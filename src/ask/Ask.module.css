@@ -14,6 +14,45 @@
  */
 .screen {
   /*
+   * The Figma redesign ("Report — Web Master", node 40005764:25957 and
+   * siblings) — a distinct visual language from the console's own
+   * bottle-green operations tokens (styles/tokens.css): blue-to-teal
+   * gradient accent, Inter/Manrope type, soft pastel cards. Overridden here
+   * rather than in styles/tokens.css so only the Ask subtree adopts it —
+   * every other route keeps the console's tokens untouched, since
+   * everything downstream (Composer, Thread, RunMeta, HistoryPanel,
+   * AgentPicker, controls.module.css's shared `.pill`) reads these same
+   * custom-property names and cascades automatically.
+   */
+  --ask-accent-from: #6b96f1;
+  --ask-accent-to: #16c5bc;
+  --ask-accent-gradient: linear-gradient(90deg, var(--ask-accent-from), var(--ask-accent-to));
+  --ask-avatar-bg: #e9f9ff;
+  --ask-card-tint: rgba(143, 201, 242, 0.2);
+  --ask-asked-from: #dff6ff;
+  --ask-asked-to: #f0fffb;
+  --ask-asked-border: #d8eef8;
+
+  --surface: #ffffff;
+  --ground: #ffffff;
+  --ground-lift: #f3f6fb;
+  --surface-sunk: #f7f9fc;
+  --rule: #e6e9ef;
+  --rule-soft: #f0f2f5;
+  --fg: #1f2937;
+  --fg-dim: #6b7280;
+  --fg-faint: #9ca3af;
+  --signal: var(--ask-accent-from);
+  --signal-hover: #5a85e0;
+  --signal-soft: #eef4ff;
+  --on-signal: #ffffff;
+  --font-display: "Manrope", "Inter", -apple-system, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Inter", -apple-system, sans-serif;
+  --radius-control: 8px;
+  --lift-float: 0 8px 24px -12px rgba(31, 40, 39, 0.18);
+
+  /*
    * How wide a conversation may get, set once and read by the thread
    * (Thread.module.css) and the composer alike. It is a chat, and a chat
    * that runs the full width of a 1600px pane is the "huge" Saurabh was
@@ -39,7 +78,10 @@
   --ask-bleed: var(--ask-host-padding, 20px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  overflow: hidden;
+  background: var(--surface);
+  border-inline: 1px solid var(--rule-soft);
+  box-shadow: 0 0 8px 0 rgba(31, 40, 39, 0.08);
   /*
    * WHO SCROLLS.
    *
@@ -58,37 +100,108 @@
   min-width: 0;
 }
 
-/* The header lines up with the conversation rather than with the pane, so
-   who-you-are-talking-to sits directly above what they said. */
-.topBar {
+/* The 4px gradient stripe across the very top of the panel — the one
+   constant across every state in the Figma file (welcome, thinking,
+   answered, errored). Always the first child of `.screen`. */
+.accentLine {
+  flex: none;
+  height: 4px;
+  width: 100%;
+  background: var(--ask-accent-gradient);
+}
+
+/*
+ * The panel's own identity strip: who you're talking to, plus the two
+ * actions that used to be text pills in the topBar ("New" / "History").
+ * Replaces the picker-only topBar the console used to open on — the
+ * picker itself moves to `.pickerRow` just below, so agent-switching
+ * survives the redesign instead of being dropped for parity with Figma's
+ * single-assistant mock (see conversation: "keep it, placed below the
+ * header").
+ */
+.panelHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 52px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.agentProfile {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
-  width: 100%;
-  max-width: var(--chat-col);
-  margin-inline: auto;
+  min-width: 0;
 }
 
-.topActions {
+.avatarShield {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--ask-avatar-bg);
+  color: var(--ask-accent-from);
+}
+
+.headerTitle {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headerActions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-left: auto;
+  gap: 4px;
+  flex: none;
 }
 
-.topAction {
-  composes: pill from "./chat/controls.module.css";
+.iconAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
 }
 
-/* Doubled per the shared control's cascade contract
-   (chat/controls.module.css). One size up from the answer's own controls:
-   these act on the whole screen rather than on a single message, and a
-   header of --text-micro buttons reads as a footnote. */
-.topAction.topAction {
-  padding: 5px 10px;
-  font-size: var(--text-small);
-  background: var(--surface);
+.iconAction:hover:not(:disabled) {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+.iconAction:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.iconAction:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+/* The agent picker's own row, unchanged in function — see conversation:
+   dropped from the header row itself so the header can match Figma's
+   avatar+title+actions shape, but kept a click away rather than removed. */
+.pickerRow {
+  flex: none;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--rule);
 }
 
 .scroll {
@@ -103,139 +216,61 @@
    * is set.
    */
   min-height: 0;
-  overflow-y: var(--ask-scroll-overflow, visible);
+  overflow-y: var(--ask-scroll-overflow, auto);
   /* Never sideways: a wide table scrolls inside its own container
      (parts/DataTable.module.css), and a horizontally scrolling chat column
      means the composer drifts away from the messages above it. */
   overflow-x: hidden;
+  padding: 28px 20px;
 }
 
 /*
- * Sticks to the bottom of the thread's own scrollport, not its padding
- * box: negative margins matching Shell.module.css's `.thread` padding
- * (16px 20px 20px) cancel that padding on all three sides the bar
- * touches, and the matching negative `bottom` offset moves the sticky
- * trigger point flush with the true bottom edge instead of leaving a
- * 20px gap of bare ground below it. Positive top margin keeps the normal
- * rhythm above it when nothing is scrolled.
+ * Sticks to the bottom of the thread's own scrollport. No longer a
+ * negative-margin bleed to the pane edge — the new panel chrome already
+ * runs edge to edge (`.screen` owns its own border/shadow now), so the
+ * composer just sits as the last flex child, full width, border-top only.
  */
 .composerBar {
-  position: sticky;
-  bottom: calc(-1 * var(--ask-bleed));
-  margin: 14px calc(-1 * var(--ask-bleed)) calc(-1 * var(--ask-bleed));
+  flex: none;
   background: var(--surface);
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--rule-soft);
+  box-shadow: 0 -4px 8px rgba(183, 239, 255, 0.1);
+  padding: 16px 16px 24px;
 }
 
-/*
- * The field itself lines up with the conversation above it, while the bar
- * behind it still spans the pane — a composer that stopped short of the
- * edges would read as a floating widget rather than as the bottom of the
- * screen. The extra 40px matches Composer's own horizontal padding
- * (shell/Composer.module.css), so it is the input, not the box around it,
- * that agrees with `--chat-col`.
- */
 .composerInner {
   width: 100%;
-  max-width: calc(var(--chat-col) + 40px);
-  margin-inline: auto;
 }
 
-/* Behind the History drawer. Mixed from the console's own ink rather than
-   an arbitrary black, so the page dims towards the palette it is already
-   painted in. */
-.scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 39;
-  border: 0;
-  padding: 0;
-  cursor: default;
-  background: color-mix(in srgb, var(--fg) 24%, transparent);
-}
-
-/* Ask's own empty state. The console's shared `EmptyState` component stays
-   in the console — it is used by seven admin routes — so the nine lines of
-   markup this styles are duplicated rather than imported, which is what
-   keeps this package free of console imports. */
+/* ── The welcome state: hero orb + quick actions ─────────────────────
+   Figma's "ai-agent-welcome-panel". Ask's own — the console's shared
+   `EmptyState` component stays in the console (used by seven admin
+   routes); this is a different screen entirely now, not a reskinned
+   title+body, so it lives beside it rather than trying to share it. */
 .empty {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  max-width: 46ch;
-  margin: auto;
-  padding: 48px 16px;
-}
-
-.emptyTitle {
-  font-family: var(--font-display);
-  font-size: var(--text-h2);
-  font-weight: 700;
-  color: var(--fg);
-  margin: 0;
-}
-
-.emptyBody {
-  font-family: var(--font-body);
-  font-size: var(--text-small);
-  color: var(--fg-dim);
-  margin: 0;
+  gap: 50px;
+  width: 100%;
+  max-width: var(--chat-col);
+  margin: auto auto 0;
 }
 
 /* Narrow column — see Composer.module.css for why this is `@container`. */
 @container ask (max-width: 34rem) {
-  /*
-   * A GUTTER, first of all.
-   *
-   * The console's shell padded this screen; a panel does not, so the picker
-   * row and the composer sat flush against both edges — the bot tile touched
-   * the border on the left and the select ran off the right. Nothing here
-   * looked designed because nothing here had a margin.
-   */
-  .screen {
-    --ask-gutter: 14px;
-    gap: 10px;
-    padding-inline: var(--ask-gutter);
-    padding-top: 12px;
+  .panelHeader {
+    padding: 0 14px;
   }
 
-  .topBar {
-    /* One row for as long as it fits: the picker takes the space, the
-       actions keep their intrinsic width. Stacking at 420px put "History"
-       alone on a line with a third of the panel empty beside it, which is
-       what looked unfinished. */
-    gap: 8px;
-    flex-wrap: nowrap;
+  .pickerRow {
+    padding: 8px 14px;
   }
 
-  .topActions {
-    flex: none;
-    gap: 6px;
+  .scroll {
+    padding: 20px 14px;
   }
 
-  /*
-   * The composer bar spans the full panel while its contents keep the
-   * gutter. A bar that stopped short of the edges would float; contents
-   * that touch them look clipped — which is what was happening.
-   */
   .composerBar {
-    margin-inline: calc(-1 * var(--ask-gutter));
-    margin-bottom: 0;
-  }
-
-  .composerInner {
-    max-width: none;
-    padding-inline: 0;
-  }
-
-  .empty {
-    /* 46ch of measure does not exist here; the padding was what squeezed the
-       text into a two-word-per-line column. */
-    padding: 32px 4px;
-    max-width: none;
-    gap: 10px;
+    padding: 12px 14px 20px;
   }
 }

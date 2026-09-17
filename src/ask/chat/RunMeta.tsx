@@ -88,6 +88,7 @@ function RatingButtons({ messageId }: { messageId: number }): ReactElement {
 
   return (
     <>
+      <span className={styles.ratingPrompt}>Was this helpful?</span>
       <button
         type="button"
         className={`${styles.action} ${recorded === "up" ? styles.rated : ""}`}

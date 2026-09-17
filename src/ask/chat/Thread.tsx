@@ -15,12 +15,32 @@ import { answerQuestion, forgetCachedPlan } from "./feedbackApi.ts";
 import { ReasoningCard } from "./ReasoningCard.tsx";
 import { Thinking } from "./Thinking.tsx";
 import { useAskDisclosure } from "./useDisclosure.ts";
+import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
 import { RerunButton, RunMeta } from "./RunMeta.tsx";
-import { EMPTY_TRACE, type RunTrace } from "./runTrace.ts";
+import { EMPTY_TRACE, formatDuration, type RunTrace } from "./runTrace.ts";
 import styles from "./Thread.module.css";
 import type { ChatMessage } from "./types.ts";
+
+/**
+ * Figma's "AI assistant - Network lost": the browser has no connection at
+ * all, so there is nothing to wait ON — showing the ordinary spinner would
+ * say "still working" about a request that cannot even be sent. Composer
+ * already disables itself the same way (`useOnlineStatus.ts`); this is the
+ * matching notice for a run that was already in flight when the connection
+ * dropped.
+ */
+function NetworkLostNotice(): ReactElement {
+  return (
+    <div className={styles.networkLost} role="status">
+      <span className={styles.networkLostIcon} aria-hidden="true">
+        <Bot size={16} strokeWidth={2} />
+      </span>
+      <span className={styles.networkLostLabel}>Network connection lost!</span>
+    </div>
+  );
+}
 
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -257,6 +277,15 @@ function usedCachedPlan(message: ChatMessage): boolean {
   return phases.some((phase) => phase.phase === "plan" && phase.state === "cached");
 }
 
+/** The duration Figma's "Worked For 12m" header reads — `null` for an
+ * error (nothing was worked for) or a run this session never measured at
+ * all (a reopened message with no usage). Same source RunMeta's facts
+ * strip reads, so the two never disagree. */
+function workedForMs(message: ChatMessage): number | null {
+  if (message.runSummary?.status === "error") return null;
+  return message.usage?.duration_ms ?? message.runSummary?.totalMs ?? null;
+}
+
 function AnsweredTurn({
   message,
   onRerun,
@@ -278,9 +307,15 @@ function AnsweredTurn({
   return (
     <AgentTurn>
       {summary !== undefined && summary.status === "error" && (
-        <p role="alert" className={styles.failure}>
-          {summary.errorText} Try asking again.
-        </p>
+        <div role="alert" className={styles.failure}>
+          <span className={styles.failureIcon} aria-hidden="true">
+            <Bot size={16} strokeWidth={2} />
+          </span>
+          <span className={styles.failureBody}>
+            <span className={styles.failureTitle}>Something went wrong</span>
+            <span className={styles.failureDetail}>{summary.errorText} Try asking again.</span>
+          </span>
+        </div>
       )}
 
       {disclosure.showReasoning && trace.steps.length > 0 && summary !== undefined && (
@@ -304,6 +339,15 @@ function AnsweredTurn({
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
       {disclosure.showQueryResults && <Sheets parts={message.parts} />}
+      {/* Figma's "Worked For 12m" — the same duration RunMeta's facts strip
+          reports below, surfaced again here because Figma places it as the
+          answer's own header rather than only in the measurements strip. */}
+      {workedForMs(message) !== null && (
+        <p className={styles.answerHeader}>
+          <span className={styles.answerHeaderLead}>Worked For </span>
+          <span className={styles.answerHeaderValue}>{formatDuration(workedForMs(message)!)}</span>
+        </p>
+      )}
       {!rendersItsOwnProse(message.parts) && (
         <RevealedAnswer
           messageId={message.id}
@@ -344,15 +388,25 @@ function LiveTurn(): ReactElement | null {
   const { activeRun } = useChatContext();
   const { selection, selectPhase } = useAskInspector();
   const disclosure = useAskDisclosure();
+  const isOnline = useOnlineStatus();
 
   if (activeRun === null) return null;
 
+  const isWaiting = activeRun.text === "";
+
   return (
     <AgentTurn>
-      {/* One or the other, never both: the card IS the detailed version of
-          what `Thinking` says in a line, and showing both would be the
-          machinery this setting exists to remove, plus a duplicate. */}
-      {disclosure.showReasoning ? (
+      {/* The connection notice pre-empts both the reasoning card and the
+          simple Thinking line while the run is still waiting on an answer
+          — there is nothing to report progress ON with no connection at
+          all. Once an answer starts arriving the run is clearly still
+          getting through, so this never covers real content. */}
+      {!isOnline && isWaiting ? (
+        <NetworkLostNotice />
+      ) : disclosure.showReasoning ? (
+        /* One or the other, never both: the card IS the detailed version of
+           what `Thinking` says in a line, and showing both would be the
+           machinery this setting exists to remove, plus a duplicate. */
         <ReasoningCard
           steps={activeRun.trace.steps}
           agentName={activeRun.agentName}
@@ -361,16 +415,14 @@ function LiveTurn(): ReactElement | null {
           selectedPhase={selection?.phase ?? null}
         />
       ) : (
-        activeRun.text === "" && (
-          <Thinking steps={activeRun.trace.steps} startedAt={activeRun.startedAt} />
-        )
+        isWaiting && <Thinking steps={activeRun.trace.steps} startedAt={activeRun.startedAt} />
       )}
       {/* What it is doing and for how long, plus the reasoning while it is
           being written — and only until the answer starts. A status line
           still counting beside a finished answer is worse than none, and
           two blocks of live text at once would leave a reader working out
           which one they asked for. */}
-      {disclosure.showReasoning && activeRun.text === "" && (
+      {isOnline && disclosure.showReasoning && isWaiting && (
         <RunWaiting
           trace={activeRun.trace}
           startedAt={activeRun.startedAt}

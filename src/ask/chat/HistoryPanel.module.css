@@ -1,85 +1,84 @@
 /*
- * A drawer over the console, not a column beside the conversation.
- *
- * It used to be a sticky card between the nav rail and the thread, which
- * put three columns of chrome around one column of content and left the
- * conversation looking like a panel in someone else's layout ("chat
- * history is akwardly placed"). Navigation that is used a few times a
- * session should cost nothing when it is not being used, so it now costs
- * exactly a button until it is opened.
- *
- * Anchored left because that is where this console's navigation lives —
- * it slides over the rail and reads as the same job pushed forward, where
- * the right edge already belongs to the inspector. AskRoute owns the scrim
- * behind it and whether it exists at all.
+ * A screen of the panel, not a layer above it — see HistoryPanel.tsx's own
+ * docstring for why the old `position: fixed` drawer had to go: it was
+ * anchored to the viewport, which breaks a narrow embedded widget. `.panel`
+ * now simply fills whatever `Ask.tsx` gives it below the shared accent
+ * line, the same flex-column shape the normal header+thread+composer
+ * stack uses.
  */
 .panel {
-  position: fixed;
-  inset-block: 0;
-  left: 0;
-  z-index: 40;
-  width: min(330px, 86vw);
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  background: var(--surface);
-  border-right: 1px solid var(--rule);
-  box-shadow: var(--lift-float);
-  padding: 14px;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .panel {
-    animation: slide-in 140ms ease-out;
-  }
-}
-
-@keyframes slide-in {
-  from {
-    transform: translateX(-100%);
-  }
+  min-height: 0;
 }
 
 .head {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 20px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--rule-soft);
 }
 
-.iconTile {
+.back {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--signal-soft);
-  color: var(--signal);
   flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
 }
 
-.title {
-  font-family: var(--font-display);
+.back:hover {
+  background: var(--ground-lift);
+}
+
+.back:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.headingCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.heading {
+  font-family: var(--font-body);
   font-weight: 600;
-  font-size: var(--text-h3);
+  font-size: 20px;
   color: var(--fg);
 }
 
-.close {
-  composes: pill from "./controls.module.css";
-  margin-left: auto;
+.subheading {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--fg-dim);
 }
 
-/* Doubled per the shared control's cascade contract (controls.module.css).
-   Square, because it holds a glyph and no word. */
-.close.close {
-  padding: 4px;
+.controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--rule-soft);
 }
 
 .searchField {
   position: relative;
   display: flex;
   align-items: center;
+  flex: 1;
+  min-width: 0;
 }
 
 .searchIcon {
@@ -93,7 +92,7 @@
   width: 100%;
   background: var(--surface-sunk);
   border: 1px solid var(--rule);
-  border-radius: 7px;
+  border-radius: 999px;
   padding: 6px 10px 6px 28px;
   font-size: var(--text-small);
   color: var(--fg);
@@ -105,11 +104,34 @@
   outline-offset: 1px;
 }
 
-.list {
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 20px;
+  padding: 8px 20px 24px;
+}
+
+.dateGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dateLabel {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin: 0;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -121,24 +143,21 @@
 .row {
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
-  padding-bottom: 2px;
-}
-
-.row:hover {
-  background: var(--ground-lift);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  box-shadow: 0 2px 4px rgba(31, 40, 39, 0.04);
 }
 
 .item {
   width: 100%;
   text-align: left;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 12px;
   background: transparent;
   border: 0;
-  border-radius: 7px;
-  padding: 8px 8px 4px;
+  padding: 12px 12px 12px 14px;
   cursor: pointer;
 }
 
@@ -152,40 +171,77 @@
   opacity: 0.6;
 }
 
+.itemIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  color: var(--ask-accent-from, var(--signal));
+}
+
+.itemBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.itemTitleRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .itemHeading {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-small);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
   color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemStamp {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: #94a3b8;
 }
 
 .itemSnippet {
-  font-size: var(--text-micro);
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--fg-dim);
   overflow: hidden;
   text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
 }
 
 /* How much conversation is behind this row — the one thing that
    distinguishes a one-shot question from a thread worth reopening. */
 .itemCount {
-  font-family: var(--font-mono);
-  font-size: var(--text-micro);
+  font-family: var(--font-body);
+  font-size: 10.5px;
   color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
 }
 
 /* Share/Delete — always visible rather than hover-only, so keyboard and
-   touch reach them the same way a mouse-hover reveal never would. */
+   touch reach them the same way a mouse-hover reveal never would. Not in
+   Figma's own frame, which shows neither — but both are real actions this
+   console already had, so they stay, tucked under the card. */
 .rowActions {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding: 0 8px 6px;
+  padding: 0 12px 8px 14px;
   flex-wrap: wrap;
 }
 
@@ -227,7 +283,7 @@
 .rowError {
   font-size: var(--text-micro);
   color: var(--critical);
-  margin: 0 8px 6px;
+  margin: 0 12px 8px 14px;
 }
 
 .status {
@@ -237,7 +293,7 @@
 }
 
 .loading {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--text-small);
   color: var(--fg-faint);
   margin: 0;
@@ -260,23 +316,24 @@
    rather than free-standing buttons so the pair reads as one control with
    one of them chosen, which is what a tablist is. */
 .tabs {
+  flex: none;
   display: flex;
   gap: 2px;
   padding: 2px;
   background: var(--surface-sunk);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: 999px;
 }
 .tab {
-  flex: 1;
   padding: 5px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--fg-dim);
   font-family: var(--font-body);
   font-size: var(--text-small);
   cursor: pointer;
+  white-space: nowrap;
 }
 .tab:hover {
   color: var(--fg);
@@ -284,9 +341,41 @@
 .tabActive {
   background: var(--surface);
   color: var(--fg);
-  box-shadow: var(--lift-float);
+  box-shadow: 0 1px 2px rgba(31, 40, 39, 0.08);
 }
 .tab:focus-visible {
   outline: 2px solid var(--signal);
   outline-offset: 1px;
+}
+
+.footer {
+  flex: none;
+  padding: 16px 16px 24px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.newConversation {
+  width: 100%;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ask-accent-gradient, var(--signal));
+  color: var(--on-signal);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.newConversation:hover {
+  filter: brightness(1.05);
+}
+
+.newConversation:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
 }

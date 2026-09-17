@@ -182,7 +182,7 @@ describe("HistoryPanel", () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: [], next_cursor: null })));
     renderPanel(fetchMock);
 
-    expect(screen.getByRole("dialog", { name: "Conversation history" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Conversation history" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: /search past conversations/i })).toBeInTheDocument();
   });
 
@@ -236,7 +236,7 @@ describe("HistoryPanel", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("closes on Escape and on its own close button", () => {
+  it("closes on Escape and on its own back arrow", () => {
     const onClose = vi.fn();
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: [], next_cursor: null })));
     renderPanel(fetchMock, onClose);
@@ -244,7 +244,7 @@ describe("HistoryPanel", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 

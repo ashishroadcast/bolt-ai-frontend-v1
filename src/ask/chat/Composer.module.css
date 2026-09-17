@@ -1,29 +1,56 @@
 /*
  * No longer a Shell grid row (Shell.module.css dropped the "composer"
  * area) — AskRoute.tsx renders this inside its own scrolling thread column
- * and sticks it to that column's bottom edge; see AskRoute.module.css for
- * the sticky/negative-margin treatment that bridges the thread's own
- * padding. This file only ever styles the bar's own contents.
+ * and sticks it to that column's bottom edge; see Ask.module.css for the
+ * composer bar that wraps this. This file only ever styles the pill
+ * itself.
  */
 .composer {
-  border-top: 1px solid var(--rule);
-  background: var(--surface);
-  padding: 12px 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  width: 100%;
+  height: 46px;
+  padding: 8px 8px 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+}
+
+.composer[data-offline] {
+  background: var(--surface-sunk);
+  border-color: var(--rule);
+}
+
+.leftBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.paperclipBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: not-allowed;
 }
 
 .field {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--radius-control);
-  padding: 10px 13px;
+  background: transparent;
+  border: 0;
   color: var(--fg);
   font-family: var(--font-body);
-  font-size: var(--text-body);
+  font-size: 13px;
 }
 
 .field::placeholder {
@@ -31,84 +58,45 @@
 }
 
 .field:focus-visible {
-  outline: 2px solid var(--signal);
-  outline-offset: 1px;
+  outline: none;
 }
 
 .field:disabled {
-  background: var(--surface-sunk);
   color: var(--fg-faint);
 }
 
-.btn {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: var(--text-body);
-  letter-spacing: 0.01em;
-  background: var(--signal);
-  color: var(--on-signal);
-  border: 0;
-  border-radius: var(--radius-control);
-  padding: 9px 20px;
-  cursor: pointer;
+.send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ask-accent-gradient, var(--signal));
+  color: var(--on-signal);
+  cursor: pointer;
 }
 
-.btn:hover:not(:disabled) {
-  background: var(--signal-hover);
-}
-
-.btn:disabled {
+.send:disabled {
   cursor: default;
-  opacity: 0.7;
+  background: var(--rule);
+  color: var(--fg-faint);
 }
 
-.btn:focus-visible {
+.send:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
-}
-
-.hint {
-  font-family: var(--font-mono);
-  font-size: var(--text-micro);
-  color: var(--fg-faint);
-  white-space: nowrap;
 }
 
 /*
  * Narrow column. `@container`, not `@media` — the widget declares itself a
  * query container in `element.css`, because a shadow root's media queries
  * resolve against the VIEWPORT and would report 1440px for a 420px panel.
- *
- * What actually broke at 420px, from the screenshot: "Enter to send" pushed
- * the field and the button until the hint itself was cut off at the panel
- * edge and the field had no room to show its placeholder.
  */
 @container ask (max-width: 34rem) {
   .composer {
-    /* Matches the screen's gutter (Ask.module.css) so the field lines up
-       with the picker above it rather than sitting a few pixels off. */
-    padding: 10px 14px;
-    gap: 8px;
-  }
-
-  .btn {
-    /* Square-ish rather than wide: at this width every pixel the button
-       takes is one the field loses, and "Ask" needs no more room than its
-       own four letters. */
-    padding: 9px 16px;
-  }
-
-  /*
-   * The hint goes, rather than wrapping to its own line.
-   *
-   * It is a keyboard affordance for a control the user is already looking
-   * at, and Enter works whether or not it says so. Spending a whole row of a
-   * narrow panel to repeat that costs more than it tells anyone — and
-   * wrapping it under the field is exactly the "why is there a stray line of
-   * grey text" layout it was never meant to be.
-   */
-  .hint {
-    display: none;
+    padding: 6px 6px 6px 10px;
   }
 }

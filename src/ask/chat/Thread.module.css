@@ -36,16 +36,16 @@
   gap: 5px;
 }
 
-/* Filled, not outlined: a sheet in this console is white with a hairline,
-   and the question was wearing exactly that costume while being the one
-   thing on the page that is not the agent's output. The flattened
-   bottom-right corner is the same "this side spoke" convention every chat
-   client uses. */
+/* Filled with the Figma gradient wash (dff6ff → f0fffb) rather than a flat
+   tint, and the flattened top-right corner is the same "this side spoke"
+   convention every chat client uses. */
 .asked {
   max-width: min(78%, var(--chat-measure));
-  background: var(--signal-soft);
-  border-radius: 12px 12px 4px 12px;
-  padding: 9px 14px;
+  background: linear-gradient(135deg, var(--ask-asked-from, var(--signal-soft)), var(--ask-asked-to, var(--signal-soft)));
+  border: 1px solid var(--ask-asked-border, transparent);
+  border-radius: 16px 4px 16px 16px;
+  box-shadow: 0 2px 10px 0 rgba(31, 40, 39, 0.05);
+  padding: 12px;
   font-family: var(--font-body);
   font-size: var(--text-body);
   line-height: 1.55;
@@ -78,18 +78,18 @@
   align-items: start;
 }
 
-/* The same tinted tile Sheet, AgentPicker and EmptyState use — the answer
-   is the agent speaking, and it should wear the console's own mark for
-   "an agent is involved here" rather than a bespoke chat avatar. */
+/* The same tinted tile the panel header's own avatar uses — the answer is
+   the agent speaking, and it should wear the assistant's own mark rather
+   than a bespoke chat avatar. */
 .avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
-  background: var(--signal-soft);
-  color: var(--signal);
+  border-radius: 999px;
+  background: var(--ask-avatar-bg, var(--signal-soft));
+  color: var(--ask-accent-from, var(--signal));
   flex: none;
 }
 
@@ -97,18 +97,109 @@
   min-width: 0;
 }
 
-/* An errored run names the failure and the next action, never apologises.
-   Sits above the reasoning card, because "this did not finish" outranks
-   "here is how far it got". */
+/* Figma's "Worked For 12m" — see Thread.tsx's `workedForMs`. */
+.answerHeader {
+  margin: 0 0 4px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.answerHeaderLead {
+  font-family: var(--font-body);
+  font-weight: 600;
+  background: var(--ask-accent-gradient, none);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.answerHeaderValue {
+  font-family: var(--font-body);
+  color: var(--fg-dim);
+}
+
+/*
+ * An errored run, styled after Figma's "Can't find anything" tile: a
+ * quiet round icon, a gradient heading, and two lines of plain-language
+ * detail underneath — never an apology, and never just a red strip of
+ * text. Sits above the reasoning card, because "this did not finish"
+ * outranks "here is how far it got".
+ */
 .failure {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0 0 10px;
-  padding: 8px 11px;
+  padding: 10px;
   border: 1px solid var(--rule);
-  border-left: 3px solid var(--critical);
-  border-radius: 6px;
-  background: var(--critical-soft);
-  color: var(--critical);
-  font-size: var(--text-small);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 2px 10px 0 rgba(31, 40, 39, 0.05);
+}
+
+.failureIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--rule-soft);
+  color: var(--fg-dim);
+}
+
+.failureBody {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.failureTitle {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--ask-accent-gradient, none);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.failureDetail {
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+
+/* Figma's "Network connection lost!" tile — see Thread.tsx's
+   NetworkLostNotice. Same card shape as `.failure`, a single gradient
+   line rather than a title-plus-detail pair. */
+.networkLost {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 2px 10px 0 rgba(31, 40, 39, 0.05);
+  width: 100%;
+}
+
+.networkLostIcon {
+  composes: failureIcon;
+}
+
+.networkLostLabel {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--ask-accent-gradient, none);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
 }
 
 /*

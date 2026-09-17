@@ -1,6 +1,8 @@
+import { ArrowRight, Paperclip } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useAskConfig } from "../config.tsx";
 import { useChatContext } from "./ChatContext.tsx";
+import { useOnlineStatus } from "./useOnlineStatus.ts";
 import styles from "./Composer.module.css";
 
 /*
@@ -22,14 +24,15 @@ import styles from "./Composer.module.css";
 /** The console's own wording. A host in another domain overrides it —
  * `AskConfig.copy` — because "sales, items, discounts" is nonsense on a
  * screen full of vehicles. */
-const DEFAULT_PLACEHOLDER = "Ask about sales, items, discounts, taxes or partners…";
+const DEFAULT_PLACEHOLDER = "How can I help you?";
 
 export function Composer() {
   const [value, setValue] = useState("");
   const { status, sendMessage, selectedAgent } = useChatContext();
   const { copy } = useAskConfig();
+  const isOnline = useOnlineStatus();
   const isStreaming = status === "streaming";
-  const canSend = selectedAgent !== null && !isStreaming;
+  const canSend = selectedAgent !== null && !isStreaming && isOnline;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -40,20 +43,34 @@ export function Composer() {
   }
 
   return (
-    <form className={styles.composer} onSubmit={handleSubmit}>
-      <input
-        type="text"
-        className={styles.field}
-        placeholder={copy?.placeholder ?? DEFAULT_PLACEHOLDER}
-        aria-label="Ask a question"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        disabled={!canSend}
-      />
-      <button type="submit" className={styles.btn} disabled={!canSend}>
-        {isStreaming ? "Asking" : "Ask"}
+    <form className={styles.composer} onSubmit={handleSubmit} data-offline={!isOnline || undefined}>
+      <div className={styles.leftBox}>
+        {/* Visible per the design, but there is nowhere for an attachment
+            to go yet — no upload endpoint exists in agent-service's wire
+            protocol. Disabled rather than wired to nothing, which would be
+            a click that silently does nothing at all. */}
+        <button
+          type="button"
+          className={styles.paperclipBtn}
+          disabled
+          aria-label="Attachments aren't supported yet"
+          title="Attachments aren't supported yet"
+        >
+          <Paperclip size={18} strokeWidth={2} aria-hidden="true" />
+        </button>
+        <input
+          type="text"
+          className={styles.field}
+          placeholder={!isOnline ? "Waiting for connection…" : (copy?.placeholder ?? DEFAULT_PLACEHOLDER)}
+          aria-label="Ask a question"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          disabled={!canSend}
+        />
+      </div>
+      <button type="submit" className={styles.send} disabled={!canSend} aria-label={isStreaming ? "Asking" : "Ask"}>
+        <ArrowRight size={14} strokeWidth={2.25} aria-hidden="true" />
       </button>
-      <span className={styles.hint}>Enter to send</span>
     </form>
   );
 }

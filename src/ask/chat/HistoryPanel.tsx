@@ -1,4 +1,4 @@
-import { History, Link2, Search, Trash2, X } from "lucide-react";
+import { ArrowLeft, Link2, MessageCircle, MessageSquarePlus, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { GatewayError } from "../http/errors.ts";
 import { answerPreview } from "./answerPreview.ts";
@@ -30,6 +30,48 @@ function formatWhen(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(iso));
+}
+
+/** A short time-of-day stamp for a row's own card — Figma shows "10:42 AM"
+ * beside today's entries and a bare date ("Sep 4") beside older ones,
+ * which the date-group heading above the row already disambiguates. */
+function formatStamp(iso: string, bucket: string): string {
+  const date = new Date(iso);
+  if (bucket === "Today" || bucket === "Yesterday") {
+    return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(date);
+  }
+  return new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(date);
+}
+
+function startOfDay(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** Which date group a row falls into, read straight off `created_at` — the
+ * same four buckets Figma's own "AI assistant chat history" frame groups
+ * by (Today / Yesterday / Last week / Earlier). */
+function dateBucket(iso: string): string {
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(new Date(iso))) / 86_400_000);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays <= 7) return "Last week";
+  return "Earlier";
+}
+
+const BUCKET_ORDER = ["Today", "Yesterday", "Last week", "Earlier"];
+
+/** Buckets `items` by `dateBucket`, preserving the server's own ordering
+ * within each bucket (most-recent-first, same as every other list this
+ * console reads from `/agent/conversations`) rather than re-sorting. */
+function groupByDate(items: ConversationSummary[]): Array<[string, ConversationSummary[]]> {
+  const map = new Map<string, ConversationSummary[]>();
+  for (const item of items) {
+    const bucket = dateBucket(item.created_at);
+    const list = map.get(bucket);
+    if (list) list.push(item);
+    else map.set(bucket, [item]);
+  }
+  return BUCKET_ORDER.filter((bucket) => map.has(bucket)).map((bucket) => [bucket, map.get(bucket)!]);
 }
 
 function errorMessage(err: unknown): string {
@@ -71,19 +113,20 @@ function shareLink(id: number): string {
 
 interface HistoryItemProps {
   item: ConversationSummary;
+  bucket: string;
   onOpen: () => void;
   onDeleted: (id: number) => void;
   disabled: boolean;
 }
 
 /**
- * One row: open on the left, Share/Delete on the right. Delete needs a
- * second, explicit click before anything happens — "confirm first; it is
- * not recoverable" (task brief) — kept local to the row (not a
- * `window.confirm`) so it reads the same as everything else in this
- * console and stays reachable by keyboard/screen reader the same way.
+ * One row: an icon tile, title + stamp, preview, open on click — Figma's
+ * "Chat entry" card. Share/Delete live in their own strip under the card
+ * rather than in the mockup (which shows neither), because both are real,
+ * load-bearing actions this console already has and Figma's static frame
+ * simply didn't need to depict.
  */
-function HistoryItem({ item, onOpen, onDeleted, disabled }: HistoryItemProps) {
+function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemProps) {
   const client = useAskClient();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -121,16 +164,18 @@ function HistoryItem({ item, onOpen, onDeleted, disabled }: HistoryItemProps) {
         disabled={disabled}
         aria-label={`Open conversation: ${heading}`}
       >
-        <span className={styles.itemHeading} aria-hidden="true">
-          {heading}
+        <span className={styles.itemIcon} aria-hidden="true">
+          <MessageCircle size={16} strokeWidth={2} />
         </span>
-        {preview !== null && (
-          <span className={styles.itemSnippet} aria-hidden="true">
-            {preview}
+        <span className={styles.itemBody}>
+          <span className={styles.itemTitleRow}>
+            <span className={styles.itemHeading}>{heading}</span>
+            <span className={styles.itemStamp}>{formatStamp(item.created_at, bucket)}</span>
           </span>
-        )}
-        <span className={styles.itemCount} aria-hidden="true">
-          {item.message_count} message{item.message_count === 1 ? "" : "s"}
+          {preview !== null && <span className={styles.itemSnippet}>{preview}</span>}
+          <span className={styles.itemCount}>
+            {item.message_count} message{item.message_count === 1 ? "" : "s"}
+          </span>
         </span>
       </button>
 
@@ -188,20 +233,18 @@ function HistoryItem({ item, onOpen, onDeleted, disabled }: HistoryItemProps) {
 }
 
 /**
- * Past conversations: a searchable list, each row showing its own
- * heading, a readable one-line preview of the answer and how many
- * messages it holds; clicking one reopens it via
+ * Past conversations, grouped by when they happened: a searchable list,
+ * each row showing its own heading, a readable one-line preview of the
+ * answer and how many messages it holds; clicking one reopens it via
  * `ChatContext.loadConversation` and dismisses the panel.
  *
- * **This is navigation, and it is no longer a column.** It used to sit as
- * a third card between the nav rail and the conversation, with its own
- * search field and a pair of buttons on every row — Saurabh: "chat
- * history is akwardly placed". Three columns of chrome around one column
- * of content is what made the thread read as a panel rather than as the
- * screen. It is a drawer now: absent until asked for, over the page rather
- * than beside it, and closing itself the moment it has done its job.
- * `AskRoute` owns whether it is open; this component owns everything
- * inside it.
+ * **A full-panel view, not a drawer.** It used to be a `position: fixed`
+ * overlay anchored to the viewport — right for the console, where it
+ * slides over the nav rail, but wrong for a narrow embedded widget: fixed
+ * positioning inside a 400px panel covers the HOST PAGE, not just the
+ * widget. `Ask.tsx` now swaps the whole screen's content for this one
+ * (own header, own footer) instead, matching Figma's own "AI assistant
+ * chat history" frame — a screen of the same panel, not a layer above it.
  *
  * **The preview is cleaned up, not merely truncated** — see
  * `answerPreview.ts`. An analytics answer's own text is routinely a
@@ -217,28 +260,10 @@ function HistoryItem({ item, onOpen, onDeleted, disabled }: HistoryItemProps) {
  * on every keystroke of the search box. So this shows when the
  * conversation happened rather than inventing a question from data it does
  * not have — the fix belongs in `ConversationSummaryOut`.
- *
- * **Reopening never resurrects the run rail** — not by anything this
- * component does, but by construction one layer down: `loadConversation`
- * calls `conversation.hydrateMessages`, which never attaches a
- * `runSummary` (a reopened message's transient `data-phase` events never
- * reached `messages.meta.ui_parts` to begin with — `StreamWriter.
- * persisted_parts`'s own guarantee), and `Thread.tsx`'s `PhaseRail` only
- * ever renders from `activeRun`, which `loadConversation` never touches.
- * See `chat/useChat.ts`'s own docstring for the fuller mechanism and
- * `AskRoute.test.tsx` for the click-through proof.
- *
- * **The real "history doesn't open" bug lived in `useChat.ts`, not here**
- * — see that file's own note on `mountedRef`. This component's fetch,
- * render and click wiring were correct the whole time; a StrictMode-only
- * dev bug dropped the `setMessages` call that would have shown what this
- * panel had already loaded successfully.
  */
 export interface HistoryPanelProps {
-  /** Dismisses the drawer. Called on Escape, on the close button, and
-   * once a conversation has actually opened — a list that stays up over
-   * the thread it just navigated to is the same "in the way" complaint in
-   * a smaller form. */
+  /** Returns to the conversation screen. Called on Escape, on the back
+   * arrow, and once a conversation has actually opened. */
   onClose: () => void;
 }
 
@@ -330,85 +355,108 @@ export function HistoryPanel({ onClose }: HistoryPanelProps) {
     statusTimer.current = setTimeout(() => setStatusMessage(null), STATUS_MS);
   }
 
+  function handleStartNew() {
+    clearConversation();
+    onClose();
+  }
+
+  const groups = items !== null ? groupByDate(items) : [];
+
   return (
-    <div className={styles.panel} role="dialog" aria-label="Conversation history">
+    <div className={styles.panel} role="region" aria-label="Conversation history">
       <div className={styles.head}>
-        <span className={styles.iconTile} aria-hidden="true">
-          <History size={14} strokeWidth={2} />
-        </span>
-        <span className={styles.title}>History</span>
-        <button type="button" className={styles.close} onClick={onClose} aria-label="Close history">
-          <X size={15} strokeWidth={2} aria-hidden="true" />
+        <button type="button" className={styles.back} onClick={onClose} aria-label="Back to conversation">
+          <ArrowLeft size={20} strokeWidth={2} aria-hidden="true" />
+        </button>
+        <div className={styles.headingCopy}>
+          <span className={styles.heading}>Chat history</span>
+          <span className={styles.subheading}>Pick up where you left off</span>
+        </div>
+      </div>
+
+      <div className={styles.controls}>
+        <div className={styles.tabs} role="tablist" aria-label="Which conversations to show">
+          {(
+            [
+              ["mine", "Mine"],
+              ["channel", "Channels"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={source === value}
+              className={source === value ? `${styles.tab} ${styles.tabActive}` : styles.tab}
+              onClick={() => handleSourceChange(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className={styles.searchField}>
+          <Search size={13} strokeWidth={2} className={styles.searchIcon} aria-hidden="true" />
+          <input
+            ref={searchRef}
+            type="search"
+            className={styles.searchInput}
+            placeholder="Search conversations"
+            aria-label="Search past conversations"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className={styles.body}>
+        {statusMessage !== null && (
+          <p role="status" className={styles.status}>
+            {statusMessage}
+          </p>
+        )}
+
+        {error !== null && (
+          <p role="alert" className={styles.error}>
+            {error}
+          </p>
+        )}
+        {error === null && items === null && <p className={styles.loading}>Loading…</p>}
+        {error === null && items !== null && items.length === 0 && (
+          <p className={styles.empty}>
+            {searchInput.trim() !== ""
+              ? "Nothing matches that search."
+              : source === "channel"
+                ? "No channel runs yet. Complaints and chats handled by an agent appear here."
+                : "No past conversations yet."}
+          </p>
+        )}
+        {error === null &&
+          groups.map(([bucket, bucketItems]) => (
+            <div key={bucket} className={styles.dateGroup}>
+              <p className={styles.dateLabel}>{bucket}</p>
+              <ul className={styles.list}>
+                {bucketItems.map((item) => (
+                  <HistoryItem
+                    key={item.id}
+                    item={item}
+                    bucket={bucket}
+                    onOpen={() => void handleOpen(item.id)}
+                    onDeleted={handleDeleted}
+                    disabled={openingId !== null}
+                  />
+                ))}
+              </ul>
+            </div>
+          ))}
+      </div>
+
+      <div className={styles.footer}>
+        <button type="button" className={styles.newConversation} onClick={handleStartNew}>
+          <MessageSquarePlus size={16} strokeWidth={2} aria-hidden="true" />
+          <span>Start a new conversation</span>
         </button>
       </div>
-
-      <div className={styles.tabs} role="tablist" aria-label="Which conversations to show">
-        {(
-          [
-            ["mine", "Mine"],
-            ["channel", "Channels"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={source === value}
-            className={source === value ? `${styles.tab} ${styles.tabActive}` : styles.tab}
-            onClick={() => handleSourceChange(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.searchField}>
-        <Search size={13} strokeWidth={2} className={styles.searchIcon} aria-hidden="true" />
-        <input
-          ref={searchRef}
-          type="search"
-          className={styles.searchInput}
-          placeholder="Search conversations"
-          aria-label="Search past conversations"
-          value={searchInput}
-          onChange={(event) => setSearchInput(event.target.value)}
-        />
-      </div>
-
-      {statusMessage !== null && (
-        <p role="status" className={styles.status}>
-          {statusMessage}
-        </p>
-      )}
-
-      {error !== null && (
-        <p role="alert" className={styles.error}>
-          {error}
-        </p>
-      )}
-      {error === null && items === null && <p className={styles.loading}>Loading…</p>}
-      {error === null && items !== null && items.length === 0 && (
-        <p className={styles.empty}>
-          {searchInput.trim() !== ""
-            ? "Nothing matches that search."
-            : source === "channel"
-              ? "No channel runs yet. Complaints and chats handled by an agent appear here."
-              : "No past conversations yet."}
-        </p>
-      )}
-      {error === null && items !== null && items.length > 0 && (
-        <ul className={styles.list}>
-          {items.map((item) => (
-            <HistoryItem
-              key={item.id}
-              item={item}
-              onOpen={() => void handleOpen(item.id)}
-              onDeleted={handleDeleted}
-              disabled={openingId !== null}
-            />
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

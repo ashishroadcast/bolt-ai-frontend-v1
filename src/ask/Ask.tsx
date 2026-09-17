@@ -1,9 +1,10 @@
-import { History, SquarePen } from "lucide-react";
+import { Bot, CircleX, History } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import styles from "./Ask.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
 import { ChatProvider, useChatContext } from "./chat/ChatContext.tsx";
 import { Composer } from "./chat/Composer.tsx";
+import { EmptyState } from "./EmptyState.tsx";
 import { HistoryPanel } from "./chat/HistoryPanel.tsx";
 import { Thread } from "./chat/Thread.tsx";
 import { AskProvider, useAskConfig, type AskConfig } from "./config.tsx";
@@ -52,10 +53,8 @@ export interface AskProps {
 }
 
 const DEFAULT_EMPTY = {
-  title: "Ask about your business, in plain language",
-  body:
-    "Top items last week, why discounts spiked at Bandra, whether Swiggy or dine-in carried the " +
-    "weekend. The agent researches, plans and runs the query, then shows its work as it goes.",
+  title: "Hi! Welcome to AI Assistant",
+  body: "Your intelligent companion for reports & analytics",
 };
 
 export function Ask({ config, initialConversationId, emptyState }: AskProps) {
@@ -113,39 +112,67 @@ export function AskScreen({
     historyButtonRef.current?.focus();
   }, []);
 
+  if (isHistoryOpen) {
+    // A view-swap, not an overlay drawer: HistoryPanel now fills the whole
+    // panel (its own back-arrow header, grouped list, and "start a new
+    // conversation" footer) rather than sliding in over a scrim. The old
+    // fixed-position drawer was anchored to the viewport, which is right
+    // for the console (it slides over the nav rail) but breaks a narrow
+    // embedded panel — a `position: fixed` drawer inside a 400px widget
+    // covers the HOST PAGE, not just the widget. Swapping the panel's own
+    // content sidesteps that regardless of where Ask is mounted.
+    return (
+      <div className={styles.screen}>
+        <div className={styles.accentLine} />
+        <HistoryPanel onClose={closeHistory} />
+      </div>
+    );
+  }
+
   return (
     <div className={styles.screen}>
-      <div className={styles.topBar}>
-        <AgentPicker />
-        <div className={styles.topActions}>
-          {!isEmpty && (
-            <button type="button" className={styles.topAction} onClick={clearConversation}>
-              <SquarePen size={13} strokeWidth={2} aria-hidden="true" />
-              <span>New</span>
-            </button>
-          )}
+      <div className={styles.accentLine} />
+      <div className={styles.panelHeader}>
+        <div className={styles.agentProfile}>
+          <span className={styles.avatarShield} aria-hidden="true">
+            <Bot size={16} strokeWidth={2} />
+          </span>
+          <span className={styles.headerTitle}>AI Agent Assistant</span>
+        </div>
+        <div className={styles.headerActions}>
           <button
             ref={historyButtonRef}
             type="button"
-            className={styles.topAction}
+            className={styles.iconAction}
             onClick={() => setIsHistoryOpen(true)}
             aria-expanded={isHistoryOpen}
+            aria-label="Conversation history"
+            title="History"
           >
-            <History size={13} strokeWidth={2} aria-hidden="true" />
-            <span>History</span>
+            <History size={18} strokeWidth={2} aria-hidden="true" />
           </button>
+          {!isEmpty && (
+            <button
+              type="button"
+              className={styles.iconAction}
+              onClick={clearConversation}
+              aria-label="Start a new conversation"
+              title="New conversation"
+            >
+              <CircleX size={18} strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
         </div>
+      </div>
+
+      <div className={styles.pickerRow}>
+        <AgentPicker />
       </div>
 
       <div className={styles.scroll}>
         {isEmpty ? (
-          // Ask's own, not the console's `EmptyState`: that one is shared
-          // with seven admin routes and stays there. Copying nine lines of
-          // markup is the cheaper of the two ways to keep this package from
-          // importing the console.
           <div className={styles.empty}>
-            <h2 className={styles.emptyTitle}>{title}</h2>
-            <p className={styles.emptyBody}>{body}</p>
+            <EmptyState title={title} body={body} />
           </div>
         ) : (
           <Thread />
@@ -157,24 +184,6 @@ export function AskScreen({
           <Composer />
         </div>
       </div>
-
-      {isHistoryOpen && (
-        <>
-          {/* Pointer-only, and hidden from assistive tech on purpose: the
-              keyboard already has two ways out of the drawer (its own Close
-              button, and Escape), so a third tab stop that reads as a
-              nameless button would be noise. A <button> rather than a <div>
-              only so the click target is a real interactive element. */}
-          <button
-            type="button"
-            className={styles.scrim}
-            onClick={closeHistory}
-            aria-hidden="true"
-            tabIndex={-1}
-          />
-          <HistoryPanel onClose={closeHistory} />
-        </>
-      )}
     </div>
   );
 }
