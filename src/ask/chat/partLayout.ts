@@ -48,6 +48,10 @@ const COMPOSED_INTENTS = new Set([
   "data-chart",
   "data-comparison",
   "data-summary",
+  // A drafted form is the answer in the strongest sense here: it is the
+  // thing the reader acts on, and the only part on the card that carries a
+  // control. Anything a run retrieved on the way to writing it is working.
+  "data-form-draft",
 ]);
 
 /**

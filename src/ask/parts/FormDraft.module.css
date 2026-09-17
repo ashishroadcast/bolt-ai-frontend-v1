@@ -1,0 +1,281 @@
+/*
+ * A drafted form, offered for review.
+ *
+ * Sheet chrome — surface, hairline, lift — because this IS an artifact of
+ * the run in the way a table or a chart is, and it should read as the same
+ * kind of object laid on the same bench. Not the `Sheet` component itself,
+ * because that one has no footer and this card's whole point is the action
+ * at the bottom of it; adding a footer slot to `Sheet` for one caller would
+ * put this card's concerns into the chrome every other part shares.
+ */
+.draft {
+  background: var(--surface);
+  color: var(--on-sheet);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  margin-bottom: var(--stack);
+  overflow: hidden;
+}
+
+.draft:last-child {
+  margin-bottom: 0;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+  /* Optically centred on the first line of the title rather than the top of
+     a heading block that may wrap to two lines. */
+  margin-top: 1px;
+}
+
+.heading {
+  min-width: 0;
+}
+
+/*
+ * The form's own name, and the only place on this card the display face
+ * appears. A drafted form is named by the person's request — "Vehicle
+ * Registration" — and that name is what they will look for in the forms
+ * list afterwards, so it is set to be recognised again rather than read
+ * once.
+ */
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+/* The three facts that decide whether this form is the right shape at all,
+   in the structural voice: how big it is, when it appears, what kind it is. */
+.sub {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+}
+
+.body {
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+}
+
+.description {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  max-width: 60ch;
+}
+
+/*
+ * When the form appears, for a workflow form only.
+ *
+ * Marked with the accent rule because it is the single setting most likely
+ * to be wrong and most expensive if it is: a form given a trigger it does
+ * not need starts appearing in front of drivers at trip start. It has to be
+ * the thing a skimming reader cannot miss.
+ */
+.trigger {
+  margin: 10px 0 0;
+  padding-left: 9px;
+  border-left: 2px solid var(--signal);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+.fields {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * One field per row, separated by a rule rather than by gap alone.
+ *
+ * A form is read as a sequence — the order is part of what is being
+ * proposed — and spacing alone let a two-line label run visually into the
+ * next field's type chip. The rule is what makes the boundary unambiguous
+ * at the narrow width this actually renders at.
+ */
+.field {
+  padding: 9px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.field:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.fieldLabel {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.4;
+  color: var(--fg);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A word, not a red asterisk. The reader is auditing which fields they will
+ * force someone to answer before the form can be submitted, and an asterisk
+ * makes that a legend lookup on every row.
+ */
+.required {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.fieldMeta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 3px;
+}
+
+.type {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+  flex: none;
+}
+
+/* The choices themselves, because they are most of what makes a choice
+   field right or wrong — and the thing a reader is most likely to change. */
+.options {
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  line-height: 1.45;
+  color: var(--fg-dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.more {
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--signal);
+  cursor: pointer;
+}
+
+.more:hover {
+  text-decoration: underline;
+}
+
+.more:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/*
+ * The action, on the sunk ground rather than the sheet's own surface: it is
+ * not part of the proposal, it is what to do about it.
+ */
+.foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-top: 1px solid var(--rule-soft);
+  background: var(--surface-sunk);
+}
+
+.open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--signal);
+  color: var(--on-signal);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  cursor: pointer;
+  flex: none;
+}
+
+.open:hover {
+  background: var(--signal-hover);
+}
+
+.open:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.note {
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  line-height: 1.4;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+
+/*
+ * Narrow column. `@container`, not `@media` — the widget declares itself a
+ * query container in `element.css`, because a shadow root's media queries
+ * resolve against the VIEWPORT and would report 1440px for a 420px panel.
+ */
+@container ask (max-width: 34rem) {
+  .foot {
+    /* The button takes the full width rather than sitting beside a note
+       that has wrapped to three lines next to it. */
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .open {
+    justify-content: center;
+  }
+}

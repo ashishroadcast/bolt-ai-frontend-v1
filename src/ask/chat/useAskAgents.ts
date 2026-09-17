@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import {
+  createContext,
+  createElement,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { useAskClient } from "../config.tsx";
 import { GatewayError } from "../http/errors.ts";
 
@@ -27,6 +34,24 @@ export interface AskAgent {
   id: number;
   name: string;
   is_active: boolean;
+  /** What the agent is for, as its operator wrote it. Shown in the composer's
+   *  command menu, where a name alone does not say what `/form` will do. */
+  description?: string | null;
+  /**
+   * The `/word` that arms this agent from the composer, when an operator has
+   * configured one. Null for the ordinary case of an agent reached by picking
+   * it from the list.
+   *
+   * It comes off this endpoint rather than a list of its own so the command
+   * menu is built from the agents THIS caller can actually use. A menu from
+   * anywhere else would offer `/form` to a tenant with no form-drafting agent
+   * and the run would then fail on a name that does not exist there.
+   *
+   * Optional in the type, not just nullable: this widget is deployed as a
+   * vendored tarball and can be running against an agent-service that
+   * predates the field.
+   */
+  slash_command?: string | null;
 }
 
 export interface UseAskAgentsResult {
@@ -35,13 +60,43 @@ export interface UseAskAgentsResult {
   error: string | null;
 }
 
+/**
+ * The one fetch, shared by every consumer on the screen.
+ *
+ * Two components read this list — `AgentPicker`, and `Composer` for its `/`
+ * menu — and before this context each one fetched its own copy, so opening
+ * the panel made the same request twice. Sharing it here rather than
+ * memoising inside the hook keeps the fetch tied to a mounted subtree: a
+ * module-level cache would outlive a signed-out session and hand the next
+ * one the previous tenant's agent names.
+ */
+const AskAgentsContext = createContext<UseAskAgentsResult | null>(null);
+
+export function AskAgentsProvider({ children }: { children: ReactNode }) {
+  const agents = useFetchedAgents();
+  return createElement(AskAgentsContext.Provider, { value: agents }, children);
+}
+
 export function useAskAgents(): UseAskAgentsResult {
+  const shared = useContext(AskAgentsContext);
+  const own = useFetchedAgents({ skip: shared !== null });
+  return shared ?? own;
+}
+
+/**
+ * `skip` exists because hooks cannot be called conditionally: when the
+ * provider is above us its result is what we return, and firing a second
+ * identical request just to throw the answer away is the very thing the
+ * provider was added to stop.
+ */
+function useFetchedAgents({ skip = false }: { skip?: boolean } = {}): UseAskAgentsResult {
   const client = useAskClient();
   const [agents, setAgents] = useState<AskAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (skip) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -60,7 +115,7 @@ export function useAskAgents(): UseAskAgentsResult {
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, skip]);
 
   return { agents, loading, error };
 }

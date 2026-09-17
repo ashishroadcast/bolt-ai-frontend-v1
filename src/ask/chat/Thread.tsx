@@ -65,6 +65,28 @@ function rendersItsOwnProse(parts: UIPart[]): boolean {
   return parts.some((part) => part.intent === "data-summary");
 }
 
+/**
+ * Parts that are the ANSWER, and so are never hidden by a disclosure
+ * setting.
+ *
+ * `showQueryResults` exists to keep the working — the tables a run scanned
+ * on its way to a figure — off a screen whose reader did not ask for it.
+ * That is the right default for evidence. It is the wrong default for a
+ * drafted form: the card *is* what was asked for, and it carries the only
+ * control on the turn. Observed on a live run against the real widget — the
+ * answer read "Here is a draft of the Vehicle Registration Record form" and
+ * there was no form anywhere on screen, because a tenant setting about SQL
+ * tables had swallowed it.
+ */
+const NEVER_HIDDEN = new Set(["data-form-draft"]);
+
+function splitByDisclosure(parts: UIPart[]): { answer: UIPart[]; evidence: UIPart[] } {
+  return {
+    answer: parts.filter((part) => NEVER_HIDDEN.has(part.intent)),
+    evidence: parts.filter((part) => !NEVER_HIDDEN.has(part.intent)),
+  };
+}
+
 function withAnswering(
   client: GatewayClient,
   parts: UIPart[],
@@ -338,7 +360,10 @@ function AnsweredTurn({
           it reads has to restate it to make sense. Putting them this way
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
-      {disclosure.showQueryResults && <Sheets parts={message.parts} />}
+      <Sheets parts={splitByDisclosure(message.parts).answer} />
+      {disclosure.showQueryResults && (
+        <Sheets parts={splitByDisclosure(message.parts).evidence} />
+      )}
       {/* Figma's "Worked For 12m" — the same duration RunMeta's facts strip
           reports below, surfaced again here because Figma places it as the
           answer's own header rather than only in the measurements strip. */}
@@ -436,8 +461,9 @@ function LiveTurn(): ReactElement | null {
           rather than an identifier. It used to hand over the run's MESSAGE
           id, which the endpoint accepted only because it never read the
           run segment at all. */}
+      <Sheets parts={splitByDisclosure(withAnswering(client, activeRun.parts, true)).answer} />
       {disclosure.showQueryResults && (
-        <Sheets parts={withAnswering(client, activeRun.parts, true)} />
+        <Sheets parts={splitByDisclosure(withAnswering(client, activeRun.parts, true)).evidence} />
       )}
       {!rendersItsOwnProse(activeRun.parts) && (
         <RevealedAnswer messageId={activeRun.messageId} text={activeRun.text} animate />

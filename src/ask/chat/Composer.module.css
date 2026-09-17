@@ -15,6 +15,9 @@
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: 999px;
+  /* Anchors the command menu, which is out of flow and sits above the pill.
+     No overflow clipping here, deliberately — the menu has to escape. */
+  position: relative;
 }
 
 .composer[data-offline] {
@@ -63,6 +66,120 @@
 
 .field:disabled {
   color: var(--fg-faint);
+}
+
+/*
+ * The command menu.
+ *
+ * ABOVE the pill, not below it. The composer is already stuck to the bottom
+ * edge of the panel, so a menu under it would open off-screen — and in the
+ * embedded case off the bottom of the host page.
+ */
+.menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-float);
+  /* Long enough for a handful of commands; scrolls rather than growing past
+     the thread it is covering. */
+  max-height: 232px;
+  overflow-y: auto;
+}
+
+/*
+ * One command. A grid rather than a row, because the description has to
+ * start under the agent's name instead of running past it and wrapping back
+ * to the left edge — the ragged hang that flex gives here is exactly where
+ * the eye expects a column.
+ */
+.command {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Hover and keyboard highlight are one state on purpose: with both, the
+   mouse resting somewhere harmless leaves two rows looking chosen and the
+   reader cannot tell which Enter will take. */
+.command[data-active] {
+  background: var(--signal-soft);
+}
+
+.commandName {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--signal);
+  white-space: nowrap;
+}
+
+.commandAgent {
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--fg);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line, clipped. The full text is the agent's own description and can
+   run to a paragraph; a menu row that grows to three lines pushes the rest
+   of the list off the top of the panel. */
+.commandDesc {
+  grid-column: 2;
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  line-height: 1.35;
+  color: var(--fg-faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The affordance that says the menu exists at all. Sits between the input
+   and Ask, quiet until pointed at. */
+.hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+
+.hint:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+}
+
+.hint:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
 }
 
 .send {

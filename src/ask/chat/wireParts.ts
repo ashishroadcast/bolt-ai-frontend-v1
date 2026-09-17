@@ -426,6 +426,41 @@ function adaptQuestion(data: Record<string, unknown>): Record<string, unknown> {
   return { questionId: "", question: "", options: [], allowMultiple: false, allowOther: false };
 }
 
+/**
+ * A drafted form. `form_draft_intent` already emits `FormDraftProps`, and
+ * the fields arrive in the order the server assigned rather than in
+ * whatever order a `Record` iterates.
+ *
+ * Nothing is reshaped here. The one thing this does do is drop malformed
+ * field entries rather than the whole draft: a card missing one row is
+ * still a form the reader can open and fix, where a thrown adapter would
+ * lose the entire proposal and the run that produced it.
+ */
+function adaptFormDraft(data: Record<string, unknown>): Record<string, unknown> {
+  const fields = Array.isArray(data.fields) ? data.fields : [];
+  const usable = fields.filter(
+    (field): field is Record<string, unknown> =>
+      typeof field === "object" &&
+      field !== null &&
+      typeof (field as Record<string, unknown>).label === "string" &&
+      typeof (field as Record<string, unknown>).type === "string",
+  );
+  if (typeof data.name !== "string" || usable.length === 0) {
+    return { name: "", description: "", category: "", formType: "standalone", fields: [] };
+  }
+  return {
+    description: "",
+    category: "checklist",
+    formType: "standalone",
+    ...data,
+    fields: usable.map((field, index) => ({
+      required: false,
+      order: index,
+      ...field,
+    })),
+  };
+}
+
 export function toUIPart(type: string, data: Record<string, unknown>): UIPart {
   const intent = wireTypeToIntent(type);
   if (intent === "data-table") return { intent, data: adaptTable(data) };
@@ -434,6 +469,7 @@ export function toUIPart(type: string, data: Record<string, unknown>): UIPart {
   if (intent === "data-comparison") return { intent, data: adaptComparison(data) };
   if (intent === "data-summary") return { intent, data: adaptSummary(data) };
   if (intent === "data-question") return { intent, data: adaptQuestion(data) };
+  if (intent === "data-form-draft") return { intent, data: adaptFormDraft(data) };
   if (intent === "citations") return { intent, data: adaptCitations(data) };
   // An intent this module doesn't know how to adapt is passed through
   // unchanged — catalog.tsx's own UnknownIntent fallback is what renders

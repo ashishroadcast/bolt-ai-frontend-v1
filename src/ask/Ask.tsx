@@ -2,6 +2,7 @@ import { Bot, CircleX, History } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import styles from "./Ask.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
+import { AskAgentsProvider } from "./chat/useAskAgents.ts";
 import { ChatProvider, useChatContext } from "./chat/ChatContext.tsx";
 import { Composer } from "./chat/Composer.tsx";
 import { EmptyState } from "./EmptyState.tsx";
@@ -130,6 +131,9 @@ export function AskScreen({
   }
 
   return (
+    // One agent fetch for the screen. Both the picker and the composer's `/`
+    // menu read the same list, and each used to fetch its own copy.
+    <AskAgentsProvider>
     <div className={styles.screen}>
       <div className={styles.accentLine} />
       <div className={styles.panelHeader}>
@@ -185,5 +189,6 @@ export function AskScreen({
         </div>
       </div>
     </div>
+    </AskAgentsProvider>
   );
 }

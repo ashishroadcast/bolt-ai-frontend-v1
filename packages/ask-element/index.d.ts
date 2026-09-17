@@ -29,6 +29,55 @@ export type AskCredentialProvider = () => string | null | Promise<string | null>
 export type AskOrganisationProvider = () => string | null | undefined;
 
 /**
+ * One field of a drafted form, in the HOST BUILDER's vocabulary.
+ *
+ * `type` is one of `text`, `textarea`, `radio`, `select`, `url`, `number`,
+ * `email`, `date`, `file`, `currency` — the ten bolt-v2's create palette
+ * offers. Not the nine its database stores: the builder narrows them itself
+ * on save, and handing it its own names keeps that the only lossy step.
+ */
+export interface AskFormDraftField {
+  label: string;
+  type: string;
+  required: boolean;
+  /** Ascending, contiguous from 0, already sorted. */
+  order: number;
+  placeholder?: string;
+  tooltip?: string;
+  /** Present only for `select` and `radio`, and then never fewer than two. */
+  options?: string[];
+  /** Present only for `number` and `currency`. */
+  min?: number;
+  max?: number;
+}
+
+/**
+ * A form the agent drafted, handed back for the host to open in its builder.
+ *
+ * **Nothing has been created.** The widget does not write: in bolt-v2 saving
+ * a form is a template create plus one create per field plus an optional
+ * trigger config, under a session the widget does not own. The draft comes
+ * back here so the host's own save path stays the only one.
+ */
+export interface AskFormDraft {
+  name: string;
+  /** `"checklist"` | `"survey"` | `"inspection"` */
+  category: string;
+  description: string;
+  /** `"standalone"` | `"workflow"` */
+  formType: string;
+  /**
+   * Both present, or both absent — a workflow form fires at a moment and a
+   * standalone one has none. `triggerModule` is one of `eta_trip`,
+   * `fleet_trip`, `fleet_yard_trip`, `attendance`, `alert`; `triggerEvent` is
+   * one of `start`, `end`, `checkin`, `checkout`, `resolve`.
+   */
+  triggerModule?: string;
+  triggerEvent?: string;
+  fields: AskFormDraftField[];
+}
+
+/**
  * The ATTRIBUTE surface, for the values that genuinely are strings.
  *
  * Anything that is a function is a property instead (see below): an HTML
@@ -85,6 +134,17 @@ export declare class BoltAiAskElement extends HTMLElement {
    * fault from the host's own session expiring.
    */
   onUnauthorized: (() => void) | null;
+
+  /**
+   * Called when someone chooses to open a drafted form in the host's own
+   * form builder. See {@link AskFormDraft} — nothing has been saved.
+   *
+   * Left `null`, the draft still renders; it just renders without the button,
+   * which is right for any host that has no builder to open. Assigning or
+   * clearing it re-renders, so a host that wires this after inserting the
+   * element works.
+   */
+  onFormDraft: ((draft: AskFormDraft) => void) | null;
 }
 
 /**

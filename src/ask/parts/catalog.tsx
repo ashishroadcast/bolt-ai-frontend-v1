@@ -6,6 +6,7 @@ import { DataComparison, type DataComparisonProps } from "./DataComparison.tsx";
 import { DataQuestion, type DataQuestionProps } from "./DataQuestion.tsx";
 import { DataSummary, type DataSummaryProps } from "./DataSummary.tsx";
 import { Citations, type CitationsProps } from "./Citations.tsx";
+import { FormDraft, type FormDraftProps } from "./FormDraft.tsx";
 import { UnknownIntent } from "./UnknownIntent.tsx";
 
 /*
@@ -26,6 +27,7 @@ export type UIPartIntent =
   | "data-comparison"
   | "data-summary"
   | "data-question"
+  | "data-form-draft"
   | "citations";
 
 export interface UIPartDataByIntent {
@@ -35,6 +37,7 @@ export interface UIPartDataByIntent {
   "data-comparison": DataComparisonProps;
   "data-summary": DataSummaryProps;
   "data-question": DataQuestionProps;
+  "data-form-draft": FormDraftProps;
   citations: CitationsProps;
 }
 
@@ -61,6 +64,7 @@ const componentCatalog: Record<UIPartIntent, ComponentType<any>> = {
   "data-comparison": DataComparison,
   "data-summary": DataSummary,
   "data-question": DataQuestion,
+  "data-form-draft": FormDraft,
   citations: Citations,
 };
 

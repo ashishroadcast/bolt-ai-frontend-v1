@@ -77,6 +77,66 @@ export interface AskConfig {
    * chose. A pinned value is never overruled by the server.
    */
   disclosure?: { showReasoning: boolean; showQueryResults: boolean };
+  /**
+   * Hands a drafted form to the host, to open in its own form builder.
+   *
+   * The widget deliberately does not create the form itself. In bolt-v2 that
+   * is not one call but a template create, one create per field and an
+   * optional trigger config, with several of the builder's own concepts
+   * encoded into `description` on the way — a second implementation of that
+   * here would diverge from the real one at the first schema change, and it
+   * would write under a session this widget does not own. So the draft
+   * crosses back to the host and the host's existing save path commits it.
+   *
+   * Omitted, and the draft still renders: a host with no form manager — the
+   * Bolty console, or any other embed — shows the card as a read-only
+   * summary rather than a button that goes nowhere.
+   */
+  onFormDraft?: (draft: FormDraftHandoff) => void;
+}
+
+/**
+ * What crosses back to the host when someone opens a draft.
+ *
+ * Structurally `FormDraftProps`, but declared here rather than imported from
+ * the part: this is the EMBEDDING contract — bolt-v2's Angular code compiles
+ * against it through `packages/ask-element/index.d.ts` — and a host should
+ * not have its build depend on the shape of a React component's props.
+ */
+export interface FormDraftHandoff {
+  name: string;
+  description: string;
+  /** "checklist" | "survey" | "inspection" */
+  category: string;
+  /** "standalone" | "workflow" */
+  formType: string;
+  /** Both present, or both absent: a workflow form has a trigger, a
+   *  standalone one has none. Never one without the other. */
+  triggerModule?: string;
+  triggerEvent?: string;
+  fields: FormDraftHandoffField[];
+}
+
+export interface FormDraftHandoffField {
+  label: string;
+  /**
+   * The BUILDER's vocabulary, not the database's: one of `text`, `textarea`,
+   * `radio`, `select`, `url`, `number`, `email`, `date`, `file`, `currency`.
+   * bolt-v2's builder narrows these to the nine types its database stores
+   * when it saves, so handing it its own names keeps that the only lossy
+   * step.
+   */
+  type: string;
+  required: boolean;
+  /** Ascending, contiguous from 0, already sorted. */
+  order: number;
+  placeholder?: string;
+  tooltip?: string;
+  /** Present only for `select` and `radio`, and then never fewer than two. */
+  options?: string[];
+  /** Present only for `number` and `currency`. */
+  min?: number;
+  max?: number;
 }
 
 /**

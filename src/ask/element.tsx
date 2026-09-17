@@ -1,6 +1,6 @@
 import { createRoot, type Root } from "react-dom/client";
 import { Ask } from "./Ask.tsx";
-import type { AskConfig } from "./config.tsx";
+import type { AskConfig, FormDraftHandoff } from "./config.tsx";
 
 /**
  * `<bolt-ai-ask>` — Ask as a custom element, for hosts that are not React.
@@ -82,6 +82,38 @@ export class BoltAiAskElement extends HTMLElement {
   credentialProvider: CredentialProvider | null = null;
   organisationProvider: OrganisationProvider | null = null;
   onUnauthorized: (() => void) | null = null;
+
+  /**
+   * Called when someone opens a drafted form in the host's own form builder.
+   *
+   * A property rather than a `CustomEvent`, matching the three above: it is a
+   * callback, it is typed, and the host that cares about it is the same host
+   * already assigning `credentialProvider` on the same node.
+   *
+   * Left `null` — the default — the draft card renders without its button.
+   * That is the correct state for every host that has no form builder to open,
+   * which is all of them but bolt-v2.
+   *
+   * An ACCESSOR, unlike the three above, and for the reason `baseUrl` is one:
+   * whether this is set changes what renders, not just what a closure returns
+   * when called. A host assigns it after inserting the element — Angular
+   * cannot reach a `@ViewChild` any earlier — so a plain field would be
+   * written after the first render had already decided there was no button.
+   */
+  get onFormDraft(): ((draft: FormDraftHandoff) => void) | null {
+    return this.onFormDraftValue;
+  }
+
+  set onFormDraft(value: ((draft: FormDraftHandoff) => void) | null) {
+    const had = this.onFormDraftValue !== null;
+    this.onFormDraftValue = value;
+    // Only when presence flips. The host nulls this on teardown and re-assigns
+    // it on every wiring pass, and re-rendering the whole widget for a swapped
+    // function identity would remount the thread mid-run.
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onFormDraftValue: ((draft: FormDraftHandoff) => void) | null = null;
 
   /**
    * Property forms of `base-url` / `setup-agents-href`, for a host that would
@@ -193,6 +225,14 @@ export class BoltAiAskElement extends HTMLElement {
       clientType,
       copy,
       ...(setupAgentsHref === null ? {} : { setupAgentsHref }),
+      // Read at call time like the auth providers below, so a host that
+      // assigns it after append is honoured. Left out entirely when the host
+      // has set nothing: `AskConfig.onFormDraft` being undefined is what the
+      // card checks to decide whether to offer its button at all, and a
+      // wrapper that always exists would make it always offer one.
+      ...(this.onFormDraftValue === null
+        ? {}
+        : { onFormDraft: (draft: FormDraftHandoff) => this.onFormDraftValue?.(draft) }),
       auth: {
         // Reads the property at call time, so a host that assigns it after
         // append — or replaces it later — is honoured without a re-render.

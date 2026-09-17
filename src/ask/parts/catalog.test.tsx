@@ -4,6 +4,8 @@ import { renderUIPart } from "./catalog.tsx";
 import type { DataTableProps } from "./DataTable.tsx";
 import type { DataChartProps } from "./DataChart.tsx";
 import type { CitationsProps } from "./Citations.tsx";
+import type { FormDraftProps } from "./FormDraft.tsx";
+import { TestAskProvider } from "../testing.tsx";
 
 describe("renderUIPart — the intent-to-component catalog", () => {
   it("routes a data-table intent to DataTable", () => {
@@ -41,6 +43,23 @@ describe("renderUIPart — the intent-to-component catalog", () => {
     render(renderUIPart({ intent: "citations", data }));
 
     expect(screen.getByText("Menu policy v3")).toBeInTheDocument();
+  });
+
+  it("routes a data-form-draft intent to FormDraft", () => {
+    const data: FormDraftProps = {
+      name: "Pre-trip Inspection",
+      description: "Checks before a trip starts.",
+      category: "checklist",
+      formType: "standalone",
+      fields: [{ label: "Tyre condition", type: "text", required: true, order: 0 }],
+    };
+
+    // Wrapped, unlike the parts above: this one reads `onFormDraft` off the
+    // Ask config to decide whether it has anywhere to hand the draft, so it
+    // is an Ask component rather than a free-standing renderer.
+    render(<TestAskProvider>{renderUIPart({ intent: "data-form-draft", data })}</TestAskProvider>);
+
+    expect(screen.getByRole("heading", { name: "Pre-trip Inspection" })).toBeInTheDocument();
   });
 
   it("falls back to something legible for an intent this bundle doesn't know, instead of throwing", () => {

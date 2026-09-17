@@ -346,3 +346,75 @@ describe("toUIPart / data-stats", () => {
     expect(data.title).toBe("Summary");
   });
 });
+
+describe("toUIPart — data-form-draft", () => {
+  const fields = [
+    { label: "Registration number", type: "text", required: true, order: 0 },
+    { label: "Fuel type", type: "radio", required: false, order: 1, options: ["Diesel", "CNG"] },
+  ];
+
+  it("passes a well-formed draft through unchanged", () => {
+    const part = toUIPart("data-form-draft", {
+      name: "Vehicle Registration",
+      description: "Record a vehicle joining the fleet.",
+      category: "inspection",
+      formType: "standalone",
+      fields,
+    });
+
+    expect(part.intent).toBe("data-form-draft");
+    expect(part.data).toMatchObject({
+      name: "Vehicle Registration",
+      formType: "standalone",
+      fields,
+    });
+  });
+
+  it("keeps a workflow form's trigger", () => {
+    const data = toUIPart("data-form-draft", {
+      name: "Pre-trip",
+      description: "d",
+      category: "checklist",
+      formType: "workflow",
+      triggerModule: "fleet_trip",
+      triggerEvent: "start",
+      fields,
+    }).data as Record<string, unknown>;
+
+    expect(data.triggerModule).toBe("fleet_trip");
+    expect(data.triggerEvent).toBe("start");
+  });
+
+  it("drops a malformed field rather than the whole draft", () => {
+    // A card missing one row is still a form the reader can open and fix.
+    // Losing the draft loses the run that produced it.
+    const data = toUIPart("data-form-draft", {
+      name: "Vehicle Registration",
+      description: "d",
+      category: "inspection",
+      formType: "standalone",
+      fields: [fields[0], null, { type: "text" }, { label: "No type" }],
+    }).data as { fields: unknown[] };
+
+    expect(data.fields).toHaveLength(1);
+  });
+
+  it("renumbers order when the server sent none, so the card cannot render them out of sequence", () => {
+    const data = toUIPart("data-form-draft", {
+      name: "X",
+      description: "d",
+      category: "survey",
+      formType: "standalone",
+      fields: [{ label: "A", type: "text" }, { label: "B", type: "text" }],
+    }).data as { fields: { order: number; required: boolean }[] };
+
+    expect(data.fields.map((field) => field.order)).toEqual([0, 1]);
+    expect(data.fields[0]!.required).toBe(false);
+  });
+
+  it("renders as an empty draft rather than throwing when the part is unusable", () => {
+    const data = toUIPart("data-form-draft", { fields: [] }).data as { fields: unknown[] };
+
+    expect(data.fields).toEqual([]);
+  });
+});
