@@ -1,5 +1,5 @@
-import { ArrowRight, Paperclip, Slash } from "lucide-react";
-import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { ArrowRight, Mic, Paperclip, Slash, Square } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useAskConfig } from "../config.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
@@ -26,6 +26,83 @@ import styles from "./Composer.module.css";
  * `AskConfig.copy` — because "sales, items, discounts" is nonsense on a
  * screen full of vehicles. */
 const DEFAULT_PLACEHOLDER = "How can I help you?";
+const VOICE_SILENCE_TIMEOUT_MS = 3_000;
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  readonly length: number;
+  readonly [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionResultListLike {
+  readonly length: number;
+  readonly [index: number]: SpeechRecognitionResultLike;
+}
+
+interface SpeechRecognitionEventLike {
+  results: SpeechRecognitionResultListLike;
+}
+
+interface SpeechRecognitionErrorEventLike {
+  error: string;
+}
+
+interface SpeechRecognitionLike {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionLike;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
+function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
+  return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+}
+
+function voiceErrorMessage(error: string): string {
+  if (error === "not-allowed" || error === "service-not-allowed") {
+    return "Microphone access was denied. Allow it in your browser settings.";
+  }
+  if (error === "audio-capture") return "No microphone was found.";
+  if (error === "no-speech") return "No speech detected. Try again.";
+  if (error === "network") {
+    return "Chrome couldn't reach its speech service. Check your connection, VPN, or firewall.";
+  }
+  if (error === "language-not-supported") {
+    return "Voice input doesn't support this browser language. Try English in Chrome.";
+  }
+  return `Voice input failed (${error}). Try again.`;
+}
+
+function microphoneErrorMessage(error: unknown): string {
+  if (!(error instanceof DOMException)) return "Microphone access failed. Try again.";
+  if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+    return "Microphone access was denied. Allow it in your browser settings.";
+  }
+  if (error.name === "NotFoundError") return "No microphone was found.";
+  if (error.name === "NotReadableError") {
+    return "The microphone is unavailable or already in use by another app.";
+  }
+  return `Microphone access failed (${error.name}). Try again.`;
+}
 
 /**
  * A `/command` and the agent it runs.
@@ -79,8 +156,24 @@ export function Composer() {
   const { agents } = useAskAgents();
   const isOnline = useOnlineStatus();
   const inputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const voiceBaseRef = useRef("");
+  const [isListening, setIsListening] = useState(false);
+  const [isStartingVoice, setIsStartingVoice] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const isStreaming = status === "streaming";
   const canSend = selectedAgent !== null && !isStreaming && isOnline;
+  const voiceSupported = speechRecognitionConstructor() !== null;
+
+  useEffect(
+    () => () => {
+      if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    },
+    [],
+  );
 
   const commands = useMemo(() => slashCommands(agents), [agents]);
   const query = commandQuery(value);
@@ -102,8 +195,88 @@ export function Composer() {
     inputRef.current?.focus();
   }
 
+  function stopListening() {
+    if (voiceStopTimerRef.current !== null) {
+      clearTimeout(voiceStopTimerRef.current);
+      voiceStopTimerRef.current = null;
+    }
+    recognitionRef.current?.stop();
+  }
+
+  async function startListening() {
+    if (isListening) {
+      stopListening();
+      return;
+    }
+
+    const Recognition = speechRecognitionConstructor();
+    if (Recognition === null || !canSend) return;
+
+    setVoiceError(null);
+    setIsStartingVoice(true);
+    try {
+      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      stream?.getTracks().forEach((track) => track.stop());
+    } catch (error: unknown) {
+      setVoiceError(microphoneErrorMessage(error));
+      setIsStartingVoice(false);
+      return;
+    }
+    setIsStartingVoice(false);
+
+    const recognition = new Recognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = document.documentElement.lang || navigator.language || "en-US";
+    voiceBaseRef.current = value.trimEnd();
+
+    recognition.onresult = (event) => {
+      const parts: string[] = [];
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const alternative = result?.[0];
+        if (alternative !== undefined) parts.push(alternative.transcript);
+      }
+      const spoken = parts.join(" ").trim();
+      const separator = voiceBaseRef.current === "" || spoken === "" ? "" : " ";
+      setValue(`${voiceBaseRef.current}${separator}${spoken}`);
+      setDismissed(false);
+      setHighlight(0);
+      if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
+      voiceStopTimerRef.current = setTimeout(() => {
+        voiceStopTimerRef.current = null;
+        recognition.stop();
+      }, VOICE_SILENCE_TIMEOUT_MS);
+    };
+    recognition.onerror = (event) => {
+      if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
+      voiceStopTimerRef.current = null;
+      setVoiceError(voiceErrorMessage(event.error));
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
+      voiceStopTimerRef.current = null;
+      setIsListening(false);
+      recognitionRef.current = null;
+      inputRef.current?.focus();
+    };
+
+    recognitionRef.current = recognition;
+    setIsListening(true);
+    try {
+      recognition.start();
+    } catch {
+      recognitionRef.current = null;
+      setIsListening(false);
+      setVoiceError("Voice input couldn't start. Try again.");
+    }
+  }
+
   function handleChange(next: string) {
     setValue(next);
+    setVoiceError(null);
     setHighlight(0);
     if (dismissed) setDismissed(false);
   }
@@ -139,6 +312,11 @@ export function Composer() {
     event.preventDefault();
     const trimmed = value.trim();
     if (trimmed === "" || !canSend) return;
+    recognitionRef.current?.abort();
+    if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
+    voiceStopTimerRef.current = null;
+    recognitionRef.current = null;
+    setIsListening(false);
     sendMessage(trimmed, { agent: selectedAgent ?? undefined });
     setValue("");
   }
@@ -207,6 +385,40 @@ export function Composer() {
           disabled={!canSend}
         />
       </div>
+      {voiceError !== null && (
+        <span className={styles.voiceMessage} role="status">
+          {voiceError}
+        </span>
+      )}
+      <button
+        type="button"
+        className={styles.voice}
+        data-listening={isListening || undefined}
+        disabled={!canSend || !voiceSupported}
+        aria-label={
+          !voiceSupported
+            ? "Voice input isn't supported in this browser"
+            : isStartingVoice
+              ? "Requesting microphone access"
+            : isListening
+              ? "Stop voice input"
+              : "Start voice input"
+        }
+        title={
+          !voiceSupported
+            ? "Voice input isn't supported in this browser"
+            : isListening
+              ? "Listening — stops after 3 seconds of silence"
+              : "Use voice input"
+        }
+        onClick={() => void startListening()}
+      >
+        {isListening ? (
+          <Square size={11} fill="currentColor" aria-hidden="true" />
+        ) : (
+          <Mic size={15} strokeWidth={2.25} aria-hidden="true" />
+        )}
+      </button>
       {/* Discoverability, and a real control rather than a decoration: a
           slash menu nobody knows about is a slash menu nobody uses, and a
           hint that cannot be clicked is one more thing to read and ignore.

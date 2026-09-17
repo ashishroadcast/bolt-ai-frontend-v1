@@ -135,6 +135,9 @@ export declare class BoltAiAskElement extends HTMLElement {
    */
   onUnauthorized: (() => void) | null;
 
+  /** Called by the widget's own minimize control. */
+  onClose: (() => void) | null;
+
   /**
    * Called when someone chooses to open a drafted form in the host's own
    * form builder. See {@link AskFormDraft} — nothing has been saved.

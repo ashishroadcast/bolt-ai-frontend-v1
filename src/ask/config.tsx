@@ -93,6 +93,8 @@ export interface AskConfig {
    * summary rather than a button that goes nowhere.
    */
   onFormDraft?: (draft: FormDraftHandoff) => void;
+  /** Lets an embedded host collapse the assistant from Ask's own chrome. */
+  onClose?: () => void;
 }
 
 /**

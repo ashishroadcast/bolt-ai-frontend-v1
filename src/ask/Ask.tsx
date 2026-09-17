@@ -1,4 +1,4 @@
-import { Bot, CircleX, History } from "lucide-react";
+import { Bot, History, MessageSquarePlus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import styles from "./Ask.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
@@ -82,7 +82,7 @@ export function AskScreen({
   emptyState,
 }: Omit<AskProps, "config">) {
   const { messages, activeRun, loadConversation, clearConversation } = useChatContext();
-  const { copy } = useAskConfig();
+  const { copy, onClose } = useAskConfig();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
   const isEmpty = messages.length === 0 && activeRun === null;
@@ -125,7 +125,7 @@ export function AskScreen({
     return (
       <div className={styles.screen}>
         <div className={styles.accentLine} />
-        <HistoryPanel onClose={closeHistory} />
+        <HistoryPanel onClose={closeHistory} onMinimize={onClose} />
       </div>
     );
   }
@@ -163,7 +163,18 @@ export function AskScreen({
               aria-label="Start a new conversation"
               title="New conversation"
             >
-              <CircleX size={18} strokeWidth={2} aria-hidden="true" />
+              <MessageSquarePlus size={18} strokeWidth={2} aria-hidden="true" />
+            </button>
+          )}
+          {onClose !== undefined && (
+            <button
+              type="button"
+              className={styles.iconAction}
+              onClick={onClose}
+              aria-label="Minimize assistant"
+              title="Minimize"
+            >
+              <X size={18} strokeWidth={2} aria-hidden="true" />
             </button>
           )}
         </div>

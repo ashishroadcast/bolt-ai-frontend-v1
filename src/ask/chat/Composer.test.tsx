@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatProvider, useChatContext } from "./ChatContext.tsx";
 import { Composer } from "./Composer.tsx";
@@ -82,6 +82,24 @@ const FLEET: AskAgent = {
   slash_command: "report",
 };
 
+class FakeSpeechRecognition {
+  static latest: FakeSpeechRecognition | null = null;
+
+  continuous = false;
+  interimResults = false;
+  lang = "";
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null = null;
+  onerror: ((event: { error: string }) => void) | null = null;
+  onend: (() => void) | null = null;
+  start = vi.fn();
+  stop = vi.fn();
+  abort = vi.fn();
+
+  constructor() {
+    FakeSpeechRecognition.latest = this;
+  }
+}
+
 describe("Composer", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -144,6 +162,105 @@ describe("Composer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
     expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
+});
+
+describe("Composer voice input", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", routed([SALES]));
+    vi.stubGlobal("SpeechRecognition", FakeSpeechRecognition);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }),
+      } as unknown as MediaDevices,
+    });
+    FakeSpeechRecognition.latest = null;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  });
+
+  it("adds dictated text to the prompt without sending it", async () => {
+    const fetchMock = vi.mocked(fetch);
+    renderComposer("Sales Analyst");
+    await waitFor(() => expect(screen.getByLabelText("Start voice input")).toBeEnabled());
+
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "Show me" } });
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBeNull());
+
+    const recognition = FakeSpeechRecognition.latest;
+    expect(recognition?.start).toHaveBeenCalledOnce();
+    act(() => {
+      recognition?.onresult?.({ results: [{ 0: { transcript: "idle vehicles" }, length: 1 }] });
+    });
+
+    expect((screen.getByLabelText("Ask a question") as HTMLInputElement).value).toBe(
+      "Show me idle vehicles",
+    );
+    expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it("reports a denied microphone permission and lets the user keep typing", async () => {
+    renderComposer("Sales Analyst");
+    await waitFor(() => expect(screen.getByLabelText("Start voice input")).toBeEnabled());
+
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBeNull());
+    act(() => {
+      FakeSpeechRecognition.latest?.onerror?.({ error: "not-allowed" });
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Microphone access was denied");
+    expect(screen.getByLabelText("Ask a question")).toBeEnabled();
+  });
+
+  it("stops recognition from the same control", async () => {
+    renderComposer("Sales Analyst");
+    await waitFor(() => expect(screen.getByLabelText("Start voice input")).toBeEnabled());
+
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBeNull());
+    fireEvent.click(screen.getByLabelText("Stop voice input"));
+
+    expect(FakeSpeechRecognition.latest?.stop).toHaveBeenCalledOnce();
+  });
+
+  it("keeps listening until three seconds after the latest speech result", async () => {
+    renderComposer("Sales Analyst");
+    await waitFor(() => expect(screen.getByLabelText("Start voice input")).toBeEnabled());
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBeNull());
+    const recognition = FakeSpeechRecognition.latest;
+
+    vi.useFakeTimers();
+    act(() => {
+      recognition?.onresult?.({ results: [{ 0: { transcript: "hello" }, length: 1 }] });
+      vi.advanceTimersByTime(2_999);
+    });
+    expect(recognition?.continuous).toBe(true);
+    expect(recognition?.stop).not.toHaveBeenCalled();
+
+    act(() => vi.advanceTimersByTime(1));
+    expect(recognition?.stop).toHaveBeenCalledOnce();
+  });
+
+  it("explains when the browser speech service cannot be reached", async () => {
+    renderComposer("Sales Analyst");
+    await waitFor(() => expect(screen.getByLabelText("Start voice input")).toBeEnabled());
+
+    fireEvent.click(screen.getByLabelText("Start voice input"));
+    await waitFor(() => expect(FakeSpeechRecognition.latest).not.toBeNull());
+    act(() => {
+      FakeSpeechRecognition.latest?.onerror?.({ error: "network" });
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Chrome couldn't reach its speech service");
   });
 });
 

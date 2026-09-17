@@ -182,6 +182,58 @@
   outline-offset: 1px;
 }
 
+.voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.voice:hover:not(:disabled) {
+  color: var(--signal);
+  background: var(--signal-soft);
+}
+
+.voice[data-listening] {
+  color: var(--danger, #b42318);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.voice:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+
+.voice:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.voiceMessage {
+  position: absolute;
+  right: 42px;
+  bottom: calc(100% + 6px);
+  z-index: 3;
+  max-width: min(300px, calc(100% - 24px));
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift-float);
+  color: var(--danger, #b42318);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.35;
+}
+
 .send {
   display: inline-flex;
   align-items: center;

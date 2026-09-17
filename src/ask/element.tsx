@@ -115,6 +115,18 @@ export class BoltAiAskElement extends HTMLElement {
 
   private onFormDraftValue: ((draft: FormDraftHandoff) => void) | null = null;
 
+  get onClose(): (() => void) | null {
+    return this.onCloseValue;
+  }
+
+  set onClose(value: (() => void) | null) {
+    const had = this.onCloseValue !== null;
+    this.onCloseValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onCloseValue: (() => void) | null = null;
+
   /**
    * Property forms of `base-url` / `setup-agents-href`, for a host that would
    * rather assign than `setAttribute`. Either works; the property wins.
@@ -233,6 +245,7 @@ export class BoltAiAskElement extends HTMLElement {
       ...(this.onFormDraftValue === null
         ? {}
         : { onFormDraft: (draft: FormDraftHandoff) => this.onFormDraftValue?.(draft) }),
+      ...(this.onCloseValue === null ? {} : { onClose: () => this.onCloseValue?.() }),
       auth: {
         // Reads the property at call time, so a host that assigns it after
         // append — or replaces it later — is honoured without a re-render.
