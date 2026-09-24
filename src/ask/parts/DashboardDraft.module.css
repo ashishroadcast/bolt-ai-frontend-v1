@@ -1,0 +1,230 @@
+/*
+ * A drafted dashboard, offered for review.
+ *
+ * The same sheet chrome as FormDraft — surface, hairline, lift, an action
+ * footer on the sunk ground — because it is the same kind of object: a
+ * proposal the reader opens elsewhere, not a result.
+ */
+.draft {
+  background: var(--surface);
+  color: var(--on-sheet);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  margin-bottom: var(--stack);
+  overflow: hidden;
+}
+
+.draft:last-child {
+  margin-bottom: 0;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+  margin-top: 1px;
+}
+
+.heading {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+}
+
+.body {
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+}
+
+.description {
+  margin: 0 0 12px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.55;
+  color: var(--fg-dim);
+  max-width: 60ch;
+}
+
+.empty {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}
+
+/*
+ * The thumbnail: the real 12-column grid, drawn small. Rows are a fixed few
+ * pixels so a tall layout reads as tall rather than being squashed to fit.
+ */
+.thumb {
+  --thumb-row: 5px;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--radius-control);
+  background: var(--surface-sunk);
+}
+
+.cell {
+  border-radius: 2px;
+  background: var(--signal-band);
+}
+
+/* KPI tiles read as the lighter row they are on the real canvas. */
+.cell[data-viz="kpi"],
+.cell[data-viz="gauge"] {
+  background: var(--signal-soft);
+  box-shadow: inset 0 0 0 1px var(--signal-band);
+}
+
+.widgets {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.widget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.widget:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.widgetIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: var(--radius-control);
+  background: var(--chip-soft);
+  color: var(--signal);
+}
+
+.widgetText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.widgetTitle {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: 1.35;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.widgetMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+}
+
+.widgetSize {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-top: 1px solid var(--rule-soft);
+  background: var(--surface-sunk);
+}
+
+.open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--signal);
+  color: var(--on-signal);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  cursor: pointer;
+  flex: none;
+}
+
+.open:hover {
+  background: var(--signal-hover);
+}
+
+.open:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.note {
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  line-height: 1.4;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+
+/* `@container`, not `@media` — see FormDraft.module.css. */
+@container ask (max-width: 34rem) {
+  .foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .open {
+    justify-content: center;
+  }
+}

@@ -61,20 +61,79 @@ export interface AskFormDraftField {
  */
 export interface AskFormDraft {
   name: string;
-  /** `"checklist"` | `"survey"` | `"inspection"` */
+  /**
+   * The builder's category dropdown, verbatim: `"Operations"` | `"Safety"` |
+   * `"Compliance"` | `"KYC"` | `"Feedback"` | `"Maintenance"` | `"Fuel"` |
+   * `"Asset"` | `"Security"`.
+   */
   category: string;
   description: string;
   /** `"standalone"` | `"workflow"` */
   formType: string;
   /**
    * Both present, or both absent — a workflow form fires at a moment and a
-   * standalone one has none. `triggerModule` is one of `eta_trip`,
-   * `fleet_trip`, `fleet_yard_trip`, `attendance`, `alert`; `triggerEvent` is
-   * one of `start`, `end`, `checkin`, `checkout`, `resolve`.
+   * standalone one has none. The builder offers exactly four pairs:
+   * `triggerModule` `eta_trip` with `triggerEvent` `start` | `end`, and
+   * `attendance` with `checkin` | `checkout`.
    */
   triggerModule?: string;
   triggerEvent?: string;
   fields: AskFormDraftField[];
+}
+
+/** A dashboard widget size hint; the host turns it into grid cells. */
+export type AskDashboardWidgetSize = 'small' | 'medium' | 'large' | 'wide' | 'full';
+
+/**
+ * One drafted widget (dashboards contract §5/§6). Optional keys are omitted,
+ * never null. `size` omitted → the metric's default; `params` holds only keys
+ * from the metric's param spec, e.g. `{ timeRange: { preset: 'last_7d' } }`.
+ */
+export interface AskDashboardDraftWidget {
+  metricKey: string;
+  visualization: string;
+  title?: string;
+  subtitle?: string;
+  size?: AskDashboardWidgetSize;
+  params?: Record<string, unknown>;
+}
+
+/**
+ * A dashboard (View) the agent drafted, handed to the host to open in its
+ * builder. **Nothing has been saved** — the host lays it out and saves it.
+ */
+export interface AskDashboardDraft {
+  draftId: string;
+  name: string;
+  description?: string;
+  widgets: AskDashboardDraftWidget[];
+}
+
+/** One widget drafted for the builder the panel is docked beside. */
+export interface AskWidgetDraft {
+  draftId: string;
+  /** Present when the draft refines a widget already on the canvas. */
+  replaceWidgetId?: string;
+  widget: AskDashboardDraftWidget;
+}
+
+/** The host's answer to {@link AskWidgetDraft}. */
+export interface WidgetDraftAck {
+  status: 'added' | 'replaced' | 'rejected';
+  widgetId?: string;
+  /** A short code when rejected. `not_in_builder` is shown as "Open the
+   *  dashboard builder to add this widget". */
+  reason?: string;
+}
+
+/**
+ * The screen the assistant is docked beside, sent with every run as
+ * `host_context`. Data describing the screen, never instructions.
+ */
+export interface AskHostContext {
+  surface: 'dashboard_builder' | 'dashboard_view' | 'dashboards_home';
+  dashboard?: { name: string; widgets: { id: string; metricKey: string; visualization: string; title: string }[] };
+  selectedWidgetId?: string;
 }
 
 /**
@@ -148,6 +207,53 @@ export declare class BoltAiAskElement extends HTMLElement {
    * element works.
    */
   onFormDraft: ((draft: AskFormDraft) => void) | null;
+
+  /**
+   * Called when someone opens a drafted dashboard in the host's builder. See
+   * {@link AskDashboardDraft} — nothing has been saved. `null` (the default)
+   * renders the card without its "Open in builder" button. Setting or
+   * clearing it re-renders.
+   */
+  onDashboardDraft: ((d: AskDashboardDraft) => void) | null;
+
+  /**
+   * Inserts a drafted widget into the builder's UNSAVED canvas and says what
+   * happened. Fires by itself exactly once per `draftId`, on the live stream
+   * only; a thread reopened from history shows an "Add to view" button
+   * instead and never inserts without a click. While the promise is pending
+   * the card reads "Adding to your view…"; `added` / `replaced` enable Edit
+   * Widget; `rejected` shows the reason and offers a retry. A promise that
+   * rejects is treated as `rejected`. `null` (the default) renders the card
+   * read-only. Setting or clearing it re-renders.
+   */
+  onWidgetDraft: ((d: AskWidgetDraft) => Promise<WidgetDraftAck>) | null;
+
+  /**
+   * Called from a widget card's "Edit Widget" with the id the host returned
+   * in its {@link WidgetDraftAck}. `null` (the default) hides the button.
+   */
+  onEditWidget: ((widgetId: string) => void) | null;
+
+  /**
+   * Read at the start of every run and sent as `host_context`; also read by
+   * the composer, which shows `selectedWidgetId`'s widget as a context chip
+   * (re-read about once a second, since the host announces no changes).
+   * Return `null` to send none. Setting or clearing it re-renders.
+   */
+  hostContextProvider: (() => AskHostContext | null) | null;
+
+  /**
+   * Arms the agent whose `slash_command` matches (leading `/` optional), the
+   * same as picking it from the composer's `/` menu.
+   *
+   * Returns `false` if the agent list has loaded and no active agent has that
+   * command. May be called before the element is mounted, configured, or has
+   * loaded its agents: the request is then remembered and applied as soon as
+   * the list arrives, and the call returns `true` ("accepted"). A remembered
+   * request for a command the tenant turns out not to have is dropped with a
+   * console warning. Only the latest request is remembered.
+   */
+  selectAgent(slashCommand: string): boolean;
 }
 
 /**

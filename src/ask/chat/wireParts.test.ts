@@ -418,3 +418,106 @@ describe("toUIPart — data-form-draft", () => {
     expect(data.fields).toEqual([]);
   });
 });
+
+/** CONTRACT §5, verbatim. */
+const DASHBOARD_DRAFT_EXAMPLE = {
+  draftId: "uuid",
+  name: "Operations Overview",
+  description: "…",
+  widgets: [
+    {
+      metricKey: "fleet.active_device_groups",
+      visualization: "kpi",
+      title: "Active Vehicles",
+      size: "small",
+      params: { timeRange: { preset: "last_7d" } },
+    },
+  ],
+};
+
+const WIDGET_DRAFT_EXAMPLE = {
+  draftId: "uuid",
+  replaceWidgetId: "uuid-or-omitted",
+  widget: {
+    metricKey: "eta.trips_completed_daily",
+    visualization: "line",
+    title: "Trips Completed — daily",
+    size: "wide",
+    params: { timeRange: { preset: "last_30d" } },
+  },
+};
+
+describe("toUIPart — data-dashboard-draft", () => {
+  it("round-trips the contract's example unchanged", () => {
+    const part = toUIPart("data-dashboard-draft", structuredClone(DASHBOARD_DRAFT_EXAMPLE));
+    expect(part.intent).toBe("data-dashboard-draft");
+    expect(part.data).toEqual(DASHBOARD_DRAFT_EXAMPLE);
+  });
+
+  it("round-trips identically when reloaded from history (no live option)", () => {
+    const live = toUIPart("data-dashboard-draft", structuredClone(DASHBOARD_DRAFT_EXAMPLE), { live: true });
+    const reloaded = toUIPart("data-dashboard-draft", structuredClone(DASHBOARD_DRAFT_EXAMPLE));
+    expect(live).toEqual(reloaded);
+  });
+
+  it("drops a malformed widget, an unknown size and stray keys — omitted, never null", () => {
+    const data = toUIPart("data-dashboard-draft", {
+      draftId: "d",
+      name: "V",
+      description: null,
+      widgets: [
+        { metricKey: "eta.trips_completed", visualization: "kpi", size: "huge", title: null, extra: 1 },
+        { metricKey: "eta.trips_completed" },
+        null,
+      ],
+    }).data as Record<string, unknown>;
+
+    expect(data).toEqual({
+      draftId: "d",
+      name: "V",
+      widgets: [{ metricKey: "eta.trips_completed", visualization: "kpi" }],
+    });
+  });
+
+  it("renders as an empty draft rather than throwing when the part is unusable", () => {
+    expect(toUIPart("data-dashboard-draft", {}).data).toEqual({ draftId: "", name: "", widgets: [] });
+  });
+});
+
+describe("toUIPart — data-widget-draft", () => {
+  it("round-trips the contract's example, marked live only when the caller says so", () => {
+    const live = toUIPart("data-widget-draft", structuredClone(WIDGET_DRAFT_EXAMPLE), { live: true });
+    expect(live.intent).toBe("data-widget-draft");
+    const { live: liveFlag, ...liveRest } = live.data as Record<string, unknown>;
+    expect(liveFlag).toBe(true);
+    expect(liveRest).toEqual(WIDGET_DRAFT_EXAMPLE);
+
+    const reloaded = toUIPart("data-widget-draft", structuredClone(WIDGET_DRAFT_EXAMPLE));
+    const { live: reloadedFlag, ...reloadedRest } = reloaded.data as Record<string, unknown>;
+    expect(reloadedFlag).toBe(false);
+    expect(reloadedRest).toEqual(WIDGET_DRAFT_EXAMPLE);
+  });
+
+  it("never lets a persisted payload claim to be live", () => {
+    const data = toUIPart("data-widget-draft", { ...structuredClone(WIDGET_DRAFT_EXAMPLE), live: true })
+      .data as { live: boolean };
+    expect(data.live).toBe(false);
+  });
+
+  it("omits replaceWidgetId when the wire did", () => {
+    const { replaceWidgetId: _omitted, ...fresh } = WIDGET_DRAFT_EXAMPLE;
+    void _omitted;
+    const data = toUIPart("data-widget-draft", structuredClone(fresh)).data as Record<string, unknown>;
+    expect(Object.hasOwn(data, "replaceWidgetId")).toBe(false);
+  });
+
+  it("comes back unusable (empty draftId, not live) for a part missing its widget or id", () => {
+    for (const bad of [{ draftId: "x" }, { widget: WIDGET_DRAFT_EXAMPLE.widget }, {}]) {
+      expect(toUIPart("data-widget-draft", bad, { live: true }).data).toEqual({
+        draftId: "",
+        widget: { metricKey: "", visualization: "" },
+        live: false,
+      });
+    }
+  });
+});

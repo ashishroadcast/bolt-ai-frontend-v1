@@ -2,6 +2,7 @@ import { Bot, History, MessageSquarePlus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import styles from "./Ask.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
+import { AgentSelectionBridge } from "./chat/agentSelection.ts";
 import { AskAgentsProvider } from "./chat/useAskAgents.ts";
 import { ChatProvider, useChatContext } from "./chat/ChatContext.tsx";
 import { Composer } from "./chat/Composer.tsx";
@@ -182,6 +183,8 @@ export function AskScreen({
 
       <div className={styles.pickerRow}>
         <AgentPicker />
+        {/* After the picker, on purpose — see AgentSelectionBridge. */}
+        <AgentSelectionBridge />
       </div>
 
       <div className={styles.scroll}>

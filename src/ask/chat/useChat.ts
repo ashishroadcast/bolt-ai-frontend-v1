@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAskClient } from "../config.tsx";
+import { useAskClient, useAskConfig, type AskHostContext } from "../config.tsx";
 import type { UIPart } from "../parts/catalog.tsx";
 import { fetchConversation } from "./conversation.ts";
 import { buildPhaseTimeline, readPhaseDetail, type PhaseTimelineEvent } from "./phaseTimeline.ts";
@@ -22,7 +22,7 @@ export interface UseChatResult {
    * with `runSummary.status === "error"` instead, since that failure has
    * a place in the thread and this one doesn't. */
   error: string | null;
-  sendMessage: (text: string, options?: { agent?: string }) => void;
+  sendMessage: (text: string, options?: SendOptions) => void;
   loadConversation: (conversationId: number) => Promise<void>;
   /**
    * Who the Ask screen is currently talking to (a `GET /agent/agents`
@@ -50,6 +50,41 @@ export interface UseChatResult {
    * out from under it (`HistoryPanel.tsx`), so a stray next message
    * doesn't get sent with a `session_id` for a conversation that's gone. */
   clearConversation: () => void;
+}
+
+export interface SendOptions {
+  agent?: string;
+  /**
+   * Leave `selectedWidgetId` out of this one run's `host_context` — the
+   * composer's context chip was dismissed, so this question is not about
+   * that widget even though the builder still has it selected.
+   */
+  omitSelectedWidget?: boolean;
+}
+
+/**
+ * The host's description of its screen, for one run — or null to send none.
+ *
+ * Read per run, never cached: the builder's canvas and selection change
+ * between questions. A host whose provider throws gets a run without context
+ * rather than no run at all; the context sharpens an answer, it is never what
+ * makes one possible.
+ */
+function readHostContext(
+  provider: (() => AskHostContext | null) | undefined,
+  omitSelectedWidget: boolean,
+): AskHostContext | null {
+  let context: AskHostContext | null;
+  try {
+    context = provider?.() ?? null;
+  } catch {
+    return null;
+  }
+  if (context === null || typeof context !== "object") return null;
+  if (!omitSelectedWidget || context.selectedWidgetId === undefined) return context;
+  const withoutSelection = { ...context };
+  delete withoutSelection.selectedWidgetId;
+  return withoutSelection;
 }
 
 let localIdCounter = 0;
@@ -86,6 +121,12 @@ function nextLocalId(prefix: string): string {
  */
 export function useChat(): UseChatResult {
   const client = useAskClient();
+  const { hostContextProvider } = useAskConfig();
+  // A ref, because `runTurn` is created once and must still reach the
+  // provider the host has CURRENTLY assigned — the element re-renders with a
+  // new config whenever one is set or cleared.
+  const hostContextRef = useRef(hostContextProvider);
+  hostContextRef.current = hostContextProvider;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [status, setStatus] = useState<"idle" | "streaming">("idle");
@@ -124,7 +165,7 @@ export function useChat(): UseChatResult {
     };
   }, []);
 
-  const runTurn = useCallback(async (text: string, options?: { agent?: string }) => {
+  const runTurn = useCallback(async (text: string, options?: SendOptions) => {
     isStreamingRef.current = true;
     setStatus("streaming");
     setError(null);
@@ -207,9 +248,20 @@ export function useChat(): UseChatResult {
     abortRef.current = controller;
 
     try {
+      const hostContext = readHostContext(
+        hostContextRef.current,
+        options?.omitSelectedWidget === true,
+      );
       const response = await postAgentRun(
         client,
-        { message: text, agent: options?.agent, session_id: conversationIdRef.current ?? undefined },
+        {
+          message: text,
+          agent: options?.agent,
+          session_id: conversationIdRef.current ?? undefined,
+          // Left off entirely when there is none: an embed with no
+          // dashboard beside it sends exactly the body it always did.
+          ...(hostContext === null ? {} : { host_context: hostContext }),
+        },
         { signal: controller.signal },
       );
 
@@ -298,7 +350,10 @@ export function useChat(): UseChatResult {
               // — dropped, the same forward-compatible discard protocol
               // parseChunk applies to a chunk type it doesn't know.
             } else {
-              partsAcc.push(toUIPart(dataChunk.type, dataChunk.data));
+              // `live`: this part is arriving on a run this session started,
+              // which is what lets a drafted widget insert itself exactly once
+              // (wireParts.adaptWidgetDraft). History never passes it.
+              partsAcc.push(toUIPart(dataChunk.type, dataChunk.data, { live: true }));
               updateActiveRun({ parts: [...partsAcc] });
             }
           }
@@ -335,7 +390,7 @@ export function useChat(): UseChatResult {
   }, []);
 
   const sendMessage = useCallback(
-    (text: string, options?: { agent?: string }) => {
+    (text: string, options?: SendOptions) => {
       const trimmed = text.trim();
       if (trimmed === "") return;
       if (isStreamingRef.current) {

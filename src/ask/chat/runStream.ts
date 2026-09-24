@@ -1,3 +1,4 @@
+import type { AskHostContext } from "../config.tsx";
 import { GatewayError } from "../http/errors.ts";
 import {
   AgentApiError,
@@ -16,6 +17,8 @@ export interface RunRequest {
   message: string;
   agent?: string;
   session_id?: number;
+  /** The host's screen (CONTRACT §7). Omitted when the host supplies none. */
+  host_context?: AskHostContext;
 }
 
 /**
