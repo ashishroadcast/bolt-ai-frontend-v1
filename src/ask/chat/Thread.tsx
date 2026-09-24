@@ -78,7 +78,14 @@ function rendersItsOwnProse(parts: UIPart[]): boolean {
  * there was no form anywhere on screen, because a tenant setting about SQL
  * tables had swallowed it.
  */
-const NEVER_HIDDEN = new Set(["data-form-draft"]);
+const NEVER_HIDDEN = new Set([
+  "data-form-draft",
+  // The same bug waiting to happen twice more: a drafted View or widget is
+  // the answer and carries the turn's only controls ("Open in builder",
+  // "Edit Widget"), so a tenant setting about SQL tables must not hide it.
+  "data-dashboard-draft",
+  "data-widget-draft",
+]);
 
 function splitByDisclosure(parts: UIPart[]): { answer: UIPart[]; evidence: UIPart[] } {
   return {

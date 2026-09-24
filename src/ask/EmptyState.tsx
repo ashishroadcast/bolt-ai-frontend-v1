@@ -9,7 +9,7 @@ interface QuickAction {
   body: string;
   /** What actually gets sent when the card is clicked — the card's own
    * copy is a label ("Summarize Report"), not necessarily a well-formed
-   * question, so the two are kept separate. */
+  * question, so the two are kept separate. */
   prompt: string;
 }
 

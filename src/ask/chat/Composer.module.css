@@ -5,6 +5,70 @@
  * composer bar that wraps this. This file only ever styles the pill
  * itself.
  */
+/* The chip (when there is one) above the pill. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+/*
+ * Figma F13's context chip — "Operation Widget ×": the widget the next
+ * question is about. A tinted pill so it reads as a TAG on the question, not
+ * as another control competing with the send button.
+ */
+.context {
+  display: flex;
+  min-width: 0;
+}
+
+.contextChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 4px 0 10px;
+  border-radius: 999px;
+  background: var(--signal-soft);
+  color: var(--signal);
+}
+
+.contextLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+
+.contextDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.contextDismiss:hover {
+  background: var(--signal-band);
+}
+
+.contextDismiss:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
 .composer {
   display: flex;
   align-items: center;
@@ -180,6 +244,58 @@
 .hint:focus-visible {
   outline: 2px solid var(--signal);
   outline-offset: 1px;
+}
+
+.voice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.voice:hover:not(:disabled) {
+  color: var(--signal);
+  background: var(--signal-soft);
+}
+
+.voice[data-listening] {
+  color: var(--danger, #b42318);
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.voice:disabled {
+  color: var(--fg-faint);
+  cursor: default;
+}
+
+.voice:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.voiceMessage {
+  position: absolute;
+  right: 42px;
+  bottom: calc(100% + 6px);
+  z-index: 3;
+  max-width: min(300px, calc(100% - 24px));
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--lift-float);
+  color: var(--danger, #b42318);
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.35;
 }
 
 .send {

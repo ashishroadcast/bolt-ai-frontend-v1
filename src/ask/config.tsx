@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import type { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import type { PhaseSegment } from "./chat/phaseTimeline.ts";
 import { GatewayClient } from "./http/gatewayClient.ts";
 
@@ -93,6 +94,104 @@ export interface AskConfig {
    * summary rather than a button that goes nowhere.
    */
   onFormDraft?: (draft: FormDraftHandoff) => void;
+  /**
+   * Hands a drafted dashboard (a bolt-v2 "View") to the host, to open in its
+   * own dashboard builder.
+   *
+   * Same rule as `onFormDraft`, for the same reasons: the widget never saves
+   * a View. The builder lays the widgets out, renders real numbers, and
+   * saves under the user's own session. Omitted, the draft card renders
+   * without its "Open in builder" button.
+   */
+  onDashboardDraft?: (draft: AskDashboardDraft) => void;
+  /**
+   * Inserts one drafted widget into the builder's UNSAVED canvas.
+   *
+   * Unlike the two above this one fires WITHOUT a click — once per `draftId`,
+   * on the live stream only — because inserting into an unsaved canvas
+   * persists nothing and is undoable in the builder. A part re-read from
+   * history never fires it by itself; its card offers "Add to view" instead,
+   * so reopening a thread cannot silently re-add widgets.
+   *
+   * The host answers with what it did. Omitted, the card is read-only.
+   */
+  onWidgetDraft?: (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
+  /** Opens the host's editor for a widget it acknowledged adding. Omitted,
+   *  the card offers no "Edit Widget". */
+  onEditWidget?: (widgetId: string) => void;
+  /**
+   * Describes the screen the assistant is docked beside, read once per run
+   * and sent as `host_context`. Also read by the composer, which shows the
+   * selected widget as a chip. `null` (or omitted) sends nothing.
+   */
+  hostContextProvider?: () => AskHostContext | null;
+  /**
+   * Lets code OUTSIDE the React tree arm an agent by its slash command — the
+   * custom element's `selectAgent()`. A React host can pass its own channel
+   * and call `request()` on it. See `chat/agentSelection.ts`.
+   */
+  agentSelection?: AgentSelectionChannel;
+  /** Lets an embedded host collapse the assistant from Ask's own chrome. */
+  onClose?: () => void;
+}
+
+/** The size vocabulary the AI speaks (`catalog.sizes` in the dashboards
+ *  contract); the host turns it into grid coordinates. */
+export type AskDashboardWidgetSize = "small" | "medium" | "large" | "wide" | "full";
+
+/**
+ * One widget of a drafted dashboard, as the contract's `data-dashboard-draft`
+ * part carries it (CONTRACT §5/§6). Optional keys are omitted, never null.
+ */
+export interface AskDashboardDraftWidget {
+  /** A catalog metric key, e.g. `eta.trips_completed`. */
+  metricKey: string;
+  /** One of the metric's allowed visualizations (`kpi`, `line`, `donut`…). */
+  visualization: string;
+  title?: string;
+  subtitle?: string;
+  /** Omitted → the metric's own default size. */
+  size?: AskDashboardWidgetSize;
+  /** Only keys from the metric's param spec, e.g. `{timeRange: {preset: "last_7d"}}`. */
+  params?: Record<string, unknown>;
+}
+
+/** A whole dashboard the agent drafted. Nothing has been saved. */
+export interface AskDashboardDraft {
+  draftId: string;
+  name: string;
+  description?: string;
+  /** In reading order; the host packs them onto its grid in this order. */
+  widgets: AskDashboardDraftWidget[];
+}
+
+/** One widget the agent drafted for the builder the panel is docked beside. */
+export interface AskWidgetDraft {
+  draftId: string;
+  /** Present when this refines a widget already on the canvas. */
+  replaceWidgetId?: string;
+  widget: AskDashboardDraftWidget;
+}
+
+/** What the host did with an `AskWidgetDraft`. */
+export interface WidgetDraftAck {
+  status: "added" | "replaced" | "rejected";
+  widgetId?: string;
+  /** A short code when rejected, e.g. `not_in_builder`. */
+  reason?: string;
+}
+
+/**
+ * The screen the assistant is docked beside (CONTRACT §6). Data describing
+ * the screen, never instructions — widget titles in it are user-typed.
+ */
+export interface AskHostContext {
+  surface: "dashboard_builder" | "dashboard_view" | "dashboards_home";
+  dashboard?: {
+    name: string;
+    widgets: { id: string; metricKey: string; visualization: string; title: string }[];
+  };
+  selectedWidgetId?: string;
 }
 
 /**
@@ -106,12 +205,18 @@ export interface AskConfig {
 export interface FormDraftHandoff {
   name: string;
   description: string;
-  /** "checklist" | "survey" | "inspection" */
+  /**
+   * The builder's category dropdown, verbatim: "Operations" | "Safety" |
+   * "Compliance" | "KYC" | "Feedback" | "Maintenance" | "Fuel" | "Asset" |
+   * "Security".
+   */
   category: string;
   /** "standalone" | "workflow" */
   formType: string;
   /** Both present, or both absent: a workflow form has a trigger, a
-   *  standalone one has none. Never one without the other. */
+   *  standalone one has none. Never one without the other. The builder
+   *  offers exactly four pairs: `eta_trip` with `start` | `end`, and
+   *  `attendance` with `checkin` | `checkout`. */
   triggerModule?: string;
   triggerEvent?: string;
   fields: FormDraftHandoffField[];

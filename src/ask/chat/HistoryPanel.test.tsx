@@ -18,11 +18,15 @@ function methodOf(input: RequestInfo | URL): string {
   return input instanceof Request ? input.method : "GET";
 }
 
-function renderPanel(fetchMock: ReturnType<typeof vi.fn>, onClose: () => void = () => {}) {
+function renderPanel(
+  fetchMock: ReturnType<typeof vi.fn>,
+  onClose: () => void = () => {},
+  onMinimize?: () => void,
+) {
   vi.stubGlobal("fetch", fetchMock);
   return render(<TestAskProvider>
       <ChatProvider>
-      <HistoryPanel onClose={onClose} />
+      <HistoryPanel onClose={onClose} onMinimize={onMinimize} />
     </ChatProvider>
     </TestAskProvider>,
   );
@@ -383,5 +387,18 @@ describe("HistoryPanel", () => {
 
     await screen.findByText("The claim is chronologically impossible.");
     expect(screen.queryByRole("button", { name: /^delete/i })).not.toBeInTheDocument();
+  });
+
+  it("lets an embedded host minimize the assistant from history", () => {
+    const onMinimize = vi.fn();
+    renderPanel(
+      vi.fn(() => Promise.resolve(jsonResponse({ items: [], next_cursor: null }))),
+      undefined,
+      onMinimize,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Minimize assistant" }));
+
+    expect(onMinimize).toHaveBeenCalledOnce();
   });
 });

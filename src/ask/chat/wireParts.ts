@@ -461,8 +461,98 @@ function adaptFormDraft(data: Record<string, unknown>): Record<string, unknown> 
   };
 }
 
-export function toUIPart(type: string, data: Record<string, unknown>): UIPart {
+const WIDGET_SIZES = new Set(["small", "medium", "large", "wide", "full"]);
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * One drafted widget, reduced to the contract's keys (CONTRACT §5/§6) —
+ * or null when it is missing the two it cannot mean anything without.
+ *
+ * Optional keys are copied only when present and well-typed, and otherwise
+ * left OUT rather than set to undefined or null: the host re-validates every
+ * draft against its live catalog, and "absent" is what means "use the
+ * metric's default" there. An unknown `size` is dropped for the same reason
+ * — the default size is a better answer than a size the grid cannot place.
+ */
+function adaptDraftWidget(raw: unknown): Record<string, unknown> | null {
+  if (!isRecord(raw)) return null;
+  if (!nonEmptyString(raw.metricKey) || !nonEmptyString(raw.visualization)) return null;
+  return {
+    metricKey: raw.metricKey,
+    visualization: raw.visualization,
+    ...(typeof raw.title === "string" && raw.title !== "" ? { title: raw.title } : {}),
+    ...(typeof raw.subtitle === "string" && raw.subtitle !== "" ? { subtitle: raw.subtitle } : {}),
+    ...(typeof raw.size === "string" && WIDGET_SIZES.has(raw.size) ? { size: raw.size } : {}),
+    ...(isRecord(raw.params) ? { params: raw.params } : {}),
+  };
+}
+
+/**
+ * A drafted dashboard. `dashboard_draft_intent` already emits the contract
+ * shape, so this only drops what it cannot use: a malformed widget is left
+ * out rather than taking the whole draft with it — same judgement as
+ * `adaptFormDraft`, because a View missing one widget is still one the reader
+ * can open and finish.
+ */
+function adaptDashboardDraft(data: Record<string, unknown>): Record<string, unknown> {
+  const widgets = (Array.isArray(data.widgets) ? data.widgets : [])
+    .map(adaptDraftWidget)
+    .filter((widget): widget is Record<string, unknown> => widget !== null);
+  if (!nonEmptyString(data.name)) return { draftId: "", name: "", widgets: [] };
+  return {
+    draftId: typeof data.draftId === "string" ? data.draftId : "",
+    name: data.name,
+    ...(typeof data.description === "string" && data.description !== ""
+      ? { description: data.description }
+      : {}),
+    widgets,
+  };
+}
+
+/**
+ * A drafted widget. `live` is NOT read from the payload: it says where the
+ * part came from (the run stream, not history), which only the caller knows —
+ * and it decides whether the card may insert itself into the host's canvas
+ * without a click, so a persisted part must never be able to claim it.
+ *
+ * An unusable part comes back with an empty `draftId`, which the card treats
+ * as read-only: no insert, no button.
+ */
+function adaptWidgetDraft(data: Record<string, unknown>, live: boolean): Record<string, unknown> {
+  const widget = adaptDraftWidget(data.widget);
+  if (widget === null || !nonEmptyString(data.draftId)) {
+    return { draftId: "", widget: { metricKey: "", visualization: "" }, live: false };
+  }
+  return {
+    draftId: data.draftId,
+    ...(nonEmptyString(data.replaceWidgetId) ? { replaceWidgetId: data.replaceWidgetId } : {}),
+    widget,
+    live,
+  };
+}
+
+/**
+ * `live` is true only for a part `useChat` is reading off a run this session
+ * started. History (`conversation.hydrateMessages`) never passes it. Only
+ * `data-widget-draft` reads it today — see `adaptWidgetDraft`.
+ */
+export function toUIPart(
+  type: string,
+  data: Record<string, unknown>,
+  options: { live?: boolean } = {},
+): UIPart {
   const intent = wireTypeToIntent(type);
+  if (intent === "data-dashboard-draft") return { intent, data: adaptDashboardDraft(data) };
+  if (intent === "data-widget-draft") {
+    return { intent, data: adaptWidgetDraft(data, options.live === true) };
+  }
   if (intent === "data-table") return { intent, data: adaptTable(data) };
   if (intent === "data-chart") return { intent, data: adaptChart(data) };
   if (intent === "data-stats") return { intent, data: adaptStats(data) };

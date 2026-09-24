@@ -1,4 +1,4 @@
-import { ArrowLeft, Link2, MessageCircle, MessageSquarePlus, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, Link2, MessageCircle, MessageSquarePlus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { GatewayError } from "../http/errors.ts";
 import { answerPreview } from "./answerPreview.ts";
@@ -265,9 +265,10 @@ export interface HistoryPanelProps {
   /** Returns to the conversation screen. Called on Escape, on the back
    * arrow, and once a conversation has actually opened. */
   onClose: () => void;
+  onMinimize?: () => void;
 }
 
-export function HistoryPanel({ onClose }: HistoryPanelProps) {
+export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   const client = useAskClient();
   const { loadConversation, activeConversationId, clearConversation } = useChatContext();
   const [searchInput, setSearchInput] = useState("");
@@ -372,6 +373,17 @@ export function HistoryPanel({ onClose }: HistoryPanelProps) {
           <span className={styles.heading}>Chat history</span>
           <span className={styles.subheading}>Pick up where you left off</span>
         </div>
+        {onMinimize !== undefined && (
+          <button
+            type="button"
+            className={styles.back}
+            onClick={onMinimize}
+            aria-label="Minimize assistant"
+            title="Minimize"
+          >
+            <X size={18} strokeWidth={2} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       <div className={styles.controls}>

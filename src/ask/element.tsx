@@ -1,6 +1,14 @@
 import { createRoot, type Root } from "react-dom/client";
 import { Ask } from "./Ask.tsx";
-import type { AskConfig, FormDraftHandoff } from "./config.tsx";
+import { AgentSelectionChannel } from "./chat/agentSelection.ts";
+import type {
+  AskConfig,
+  AskDashboardDraft,
+  AskHostContext,
+  AskWidgetDraft,
+  FormDraftHandoff,
+  WidgetDraftAck,
+} from "./config.tsx";
 
 /**
  * `<bolt-ai-ask>` — Ask as a custom element, for hosts that are not React.
@@ -53,6 +61,10 @@ const SHADOW_STYLES = "__ASK_SHADOW_STYLES__";
 
 type CredentialProvider = () => string | null | Promise<string | null>;
 type OrganisationProvider = () => string | null | undefined;
+type DashboardDraftHandler = (draft: AskDashboardDraft) => void;
+type WidgetDraftHandler = (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
+type EditWidgetHandler = (widgetId: string) => void;
+type HostContextProvider = () => AskHostContext | null;
 
 export class BoltAiAskElement extends HTMLElement {
   /** Observed so a host that sets them late (or changes them) still works. */
@@ -114,6 +126,102 @@ export class BoltAiAskElement extends HTMLElement {
   }
 
   private onFormDraftValue: ((draft: FormDraftHandoff) => void) | null = null;
+
+  /**
+   * Dynamic Dashboards (element 1.2.0). All four follow `onFormDraft`'s rule
+   * exactly — an accessor, `null` means the feature is off and the key is
+   * left out of `AskConfig`, and only a change of PRESENCE re-renders:
+   *
+   * - `onDashboardDraft` — "Open in builder" on a drafted View.
+   * - `onWidgetDraft` — inserts a drafted widget into the builder's unsaved
+   *   canvas: automatically, once per draft, on the live stream; from an
+   *   "Add to view" click for a reopened thread.
+   * - `onEditWidget` — "Edit Widget" on an acknowledged widget.
+   * - `hostContextProvider` — sent as `host_context` with every run, and the
+   *   source of the composer's selected-widget chip.
+   */
+  get onDashboardDraft(): DashboardDraftHandler | null {
+    return this.onDashboardDraftValue;
+  }
+
+  set onDashboardDraft(value: DashboardDraftHandler | null) {
+    const had = this.onDashboardDraftValue !== null;
+    this.onDashboardDraftValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onDashboardDraftValue: DashboardDraftHandler | null = null;
+
+  get onWidgetDraft(): WidgetDraftHandler | null {
+    return this.onWidgetDraftValue;
+  }
+
+  set onWidgetDraft(value: WidgetDraftHandler | null) {
+    const had = this.onWidgetDraftValue !== null;
+    this.onWidgetDraftValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onWidgetDraftValue: WidgetDraftHandler | null = null;
+
+  get onEditWidget(): EditWidgetHandler | null {
+    return this.onEditWidgetValue;
+  }
+
+  set onEditWidget(value: EditWidgetHandler | null) {
+    const had = this.onEditWidgetValue !== null;
+    this.onEditWidgetValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onEditWidgetValue: EditWidgetHandler | null = null;
+
+  get hostContextProvider(): HostContextProvider | null {
+    return this.hostContextProviderValue;
+  }
+
+  set hostContextProvider(value: HostContextProvider | null) {
+    const had = this.hostContextProviderValue !== null;
+    this.hostContextProviderValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private hostContextProviderValue: HostContextProvider | null = null;
+
+  /**
+   * One per element, for the element's life — it outlives re-renders and a
+   * disconnect/reconnect, so a request made before the widget mounted is
+   * still waiting when it does.
+   */
+  private readonly agentSelection = new AgentSelectionChannel();
+
+  /**
+   * Arms the agent whose `slash_command` is `slashCommand` (with or without
+   * the leading `/`), exactly as picking it from the composer's `/` menu does.
+   *
+   * Returns `false` when the agent list has loaded and no active agent has
+   * that command. Callable before the widget is mounted or configured, and
+   * before its agent list has loaded: the request is then remembered and
+   * applied the moment the list arrives, and this returns `true` — meaning
+   * "accepted". If the tenant turns out to have no such agent, the remembered
+   * request is dropped with a console warning. Only the latest request is
+   * remembered. See `chat/agentSelection.ts`.
+   */
+  selectAgent(slashCommand: string): boolean {
+    return this.agentSelection.request(slashCommand);
+  }
+
+  get onClose(): (() => void) | null {
+    return this.onCloseValue;
+  }
+
+  set onClose(value: (() => void) | null) {
+    const had = this.onCloseValue !== null;
+    this.onCloseValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onCloseValue: (() => void) | null = null;
 
   /**
    * Property forms of `base-url` / `setup-agents-href`, for a host that would
@@ -233,6 +341,28 @@ export class BoltAiAskElement extends HTMLElement {
       ...(this.onFormDraftValue === null
         ? {}
         : { onFormDraft: (draft: FormDraftHandoff) => this.onFormDraftValue?.(draft) }),
+      ...(this.onCloseValue === null ? {} : { onClose: () => this.onCloseValue?.() }),
+      // Same rule as `onFormDraft` above: left out when unset, so the cards
+      // can tell "no host builder" from "a builder that does nothing".
+      ...(this.onDashboardDraftValue === null
+        ? {}
+        : { onDashboardDraft: (draft: AskDashboardDraft) => this.onDashboardDraftValue?.(draft) }),
+      ...(this.onWidgetDraftValue === null
+        ? {}
+        : {
+            onWidgetDraft: (draft: AskWidgetDraft): Promise<WidgetDraftAck> =>
+              // Cleared between the render and the call (a host tearing
+              // down): the card records that as a rejection, not a hang.
+              this.onWidgetDraftValue?.(draft) ??
+              Promise.resolve({ status: "rejected", reason: "not_in_builder" }),
+          }),
+      ...(this.onEditWidgetValue === null
+        ? {}
+        : { onEditWidget: (widgetId: string) => this.onEditWidgetValue?.(widgetId) }),
+      ...(this.hostContextProviderValue === null
+        ? {}
+        : { hostContextProvider: () => this.hostContextProviderValue?.() ?? null }),
+      agentSelection: this.agentSelection,
       auth: {
         // Reads the property at call time, so a host that assigns it after
         // append — or replaces it later — is honoured without a re-render.

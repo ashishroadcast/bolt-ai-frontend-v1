@@ -52,6 +52,10 @@ const COMPOSED_INTENTS = new Set([
   // thing the reader acts on, and the only part on the card that carries a
   // control. Anything a run retrieved on the way to writing it is working.
   "data-form-draft",
+  // Drafted dashboards and widgets, for the same reason: each is the thing
+  // the reader acts on, and carries the turn's controls.
+  "data-dashboard-draft",
+  "data-widget-draft",
 ]);
 
 /**
