@@ -8,7 +8,7 @@ import {
   widgetGridSize,
   widgetTitle,
 } from "./dashboardCatalog.ts";
-import { GRID_COLUMNS, layoutHeight, packLayout } from "./packLayout.ts";
+import { GRID_COLUMNS, fillRowGaps, layoutHeight, packLayout } from "./packLayout.ts";
 import { VisualizationIcon } from "./VisualizationIcon.tsx";
 import styles from "./DashboardDraft.module.css";
 
@@ -30,7 +30,7 @@ export type DashboardDraftProps = AskDashboardDraft;
  * says the same thing in words.
  */
 function LayoutThumbnail({ widgets }: { widgets: AskDashboardDraftWidget[] }): ReactElement {
-  const rects = packLayout(widgets.map(widgetGridSize));
+  const rects = fillRowGaps(packLayout(widgets.map(widgetGridSize)));
   const rows = layoutHeight(rects);
   return (
     <div

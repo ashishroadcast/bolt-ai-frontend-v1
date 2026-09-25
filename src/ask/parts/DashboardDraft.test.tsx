@@ -63,10 +63,12 @@ describe("DashboardDraft", () => {
     const thumb = screen.getByRole("img", { name: /Layout preview: 3 widgets/ });
     const cells = thumb.querySelectorAll("span");
     expect(cells).toHaveLength(3);
-    // small at (0,0) 3×2; wide beside it at (3,0) 8×4; the 4×4 doughnut under both.
+    // small at (0,0) 3×2; wide beside it at (3,0), widened into the spare column;
+    // the doughnut under both, alone in its row, widened to the full grid.
     expect((cells[0] as HTMLElement).style.gridColumn).toBe("1 / span 3");
-    expect((cells[1] as HTMLElement).style.gridColumn).toBe("4 / span 8");
+    expect((cells[1] as HTMLElement).style.gridColumn).toBe("4 / span 9");
     expect((cells[2] as HTMLElement).style.gridRow).toBe("5 / span 4");
+    expect((cells[2] as HTMLElement).style.gridColumn).toBe("1 / span 12");
   });
 
   it("renders read-only in a host with no dashboard builder", () => {
