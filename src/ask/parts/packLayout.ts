@@ -10,7 +10,8 @@
  *
  * The algorithm is first-fit with top-left gravity: each widget, in order,
  * takes the first free cell scanning rows top to bottom and, within a row,
- * columns left to right. Pure and deterministic — the same input always packs
+ * columns left to right, at or after the previous widget's top-left corner
+ * (the builder's reading-order cursor). Pure and deterministic — the same input always packs
  * the same way, which is what makes it testable and what keeps the thumbnail
  * from reshuffling on a re-render.
  */
@@ -50,14 +51,16 @@ export function packLayout(
   const columns = Math.max(1, Math.round(options.columns ?? GRID_COLUMNS));
   const placed: GridRect[] = [...(options.existing ?? [])];
   const packed: GridRect[] = [];
+  let cursor = { x: 0, y: 0 };
 
   for (const size of sizes) {
     const { w, h } = normalised(size, columns);
     // Terminates: at y = the lowest bottom edge so far, the whole row band is
     // empty, so x = 0 always fits there.
-    for (let y = 0; ; y += 1) {
+    for (let y = cursor.y; ; y += 1) {
       let slot: GridRect | null = null;
       for (let x = 0; x + w <= columns; x += 1) {
+        if (y === cursor.y && x < cursor.x) continue;
         const candidate = { x, y, w, h };
         if (!placed.some((rect) => overlaps(rect, candidate))) {
           slot = candidate;
@@ -67,12 +70,63 @@ export function packLayout(
       if (slot !== null) {
         placed.push(slot);
         packed.push(slot);
+        cursor = { x: slot.x, y: slot.y };
         break;
       }
     }
   }
 
   return packed;
+}
+
+/** Widens each edge-to-edge row (same top, same height) into empty columns to its right; for whole AI drafts only. */
+export function fillRowGaps(
+  rects: readonly GridRect[],
+  options: { columns?: number; existing?: readonly GridRect[] } = {},
+): GridRect[] {
+  const columns = Math.max(1, Math.round(options.columns ?? GRID_COLUMNS));
+  const out = rects.map((rect) => ({ ...rect }));
+  const obstacles = options.existing ?? [];
+
+  const bands = new Map<string, number[]>();
+  out.forEach((rect, index) => {
+    const band = `${rect.y}:${rect.h}`;
+    bands.set(band, [...(bands.get(band) ?? []), index]);
+  });
+
+  for (const members of bands.values()) {
+    const ordered = [...members].sort((a, b) => out[a]!.x - out[b]!.x);
+    const runs: number[][] = [];
+    for (const index of ordered) {
+      const run = runs.at(-1);
+      const last = run === undefined ? undefined : out[run.at(-1)!]!;
+      if (run !== undefined && last !== undefined && last.x + last.w === out[index]!.x) run.push(index);
+      else runs.push([index]);
+    }
+    for (const run of runs) {
+      const first = out[run[0]!]!;
+      const last = out[run.at(-1)!]!;
+      const end = last.x + last.w;
+      const gap = columns - end;
+      if (gap <= 0) continue;
+      const region = { x: end, y: first.y, w: gap, h: first.h };
+      const blocked =
+        obstacles.some((rect) => overlaps(rect, region)) ||
+        out.some((rect, index) => !run.includes(index) && overlaps(rect, region));
+      if (blocked) continue;
+      const base = Math.floor(gap / run.length);
+      const extra = gap % run.length;
+      let x = first.x;
+      run.forEach((index, position) => {
+        const rect = out[index]!;
+        rect.w += base + (position < extra ? 1 : 0);
+        rect.x = x;
+        x += rect.w;
+      });
+    }
+  }
+
+  return out;
 }
 
 /** How many rows a packed layout occupies. */

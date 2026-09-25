@@ -92,6 +92,53 @@ export const METRICS: Record<string, MetricFacts> = {
     defaultSize: { w: 4, h: 4 },
     defaultTimeRange: "today",
   },
+  "report.idle_time": {
+    title: "Idle Time",
+    defaultSize: { w: 3, h: 2 },
+    defaultTimeRange: "last_7d",
+  },
+  "report.idle_time_daily": {
+    title: "Idle Time Trend",
+    defaultSize: { w: 8, h: 4 },
+    defaultTimeRange: "last_30d",
+  },
+  "report.engine_hours": {
+    title: "Engine Hours",
+    defaultSize: { w: 3, h: 2 },
+    defaultTimeRange: "last_7d",
+  },
+  "report.engine_hours_daily": {
+    title: "Engine Hours Trend",
+    defaultSize: { w: 8, h: 4 },
+    defaultTimeRange: "last_30d",
+  },
+  "safety.adas_dms_breakdown": {
+    title: "ADAS & DMS Events",
+    defaultSize: { w: 4, h: 4 },
+    defaultTimeRange: "today",
+  },
+  "safety.high_risk_devices": {
+    title: "High-Risk Vehicles",
+    defaultSize: { w: 6, h: 5 },
+    defaultTimeRange: "last_7d",
+  },
+  "fuel.total_consumed": {
+    title: "Fuel Consumed",
+    defaultSize: { w: 3, h: 2 },
+    defaultTimeRange: "last_7d",
+  },
+  "fuel.theft_incidents": {
+    title: "Fuel Theft Incidents",
+    defaultSize: { w: 3, h: 2 },
+    defaultTimeRange: "last_7d",
+  },
+  "yard.gate_turnaround": {
+    title: "Gate Turnaround Time",
+    defaultSize: { w: 3, h: 2 },
+    defaultTimeRange: "last_7d",
+  },
+  // Point-in-time: no time range to show.
+  "people.headcount": { title: "Active Headcount", defaultSize: { w: 3, h: 2 } },
 };
 
 /** The builder's own words for each graph style (F10, F3's type lines). */
