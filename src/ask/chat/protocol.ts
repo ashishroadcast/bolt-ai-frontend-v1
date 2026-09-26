@@ -17,6 +17,10 @@
 export interface StartChunk {
   type: "start";
   messageId: string;
+  /** `session_id`, and now `agent_name` — the only place a caller who named
+   * no agent on the request learns which one `app.api.run._choose_agent`
+   * picked, since nothing else on the wire echoes that decision back. */
+  messageMetadata?: { session_id?: number; agent_name?: string };
 }
 
 export interface TextStartChunk {

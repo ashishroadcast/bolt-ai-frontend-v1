@@ -116,6 +116,10 @@ describe("Composer", () => {
     renderComposer("Sales Analyst");
 
     const field = screen.getByLabelText("Ask a question");
+    // Enabling now also waits on the agent list (`canSend` reads
+    // `agents.length`, not just `selectedAgent`), which this mock resolves
+    // asynchronously even though `SelectAgent` above set the name at once.
+    await waitFor(() => expect(field).toBeEnabled());
     fireEvent.change(field, { target: { value: "top items last week" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
@@ -135,6 +139,7 @@ describe("Composer", () => {
   it("keeps the action's name through the flow: Ask becomes Asking while a run streams, and both the field and button disable", async () => {
     renderComposer("Sales Analyst");
 
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
     fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
@@ -152,11 +157,26 @@ describe("Composer", () => {
     expect(runCalls(fetchMock)).toHaveLength(0);
   });
 
-  it("stays disabled with no agent selected, so a run can never fire with none named on the wire", () => {
+  it("sends the question with no agent named when none has been armed, so the server routes it itself", async () => {
     renderComposer(null);
 
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    const body = await runCalls(fetchMock)[0]!.json();
+    expect(body).toMatchObject({ message: "hello" });
+    expect(body.agent).toBeUndefined();
+  });
+
+  it("stays disabled while the tenant has no agent at all, so a run can never fire with nothing to route to", async () => {
+    fetchMock = routed([]);
+    vi.stubGlobal("fetch", fetchMock);
+    renderComposer(null);
+
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeDisabled());
     expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled();
-    expect(screen.getByLabelText("Ask a question")).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));

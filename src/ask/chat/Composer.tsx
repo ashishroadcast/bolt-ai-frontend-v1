@@ -13,10 +13,11 @@ import styles from "./Composer.module.css";
  * longer imports it) purely so AskRoute.tsx doesn't carry its markup
  * inline, not because anything else renders it.
  *
- * Sends to `selectedAgent` from `ChatContext` (`AgentPicker.tsx` sets it)
- * — disabled while that's `null`, i.e. before the picker has resolved a
- * default or when the tenant has no agent at all, so this can never fire
- * a run with no agent named on the wire.
+ * Sends `selectedAgent` from `ChatContext` when a slash command has
+ * explicitly armed one (`choose()` below) — otherwise omits `agent`
+ * entirely, so `app.api.run._choose_agent` routes the question itself.
+ * Disabled only while there is truly nothing to route to yet: no agents
+ * loaded for this tenant, streaming, or offline.
  *
  * Copy rule (task brief): an action keeps its name through the flow —
  * "Ask" becomes "Asking" while a run is in flight, never a spinner with no
@@ -163,7 +164,13 @@ export function Composer() {
   const [isStartingVoice, setIsStartingVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const isStreaming = status === "streaming";
-  const canSend = selectedAgent !== null && !isStreaming && isOnline;
+  // Not `selectedAgent !== null` — a question with no agent armed is now
+  // the normal case, routed automatically once it reaches the server.
+  // `agents.length > 0` is what `selectedAgent` used to gate for free (the
+  // old picker never resolved a default before the list loaded, and never
+  // resolved one at all for a tenant with none): still loading or truly
+  // empty must still disable this, since there is nothing to route to.
+  const canSend = agents.length > 0 && !isStreaming && isOnline;
   const voiceSupported = speechRecognitionConstructor() !== null;
 
   useEffect(
@@ -182,12 +189,13 @@ export function Composer() {
   const active = matches[Math.min(highlight, matches.length - 1)];
 
   function choose(entry: SlashCommand) {
-    // Arms the agent through the picker rather than through state of its own.
-    // The picker sits directly above this input and already says who the
-    // question goes to, so the command has a visible effect and an obvious
-    // way back — and follow-ups ("make that field optional") keep reaching
-    // the agent that drafted the thing being followed up on, which a
-    // one-shot arming would silently lose.
+    // Arms the agent through ChatContext rather than through state of its
+    // own, so it outlives this one turn: follow-ups ("make that field
+    // optional") keep reaching the agent that drafted the thing being
+    // followed up on, which a one-shot arming would silently lose. Shown
+    // back to the reader as a "Chatting with X" line above the thread
+    // (AgentPicker.tsx) — the one case that bar still has something to say,
+    // now that it no longer offers a menu to change it.
     setSelectedAgent(entry.agent.name);
     setValue("");
     setDismissed(false);

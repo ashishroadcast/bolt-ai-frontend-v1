@@ -159,7 +159,13 @@ export function useChat(): UseChatResult {
     // this client observed, and naming an agent that may not exist is a
     // worse answer to "who am I chatting with" than naming none. See
     // RunSummary.agentName.
-    const agentName = options?.agent ?? null;
+    //
+    // A starting guess only — `options?.agent` is unset for most runs now
+    // (auto-routed by `app.api.run._choose_agent`), so this gets overwritten
+    // by the "start" chunk's own `messageMetadata.agent_name` the moment it
+    // arrives, which is the server's actual decision rather than this
+    // client's request.
+    let agentName = options?.agent ?? null;
 
     setActiveRun({
       messageId,
@@ -217,7 +223,9 @@ export function useChat(): UseChatResult {
         switch (chunk.type) {
           case "start": {
             messageId = chunk.messageId;
-            updateActiveRun({ messageId });
+            const resolvedAgent = chunk.messageMetadata?.agent_name;
+            if (typeof resolvedAgent === "string") agentName = resolvedAgent;
+            updateActiveRun({ messageId, agentName });
             break;
           }
           case "text-delta": {

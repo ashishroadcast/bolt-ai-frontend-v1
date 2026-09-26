@@ -30,7 +30,9 @@
   color: var(--fg-faint);
 }
 
-.select {
+/* The agent a slash command armed, named back — no longer a control, so
+   no border/cursor/focus styling of its own to invite clicking it. */
+.armedName {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 13px;
@@ -39,12 +41,6 @@
   border: 1px solid var(--rule);
   border-radius: 7px;
   padding: 5px 10px;
-  cursor: pointer;
-}
-
-.select:focus-visible {
-  outline: 2px solid var(--signal);
-  outline-offset: 1px;
 }
 
 .loading {
@@ -66,22 +62,20 @@
 /* Narrow column — see Composer.module.css for why this is `@container`. */
 @container ask (max-width: 34rem) {
   /*
-   * "CHATTING WITH" goes; the select stays and grows.
+   * "CHATTING WITH" goes; the name stays and grows.
    *
-   * The label names what the control beside it obviously is, and at this
-   * width it was taking a third of the row from the one thing that carries
-   * information — the agent's name, which was truncating while the label sat
-   * beside it at full length.
+   * The label names what sits beside it, and at this width it was taking a
+   * third of the row from the one thing that carries information — the
+   * agent's name, which was truncating while the label sat beside it at
+   * full length.
    */
   .label {
     display: none;
   }
 
-  .select {
+  .armedName {
     flex: 1;
     min-width: 0;
-    /* Taller target and a little more inset — this is the panel's primary
-       control and it was reading as a cramped native select. */
     padding-block: 7px;
   }
 
