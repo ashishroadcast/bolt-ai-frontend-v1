@@ -1,6 +1,6 @@
-import { ArrowRight, Mic, Paperclip, Slash, Square } from "lucide-react";
+import { ArrowRight, Mic, Paperclip, Slash, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { useAskConfig } from "../config.tsx";
+import { useAskConfig, type AskHostContext } from "../config.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
@@ -27,6 +27,10 @@ import styles from "./Composer.module.css";
  * `AskConfig.copy` — because "sales, items, discounts" is nonsense on a
  * screen full of vehicles. */
 const DEFAULT_PLACEHOLDER = "How can I help you?";
+/** Figma F13: what the field asks once a widget is the subject. */
+const REFINE_PLACEHOLDER = "Please specify what you want to change";
+/** How often the chip re-reads the host's selection — see useSelectedWidget. */
+const HOST_CONTEXT_POLL_MS = 1_000;
 const VOICE_SILENCE_TIMEOUT_MS = 3_000;
 
 interface SpeechRecognitionAlternativeLike {
@@ -145,6 +149,59 @@ function matching(commands: SlashCommand[], query: string): SlashCommand[] {
   return commands.filter((entry) => entry.command.startsWith(query));
 }
 
+interface SelectedWidget {
+  id: string;
+  title: string;
+}
+
+function readSelectedWidget(
+  provider: (() => AskHostContext | null) | undefined,
+): SelectedWidget | null {
+  let context: AskHostContext | null;
+  try {
+    context = provider?.() ?? null;
+  } catch {
+    return null;
+  }
+  const id = context?.selectedWidgetId;
+  if (typeof id !== "string" || id === "") return null;
+  const title = context?.dashboard?.widgets?.find((widget) => widget.id === id)?.title;
+  return { id, title: typeof title === "string" && title.trim() !== "" ? title : "Selected widget" };
+}
+
+/**
+ * The widget the host has selected, for the context chip (Figma F13).
+ *
+ * The host API is a provider, not an event: the builder answers "what is
+ * selected?" when asked and never announces a change. So this asks on mount,
+ * whenever a run starts or finishes (an acknowledged insert usually selects
+ * the new widget), and on a slow poll in between — a sync call returning a
+ * small object, cheap enough that a second of lag is the only cost. State is
+ * only replaced when the answer actually changes, so the poll re-renders
+ * nothing while the selection sits still.
+ */
+function useSelectedWidget(
+  provider: (() => AskHostContext | null) | undefined,
+  status: string,
+): SelectedWidget | null {
+  const [selected, setSelected] = useState<SelectedWidget | null>(() => readSelectedWidget(provider));
+
+  useEffect(() => {
+    const sync = () =>
+      setSelected((previous) => {
+        const next = readSelectedWidget(provider);
+        if (previous?.id === next?.id && previous?.title === next?.title) return previous;
+        return next;
+      });
+    sync();
+    if (provider === undefined) return;
+    const timer = setInterval(sync, HOST_CONTEXT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [provider, status]);
+
+  return selected;
+}
+
 export function Composer() {
   const [value, setValue] = useState("");
   // Set when the reader presses Escape, cleared as soon as they type
@@ -153,8 +210,13 @@ export function Composer() {
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const { status, sendMessage, selectedAgent, setSelectedAgent } = useChatContext();
-  const { copy } = useAskConfig();
+  const { copy, hostContextProvider } = useAskConfig();
   const { agents } = useAskAgents();
+  const selectedWidget = useSelectedWidget(hostContextProvider, status);
+  // The widget whose chip the reader dismissed. Keyed by id so selecting a
+  // DIFFERENT widget in the builder brings the chip back for that one.
+  const [dismissedWidgetId, setDismissedWidgetId] = useState<string | null>(null);
+  const chip = selectedWidget !== null && selectedWidget.id !== dismissedWidgetId ? selectedWidget : null;
   const isOnline = useOnlineStatus();
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -325,11 +387,48 @@ export function Composer() {
     voiceStopTimerRef.current = null;
     recognitionRef.current = null;
     setIsListening(false);
-    sendMessage(trimmed, { agent: selectedAgent ?? undefined });
+    // A dismissed chip means THIS question is not about that widget, so the
+    // run is sent without it. For this one message only: the builder still
+    // has it selected, and the next question may well be about it again.
+    const omitSelectedWidget = selectedWidget !== null && chip === null;
+    sendMessage(trimmed, {
+      agent: selectedAgent ?? undefined,
+      ...(omitSelectedWidget ? { omitSelectedWidget: true } : {}),
+    });
+    setDismissedWidgetId(null);
     setValue("");
   }
 
+  const placeholder = !isOnline
+    ? "Waiting for connection…"
+    : chip !== null
+      ? REFINE_PLACEHOLDER
+      : (copy?.placeholder ?? DEFAULT_PLACEHOLDER);
+
   return (
+    <div className={styles.stack}>
+    {chip !== null && (
+      // F13's "Operation Widget ×": what the next question will be about.
+      <div className={styles.context}>
+        <span className={styles.contextChip}>
+          <span className={styles.contextLabel} title={chip.title}>
+            {chip.title}
+          </span>
+          <button
+            type="button"
+            className={styles.contextDismiss}
+            aria-label={`Don't ask about ${chip.title}`}
+            title="Ask about something else"
+            onClick={() => {
+              setDismissedWidgetId(chip.id);
+              inputRef.current?.focus();
+            }}
+          >
+            <X size={12} strokeWidth={2.5} aria-hidden="true" />
+          </button>
+        </span>
+      </div>
+    )}
     <form className={styles.composer} onSubmit={handleSubmit} data-offline={!isOnline || undefined}>
       {menuOpen && (
         <div className={styles.menu} id="ask-commands" role="listbox" aria-label="Commands">
@@ -378,7 +477,7 @@ export function Composer() {
           ref={inputRef}
           type="text"
           className={styles.field}
-          placeholder={!isOnline ? "Waiting for connection…" : (copy?.placeholder ?? DEFAULT_PLACEHOLDER)}
+          placeholder={placeholder}
           aria-label="Ask a question"
           role={commands.length > 0 ? "combobox" : undefined}
           aria-expanded={commands.length > 0 ? menuOpen : undefined}
@@ -450,5 +549,6 @@ export function Composer() {
         <ArrowRight size={14} strokeWidth={2.25} aria-hidden="true" />
       </button>
     </form>
+    </div>
   );
 }

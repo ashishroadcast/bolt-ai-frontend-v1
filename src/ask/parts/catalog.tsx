@@ -7,6 +7,8 @@ import { DataQuestion, type DataQuestionProps } from "./DataQuestion.tsx";
 import { DataSummary, type DataSummaryProps } from "./DataSummary.tsx";
 import { Citations, type CitationsProps } from "./Citations.tsx";
 import { FormDraft, type FormDraftProps } from "./FormDraft.tsx";
+import { DashboardDraft, type DashboardDraftProps } from "./DashboardDraft.tsx";
+import { WidgetDraft, type WidgetDraftProps } from "./WidgetDraft.tsx";
 import { UnknownIntent } from "./UnknownIntent.tsx";
 
 /*
@@ -28,6 +30,8 @@ export type UIPartIntent =
   | "data-summary"
   | "data-question"
   | "data-form-draft"
+  | "data-dashboard-draft"
+  | "data-widget-draft"
   | "citations";
 
 export interface UIPartDataByIntent {
@@ -38,6 +42,8 @@ export interface UIPartDataByIntent {
   "data-summary": DataSummaryProps;
   "data-question": DataQuestionProps;
   "data-form-draft": FormDraftProps;
+  "data-dashboard-draft": DashboardDraftProps;
+  "data-widget-draft": WidgetDraftProps;
   citations: CitationsProps;
 }
 
@@ -65,6 +71,8 @@ const componentCatalog: Record<UIPartIntent, ComponentType<any>> = {
   "data-summary": DataSummary,
   "data-question": DataQuestion,
   "data-form-draft": FormDraft,
+  "data-dashboard-draft": DashboardDraft,
+  "data-widget-draft": WidgetDraft,
   citations: Citations,
 };
 

@@ -1,6 +1,6 @@
 {
   "name": "@bolt-ai/ask-element",
-  "version": "1.1.7",
+  "version": "1.2.1",
   "description": "Ask, as a <bolt-ai-ask> custom element — one self-contained file that embeds the assistant in any host, React or not.",
   "license": "UNLICENSED",
   "type": "module",

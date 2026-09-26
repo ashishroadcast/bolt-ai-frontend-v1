@@ -91,3 +91,16 @@ describe("arrangeParts", () => {
     expect(arrangeParts([tableOf(13), stats]).evidence).toEqual([tableOf(13)]);
   });
 });
+
+describe("arrangeParts — drafted dashboards and widgets", () => {
+  const dashboardDraft: UIPart = { intent: "data-dashboard-draft", data: { name: "V", widgets: [] } };
+  const widgetDraft: UIPart = { intent: "data-widget-draft", data: { draftId: "d" } };
+
+  it("leads with a drafted View or widget and folds the scan behind it", () => {
+    for (const draft of [dashboardDraft, widgetDraft]) {
+      const layout = arrangeParts([table, draft]);
+      expect(layout.shown[0]).toEqual(draft);
+      expect(layout.evidence).toEqual([table]);
+    }
+  });
+});

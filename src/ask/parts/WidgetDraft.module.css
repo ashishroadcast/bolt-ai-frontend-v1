@@ -1,0 +1,154 @@
+/*
+ * A drafted widget (Figma F13/F14). Smaller than a dashboard draft — one
+ * widget, one status, one or two actions — but the same sheet chrome, so a
+ * turn that drafted a widget reads like every other turn that produced an
+ * object.
+ */
+.draft {
+  background: var(--surface);
+  color: var(--on-sheet);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-card);
+  box-shadow: var(--lift-card);
+  margin-bottom: var(--stack);
+  overflow: hidden;
+}
+
+.draft:last-child {
+  margin-bottom: 0;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-control);
+  background: var(--signal-soft);
+  color: var(--signal);
+  flex: none;
+  margin-top: 1px;
+}
+
+.heading {
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.sub {
+  margin: 3px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--fg-faint);
+}
+
+.foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: var(--pad-sheet-y) var(--pad-sheet-x);
+  border-top: 1px solid var(--rule-soft);
+  background: var(--surface-sunk);
+}
+
+.status {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+.status[data-status="pending"] {
+  color: var(--fg-dim);
+}
+
+/* "Not saved yet" is the part a skimming reader must not miss. */
+.status[data-status="added"],
+.status[data-status="replaced"] {
+  padding-left: 9px;
+  border-left: 2px solid var(--signal);
+}
+
+.status[data-status="rejected"] {
+  padding-left: 9px;
+  border-left: 2px solid var(--amber);
+  color: var(--fg);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.actions:empty {
+  display: none;
+}
+
+.edit,
+.add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--control-h);
+  padding: 0 var(--control-pad-x);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-small);
+  cursor: pointer;
+  flex: none;
+}
+
+/* F14's "Edit Widget": the filled pill. */
+.edit {
+  border: 0;
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.edit:hover:not(:disabled) {
+  background: var(--signal-hover);
+}
+
+/* F13: visibly there, visibly not yet usable. */
+.edit:disabled {
+  background: var(--signal-band);
+  cursor: not-allowed;
+}
+
+.add {
+  border: 1px solid var(--signal);
+  background: var(--surface);
+  color: var(--signal);
+}
+
+.add:hover {
+  background: var(--signal-soft);
+}
+
+.edit:focus-visible,
+.add:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
