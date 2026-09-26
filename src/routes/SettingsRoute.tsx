@@ -7,6 +7,7 @@ import {
   deleteLlmConfig,
   listLlmConfigs,
   listModelCatalogue,
+  previewModels,
   updateLlmConfig,
   type CatalogueModel,
   type LLMConfig,
@@ -48,6 +49,67 @@ function formatContext(tokens: number | null | undefined): string | null {
 }
 
 const CATALOGUE_SUGGESTION_LIMIT = 8;
+
+/** How long to let the operator finish typing a base URL or key before
+ * asking a live provider for its models — the same debounce a search box
+ * would use, chosen so a single paste doesn't fire one request per
+ * character. */
+const LIVE_FETCH_DEBOUNCE_MS = 400;
+
+/** Sentinel for "Custom Endpoint" — not a real `provider` value, just what
+ * the picker shows while the actual string is typed into the field beside
+ * it. Never sent to the server; `form.provider` always is. */
+const CUSTOM_PROVIDER = "__custom__";
+
+interface ProviderOption {
+  value: string;
+  label: string;
+  /** Whether this provider exposes an OpenAI-compatible `GET {base_url}/
+   * models` this form can call for live suggestions
+   * (`app.api.llm_configs.preview_models`'s own generic branch). Anthropic,
+   * Azure, Google and xAI each have their own distinct, non-OpenAI-shaped
+   * API for this — out of scope here; picking one of those still means
+   * typing the model id by hand, exactly like every provider did before
+   * this picker existed. */
+  liveFetch: boolean;
+}
+
+/**
+ * The known providers this console offers a name for — not an exhaustive
+ * list of every string `LLMConfig.provider` could ever hold (an operator
+ * can still type anything via "Custom Endpoint"), just the ones worth a
+ * proper label instead of a blank text box. OpenRouter's own catalogue
+ * stays keyless and public (`listModelCatalogue`); OmniRoute is the
+ * provider this task's own investigation confirmed answers `GET {base_url}
+ * /models` with its FULL live model list (1734 entries against 11
+ * previously hand-registered rows, verified live 2026-09-26) rather than
+ * only whichever rows happened to be pre-saved.
+ */
+const KNOWN_PROVIDERS: ProviderOption[] = [
+  { value: "anthropic", label: "Anthropic", liveFetch: false },
+  { value: "azure", label: "Azure", liveFetch: false },
+  { value: "google", label: "Google", liveFetch: false },
+  { value: "omniroute", label: "OmniRoute", liveFetch: true },
+  { value: "openai", label: "OpenAI", liveFetch: true },
+  { value: "openrouter", label: "OpenRouter", liveFetch: true },
+  { value: "xai", label: "xAI", liveFetch: false },
+];
+
+/** Which picker option a stored `provider` string corresponds to — any
+ * value not in `KNOWN_PROVIDERS` reads as "Custom Endpoint", so an existing
+ * row with an unusual provider string is never silently relabelled as one
+ * of the known ones. */
+function providerChoiceFor(provider: string): string {
+  return KNOWN_PROVIDERS.some((option) => option.value === provider) ? provider : CUSTOM_PROVIDER;
+}
+
+/** Whether `providerChoice` should live-fetch — "Custom Endpoint" always
+ * does (that is the whole point of typing a `base_url` by hand), a known
+ * provider defers to its own `liveFetch` flag. */
+function liveFetchFor(providerChoice: string): boolean {
+  if (providerChoice === CUSTOM_PROVIDER) return true;
+  return KNOWN_PROVIDERS.find((option) => option.value === providerChoice)?.liveFetch ?? false;
+}
 
 /**
  * Above this many rows, a provider whose shelf is entirely `is_active:
@@ -155,29 +217,86 @@ function CreateLlmConfigForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [catalogue, setCatalogue] = useState<CatalogueModel[]>([]);
   const [catalogueError, setCatalogueError] = useState<string | null>(null);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
 
-  // The catalogue is a public price list, so a failure here is a degraded
-  // form and not a broken one: the field stays typeable and the operator
-  // is told why the list is empty rather than being left to wonder.
+  const providerChoice = providerChoiceFor(form.provider);
+  const providerLiveFetch = liveFetchFor(providerChoice);
+  const baseUrl = form.baseUrl.trim();
+
+  // Every provider's model suggestions are fetched the same way this form
+  // asks for anything else about a not-yet-saved config: OpenRouter's own
+  // public catalogue once (no key, no base_url, cached server-side), any
+  // other live-fetch provider debounced on its base_url/key
+  // (`previewModels`, the "Add a model" form's own gap this closes — see
+  // that endpoint's docstring), and a provider with neither is left to
+  // free-text typing exactly as it always was.
   useEffect(() => {
     let cancelled = false;
-    listModelCatalogue()
-      .then((models) => {
-        if (!cancelled) setCatalogue(models);
+    setCatalogueError(null);
+
+    if (providerChoice === "openrouter") {
+      setCatalogueLoading(true);
+      listModelCatalogue()
+        .then((models) => {
+          if (!cancelled) setCatalogue(models);
+        })
+        .catch(() => {
+          if (!cancelled) setCatalogueError("Couldn't load the model catalogue.");
+        })
+        .finally(() => {
+          if (!cancelled) setCatalogueLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!providerLiveFetch || baseUrl === "") {
+      setCatalogue([]);
+      setCatalogueLoading(false);
+      return;
+    }
+
+    setCatalogueLoading(true);
+    const timer = setTimeout(() => {
+      previewModels({
+        provider: form.provider.trim(),
+        base_url: baseUrl,
+        api_key: form.apiKey.trim() === "" ? undefined : form.apiKey.trim(),
       })
-      .catch(() => {
-        if (!cancelled) setCatalogueError("Couldn't load the model catalogue.");
-      });
+        .then((models) => {
+          if (!cancelled) setCatalogue(models);
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setCatalogue([]);
+            setCatalogueError(errorMessage(err));
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setCatalogueLoading(false);
+        });
+    }, LIVE_FETCH_DEBOUNCE_MS);
+
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [providerChoice, providerLiveFetch, baseUrl, form.provider, form.apiKey]);
 
   const query = form.model.trim().toLowerCase();
   const chosen = useMemo(
     () => catalogue.find((model) => model.id === form.model.trim()) ?? null,
     [catalogue, form.model],
   );
+  // A live-fetched (non-OpenRouter) model reports none of these three —
+  // see `_parse_generic_models`'s own docstring — so the summary line
+  // below only renders when there is at least one fact to actually show;
+  // otherwise it would be a bare "per 1M tokens" floating with nothing
+  // beside it.
+  const chosenContext = chosen === null ? null : formatContext(chosen.context_length);
+  const chosenIn = chosen === null ? null : pricePerMillion(chosen.pricing?.prompt);
+  const chosenOut = chosen === null ? null : pricePerMillion(chosen.pricing?.completion);
   // Suggestions disappear once the value *is* a catalogue id — at that
   // point the list would only offer the row already chosen, and the
   // summary line under the field carries the same two numbers.
@@ -256,13 +375,38 @@ function CreateLlmConfigForm({
           <label className={styles.label} htmlFor="llm-provider">
             Provider
           </label>
-          <input
+          <select
             id="llm-provider"
             className={styles.input}
-            value={form.provider}
-            onChange={(event) => patch({ provider: event.target.value })}
+            value={providerChoice}
+            onChange={(event) => {
+              const next = event.target.value;
+              // Custom Endpoint clears the field rather than keeping
+              // whatever known value was picked before — an operator who
+              // switches to it is about to type their own name, and a
+              // stale "openrouter" left sitting underneath would silently
+              // get sent if they typed nothing.
+              patch({ provider: next === CUSTOM_PROVIDER ? "" : next });
+            }}
             disabled={submitting}
-          />
+          >
+            {KNOWN_PROVIDERS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+            <option value={CUSTOM_PROVIDER}>Custom Endpoint</option>
+          </select>
+          {providerChoice === CUSTOM_PROVIDER && (
+            <input
+              className={`${styles.input} ${styles.customProviderName}`}
+              placeholder="Provider name"
+              aria-label="Custom provider name"
+              value={form.provider}
+              onChange={(event) => patch({ provider: event.target.value })}
+              disabled={submitting}
+            />
+          )}
         </div>
 
         <div className={styles.field}>
@@ -282,23 +426,21 @@ function CreateLlmConfigForm({
             aria-expanded={suggestions.length > 0}
             aria-controls="llm-model-catalogue"
           />
-          {chosen === null ? null : (
+          {chosen !== null && (chosenContext !== null || chosenIn !== null || chosenOut !== null) && (
             <p className={styles.modelChosen}>
-              {formatContext(chosen.context_length) === null
-                ? null
-                : `${formatContext(chosen.context_length)} context`}
-              {pricePerMillion(chosen.pricing?.prompt) === null
-                ? null
-                : ` · ${pricePerMillion(chosen.pricing?.prompt)} in`}
-              {pricePerMillion(chosen.pricing?.completion) === null
-                ? null
-                : ` · ${pricePerMillion(chosen.pricing?.completion)} out`}
+              {chosenContext === null ? null : `${chosenContext} context`}
+              {chosenIn === null ? null : ` · ${chosenIn} in`}
+              {chosenOut === null ? null : ` · ${chosenOut} out`}
               {" per 1M tokens"}
             </p>
           )}
+          {catalogueLoading && <p className={styles.modelHint}>Finding models…</p>}
           {catalogueError === null ? null : (
             <p className={styles.modelHint}>
-              {catalogueError} You can still type a model id by hand.
+              {catalogueError}{" "}
+              {providerChoice === "openrouter"
+                ? "You can still type a model id by hand."
+                : "You can still type a model id by hand, or check the base URL and key."}
             </p>
           )}
           {suggestions.length === 0 ? null : (
@@ -344,11 +486,14 @@ function CreateLlmConfigForm({
           <input
             id="llm-base-url"
             className={styles.input}
-            placeholder="Provider default"
+            placeholder={providerChoice === "openrouter" ? "Provider default" : "https://…/v1"}
             value={form.baseUrl}
             onChange={(event) => patch({ baseUrl: event.target.value })}
             disabled={submitting}
           />
+          {providerLiveFetch && providerChoice !== "openrouter" && baseUrl !== "" && (
+            <p className={styles.fieldHint}>Model suggestions below come live from this endpoint.</p>
+          )}
         </div>
 
         <div className={styles.field}>

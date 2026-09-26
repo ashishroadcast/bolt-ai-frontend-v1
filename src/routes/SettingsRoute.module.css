@@ -302,6 +302,16 @@
   font-family: var(--font-body);
 }
 
+.customProviderName {
+  margin-top: 6px;
+}
+
+.fieldHint {
+  margin: 6px 0 0;
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}
+
 .checkboxRow {
   display: flex;
   align-items: center;

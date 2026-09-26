@@ -74,6 +74,7 @@ function routeFetch(
     configs?: LLMConfig[];
     settings?: SettingsSnapshot;
     catalogue?: CatalogueModel[] | "error";
+    previewModels?: (body: Record<string, unknown>) => CatalogueModel[] | "error";
   } = {},
 ) {
   // Copied, not aliased: the PATCH branch below mutates these objects in
@@ -101,6 +102,16 @@ function routeFetch(
     if (url.includes("/agent/llm-configs/catalogue")) {
       if (catalogue === "error") return jsonResponse({ detail: "upstream down" }, 502);
       return jsonResponse({ models: catalogue });
+    }
+
+    // Also must precede the CRUD branch, and is itself a POST — without
+    // this it would otherwise be answered as "create a config" by the
+    // generic POST branch below, matching on url.includes alone.
+    if (url.includes("/agent/llm-configs/preview-models")) {
+      const body = request === null ? {} : (JSON.parse(await request.clone().text()) as Record<string, unknown>);
+      const result = options.previewModels?.(body) ?? [];
+      if (result === "error") return jsonResponse({ detail: "the endpoint rejected this api key" }, 400);
+      return jsonResponse({ models: result });
     }
 
     if (url.includes("/agent/llm-configs")) {
@@ -451,5 +462,102 @@ describe("SettingsRoute", () => {
 
     await waitFor(() => expect(screen.getByText(/No default model is set/)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Save key" })).not.toBeInTheDocument();
+  });
+
+  // --- the provider picker, and live model suggestions for a non-OpenRouter
+  // provider ("models should be fetched from provider, instead of
+  // hardcoding") -----------------------------------------------------------
+
+  it("offers the known providers plus Custom Endpoint, defaulting to OpenRouter", async () => {
+    renderSettings(routeFetch({ configs: [] }));
+    await waitFor(() => expect(screen.getByText(/no models configured/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add a model" }));
+
+    const picker = screen.getByLabelText("Provider") as HTMLSelectElement;
+    expect(picker.value).toBe("openrouter");
+    expect(within(picker).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Anthropic",
+      "Azure",
+      "Google",
+      "OmniRoute",
+      "OpenAI",
+      "OpenRouter",
+      "xAI",
+      "Custom Endpoint",
+    ]);
+  });
+
+  it("switching to Custom Endpoint reveals a provider-name field and sends what was typed", async () => {
+    const fetchMock = routeFetch({ configs: [] });
+    renderSettings(fetchMock);
+    await waitFor(() => expect(screen.getByText(/no models configured/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add a model" }));
+
+    expect(screen.queryByLabelText("Custom provider name")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "__custom__" } });
+    expect(screen.getByLabelText("Custom provider name")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Custom provider name"), {
+      target: { value: "my-internal-gateway" },
+    });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Internal" } });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "some/model" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add model" }));
+
+    await waitFor(() => expect(screen.getByText("Internal")).toBeInTheDocument());
+    const postRequest = fetchMock.mock.calls
+      .map(([input]) => input as RequestInfo | URL)
+      .find((input): input is Request => input instanceof Request && input.method === "POST");
+    const sentBody = JSON.parse(await postRequest!.clone().text()) as { provider?: string };
+    expect(sentBody.provider).toBe("my-internal-gateway");
+  });
+
+  it("fetches live suggestions for a live-fetch provider once a base URL is entered", async () => {
+    const fetchMock = routeFetch({
+      configs: [],
+      previewModels: (body) => {
+        if (body.provider !== "omniroute" || body.base_url !== "https://ai.track360.net.in/v1") {
+          return "error";
+        }
+        return [{ id: "antigravity/claude-sonnet-4-6", name: "Claude Sonnet 4.6" }];
+      },
+    });
+    renderSettings(fetchMock);
+    await waitFor(() => expect(screen.getByText(/no models configured/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add a model" }));
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "omniroute" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://ai.track360.net.in/v1" },
+    });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "claude" } });
+
+    await waitFor(
+      () => expect(screen.getByRole("option", { name: /Claude Sonnet 4\.6/ })).toBeInTheDocument(),
+      { timeout: 2000 },
+    );
+    expect(
+      fetchMock.mock.calls.some(([input]) => urlOf(input as RequestInfo | URL).includes("preview-models")),
+    ).toBe(true);
+  });
+
+  it("does not live-fetch for a provider with no OpenAI-compatible listing", async () => {
+    const fetchMock = routeFetch({ configs: [] });
+    renderSettings(fetchMock);
+    await waitFor(() => expect(screen.getByText(/no models configured/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Add a model" }));
+
+    fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "anthropic" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), {
+      target: { value: "https://api.anthropic.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Model"), { target: { value: "claude" } });
+
+    // Give any wrongly-fired debounce a chance to land before asserting
+    // its absence — a false negative here would be worse than a slow test.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(
+      fetchMock.mock.calls.some(([input]) => urlOf(input as RequestInfo | URL).includes("preview-models")),
+    ).toBe(false);
   });
 });

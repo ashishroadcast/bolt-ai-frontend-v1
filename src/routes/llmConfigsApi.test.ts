@@ -4,6 +4,7 @@ import {
   createLlmConfig,
   deleteLlmConfig,
   listLlmConfigs,
+  previewModels,
   updateLlmConfig,
   type LLMConfig,
 } from "./llmConfigsApi.ts";
@@ -97,5 +98,27 @@ describe("llmConfigsApi", () => {
     const request = fetchMock.mock.calls[0]![0] as Request;
     expect(request.method).toBe("DELETE");
     expect(request.url).toContain("/agent/llm-configs/1");
+  });
+
+  it("POSTs a preview-models request and unwraps the models array", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ models: [{ id: "antigravity/claude-sonnet-4-6", name: "Claude Sonnet 4.6" }] }),
+    );
+
+    const models = await previewModels({
+      provider: "omniroute",
+      base_url: "https://ai.track360.net.in/v1",
+      api_key: "typed-key",
+    });
+
+    expect(models).toEqual([{ id: "antigravity/claude-sonnet-4-6", name: "Claude Sonnet 4.6" }]);
+    const request = fetchMock.mock.calls[0]![0] as Request;
+    expect(request.method).toBe("POST");
+    expect(request.url).toContain("/agent/llm-configs/preview-models");
+    expect(JSON.parse(await request.clone().text())).toEqual({
+      provider: "omniroute",
+      base_url: "https://ai.track360.net.in/v1",
+      api_key: "typed-key",
+    });
   });
 });

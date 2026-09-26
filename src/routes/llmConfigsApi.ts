@@ -109,3 +109,27 @@ export function listModelCatalogue(): Promise<CatalogueModel[]> {
     .agentFetch<{ models: CatalogueModel[] }>("/agent/llm-configs/catalogue")
     .then((result) => result.models);
 }
+
+/**
+ * `POST /agent/llm-configs/preview-models` — a provider's own live model
+ * list, for the "Add a model" form's picker, before any row exists to run
+ * `GET /agent/llm-configs/{id}/models` against. `provider === "openrouter"`
+ * needs neither `base_url` nor `api_key` (that catalogue is public); any
+ * other provider needs `base_url`, and an omitted `api_key` borrows the
+ * tenant's default model's key server-side — the same fallback a freshly
+ * saved keyless config gets at run time.
+ */
+export interface PreviewModelsPayload {
+  provider: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export function previewModels(payload: PreviewModelsPayload): Promise<CatalogueModel[]> {
+  return gatewayClient
+    .agentFetch<{ models: CatalogueModel[] }>("/agent/llm-configs/preview-models", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    })
+    .then((result) => result.models);
+}
