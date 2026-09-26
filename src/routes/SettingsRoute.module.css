@@ -64,6 +64,68 @@
   background: var(--signal-hover);
 }
 
+/* --- provider groups (Models & keys) ----------------------------------- */
+
+.providerGroup {
+  border-top: 1px solid var(--rule-soft);
+}
+
+.providerGroup:first-of-type {
+  border-top: 0;
+}
+
+.providerSummary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--stack-tight);
+  padding: 10px var(--pad-sheet-x);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+/* Chrome/Firefox both draw a default marker for <summary> unless this is
+   suppressed — a triangle this component draws itself, in .providerGroup's
+   own arrow below, so the two never show up twice. */
+.providerSummary::-webkit-details-marker {
+  display: none;
+}
+
+.providerSummary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  flex: none;
+  margin-right: 2px;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent var(--fg-faint);
+  transition: transform 0.1s ease;
+}
+
+.providerGroup[open] > .providerSummary::before {
+  transform: rotate(90deg);
+}
+
+.providerSummary:hover {
+  background: var(--ground-lift);
+}
+
+.providerName {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-body);
+  text-transform: capitalize;
+}
+
+.providerMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
 .tableWrap {
   overflow-x: auto;
 }

@@ -49,6 +49,58 @@ function formatContext(tokens: number | null | undefined): string | null {
 
 const CATALOGUE_SUGGESTION_LIMIT = 8;
 
+/**
+ * Above this many rows, a provider whose shelf is entirely `is_active:
+ * false` (OpenRouter's ~266-row catalogue while its account is out of
+ * credits — see `scripts/seed_model_configs.py`) starts collapsed rather
+ * than dumping every dead row on screen before the one or two providers an
+ * operator can actually bind an agent to. A small shelf, or one with
+ * anything usable in it, always opens — there is nothing to protect
+ * against there.
+ */
+const LARGE_GROUP_ROW_THRESHOLD = 15;
+
+interface ProviderGroup {
+  provider: string;
+  configs: LLMConfig[];
+  activeCount: number;
+}
+
+/**
+ * "First setup providers, then models" (task brief) — the 260-odd rows this
+ * screen renders are all one flat table today, `provider` a string column
+ * with nothing grouping same-provider rows together on screen. This is the
+ * grouping, done in the browser: no backend change, because `provider` here
+ * is genuinely just a string on each row and there is no separate Provider
+ * entity to fetch instead (see `app.agent.models.LLMConfig` — one row IS one
+ * model, keyed or borrowing the tenant default's key, nothing above it).
+ */
+function groupByProvider(rows: LLMConfig[]): ProviderGroup[] {
+  const byProvider = new Map<string, LLMConfig[]>();
+  for (const config of rows) {
+    const list = byProvider.get(config.provider);
+    if (list === undefined) byProvider.set(config.provider, [config]);
+    else list.push(config);
+  }
+  const groups: ProviderGroup[] = Array.from(byProvider.entries()).map(([provider, configs]) => ({
+    provider,
+    // Active first, then name — the rows worth reading are the ones this
+    // list should reach without scrolling past the dead ones first.
+    configs: [...configs].sort((a, b) =>
+      a.is_active === b.is_active ? a.name.localeCompare(b.name) : a.is_active ? -1 : 1,
+    ),
+    activeCount: configs.filter((config) => config.is_active).length,
+  }));
+  // A provider with something usable floats to the top, ahead of one that
+  // is alphabetically first but entirely dead right now.
+  groups.sort((a, b) => b.activeCount - a.activeCount || a.provider.localeCompare(b.provider));
+  return groups;
+}
+
+function defaultOpenFor(group: ProviderGroup): boolean {
+  return !(group.configs.length > LARGE_GROUP_ROW_THRESHOLD && group.activeCount === 0);
+}
+
 const CODE_EXECUTION_TONE: Record<CodeExecutionCapability, StatusPillTone> = {
   none: "neutral",
   interpreter: "amber",
@@ -373,6 +425,13 @@ export function SettingsRoute() {
   const [configsError, setConfigsError] = useState<string | null>(null);
   const [rowStates, setRowStates] = useState<Record<number, RowState>>({});
   const [creating, setCreating] = useState(false);
+  // Whether each provider's `<details>` is open. Computed once per provider
+  // the first time it's seen (`defaultOpenFor`), then left entirely to
+  // `onToggle` — never recomputed from `configs` on every render, which
+  // would silently snap a manually-opened group shut the next time
+  // anything else on this page re-renders (the key field above updates
+  // this same component's state on every keystroke).
+  const [openProviders, setOpenProviders] = useState<Record<string, boolean>>({});
 
   const [settings, setSettings] = useState<SettingsSnapshot | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -399,6 +458,25 @@ export function SettingsRoute() {
       .then(setSettings)
       .catch((err: unknown) => setSettingsError(errorMessage(err)));
   }, []);
+
+  // Fills in a default for any provider not already in `openProviders` —
+  // on first load, and again for a provider a later refresh introduces
+  // (a model just added under a brand new provider string). Never
+  // touches a provider already keyed here, which is what leaves a manual
+  // toggle alone.
+  useEffect(() => {
+    if (configs === null) return;
+    setOpenProviders((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const group of groupByProvider(configs)) {
+        if (group.provider in next) continue;
+        next[group.provider] = defaultOpenFor(group);
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [configs]);
 
   /**
    * Writes one flag, then keeps the checkbox in step with what the server
@@ -431,6 +509,26 @@ export function SettingsRoute() {
     patchRow(config.id, { busy: true, error: null });
     try {
       await updateLlmConfig(config.id, { is_default: true });
+      await refreshConfigs();
+    } catch (err) {
+      patchRow(config.id, { error: errorMessage(err) });
+    } finally {
+      patchRow(config.id, { busy: false });
+    }
+  }
+
+  /**
+   * The control this table never had: a way to make one of the ~260
+   * pre-seeded catalogue rows selectable for an agent (or take one out of
+   * rotation) without also making it the tenant's one default. "Set
+   * default" answers a different question — which config's key every
+   * keyless row borrows — and conflating the two would force marking a
+   * model default just to make it choosable in `ConfigTab`'s phase picker.
+   */
+  async function handleToggleActive(config: LLMConfig) {
+    patchRow(config.id, { busy: true, error: null });
+    try {
+      await updateLlmConfig(config.id, { is_active: !config.is_active });
       await refreshConfigs();
     } catch (err) {
       patchRow(config.id, { error: errorMessage(err) });
@@ -597,102 +695,127 @@ export function SettingsRoute() {
               No models configured yet. Add one with a tenant OpenRouter key to let agents run.
             </p>
           )}
-          {rows.length > 0 && (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Provider / model</th>
-                    <th>Kind</th>
-                    <th>Key</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((config) => {
-                    const state = rowState(config.id);
-                    return (
-                      <tr key={config.id}>
-                        <td className={styles.name}>{config.name}</td>
-                        <td className={styles.description}>
-                          {config.provider} · {config.model}
-                        </td>
-                        <td className={styles.description}>{config.kind}</td>
-                        <td>
-                          {/* "Missing" was a lie for the ~260 catalogue rows: a config with
-                              no key of its own borrows the tenant's at run time and works
-                              perfectly. It is only missing when the tenant has none either. */}
-                          {config.has_api_key ? (
-                            <StatusPill tone="good" label="Own key" />
-                          ) : tenantKeySet ? (
-                            <StatusPill tone="neutral" label="Tenant key" />
-                          ) : (
-                            <StatusPill tone="amber" label="Missing" />
-                          )}
-                        </td>
-                        <td>
-                          <div className={styles.statusCell}>
-                            {config.is_default && <StatusPill tone="good" label="Default" />}
-                            <StatusPill
-                              tone={config.is_active ? "neutral" : "amber"}
-                              label={config.is_active ? "Active" : "Inactive"}
-                            />
-                          </div>
-                        </td>
-                        <td>
-                          <div className={styles.rowActions}>
-                            {!config.is_default && (
-                              <button
-                                type="button"
-                                className={styles.actionBtn}
-                                disabled={state.busy}
-                                onClick={() => void handleSetDefault(config)}
-                              >
-                                Set default
-                              </button>
-                            )}
-                            {!state.confirmingDelete && (
-                              <button
-                                type="button"
-                                className={`${styles.actionBtn} ${styles.danger}`}
-                                disabled={state.busy}
-                                onClick={() => patchRow(config.id, { confirmingDelete: true })}
-                              >
-                                Remove
-                              </button>
-                            )}
-                            {state.confirmingDelete && (
-                              <>
-                                <button
-                                  type="button"
-                                  className={`${styles.actionBtn} ${styles.danger}`}
-                                  disabled={state.busy}
-                                  onClick={() => void handleDelete(config.id)}
-                                >
-                                  {state.busy ? "Removing…" : "Confirm"}
-                                </button>
+          {rows.length > 0 &&
+            groupByProvider(rows).map((group) => (
+              <details
+                key={group.provider}
+                className={styles.providerGroup}
+                open={openProviders[group.provider] ?? defaultOpenFor(group)}
+                onToggle={(event) => {
+                  const isOpen = event.currentTarget.open;
+                  setOpenProviders((prev) => ({ ...prev, [group.provider]: isOpen }));
+                }}
+              >
+                <summary className={styles.providerSummary}>
+                  <span className={styles.providerName}>{group.provider}</span>
+                  <span className={styles.providerMeta}>
+                    {group.configs.length} {group.configs.length === 1 ? "model" : "models"}
+                    {" · "}
+                    {group.activeCount} active
+                  </span>
+                </summary>
+                <div className={styles.tableWrap}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Model</th>
+                        <th>Kind</th>
+                        <th>Key</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.configs.map((config) => {
+                        const state = rowState(config.id);
+                        return (
+                          <tr key={config.id}>
+                            <td className={styles.name}>{config.name}</td>
+                            <td className={styles.description}>{config.model}</td>
+                            <td className={styles.description}>{config.kind}</td>
+                            <td>
+                              {/* "Missing" was a lie for the ~260 catalogue rows: a config with
+                                  no key of its own borrows the tenant's at run time and works
+                                  perfectly. It is only missing when the tenant has none either. */}
+                              {config.has_api_key ? (
+                                <StatusPill tone="good" label="Own key" />
+                              ) : tenantKeySet ? (
+                                <StatusPill tone="neutral" label="Tenant key" />
+                              ) : (
+                                <StatusPill tone="amber" label="Missing" />
+                              )}
+                            </td>
+                            <td>
+                              <div className={styles.statusCell}>
+                                {config.is_default && <StatusPill tone="good" label="Default" />}
+                                <StatusPill
+                                  tone={config.is_active ? "neutral" : "amber"}
+                                  label={config.is_active ? "Active" : "Inactive"}
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <div className={styles.rowActions}>
                                 <button
                                   type="button"
                                   className={styles.actionBtn}
                                   disabled={state.busy}
-                                  onClick={() => patchRow(config.id, { confirmingDelete: false })}
+                                  onClick={() => void handleToggleActive(config)}
                                 >
-                                  Cancel
+                                  {config.is_active ? "Deactivate" : "Activate"}
                                 </button>
-                              </>
-                            )}
-                          </div>
-                          {state.error !== null && <p className={styles.rowNote}>{state.error}</p>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+                                {!config.is_default && (
+                                  <button
+                                    type="button"
+                                    className={styles.actionBtn}
+                                    disabled={state.busy}
+                                    onClick={() => void handleSetDefault(config)}
+                                  >
+                                    Set default
+                                  </button>
+                                )}
+                                {!state.confirmingDelete && (
+                                  <button
+                                    type="button"
+                                    className={`${styles.actionBtn} ${styles.danger}`}
+                                    disabled={state.busy}
+                                    onClick={() => patchRow(config.id, { confirmingDelete: true })}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                                {state.confirmingDelete && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className={`${styles.actionBtn} ${styles.danger}`}
+                                      disabled={state.busy}
+                                      onClick={() => void handleDelete(config.id)}
+                                    >
+                                      {state.busy ? "Removing…" : "Confirm"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className={styles.actionBtn}
+                                      disabled={state.busy}
+                                      onClick={() => patchRow(config.id, { confirmingDelete: false })}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                              {state.error !== null && <p className={styles.rowNote}>{state.error}</p>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            ))}
         </section>
 
         <section className={styles.sheet}>

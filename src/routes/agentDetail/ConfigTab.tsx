@@ -44,6 +44,25 @@ function llmConfigLabel(id: number, configs: LLMConfig[]): string {
 }
 
 /**
+ * The phase picker used to be one flat list of every `llm_configs` row this
+ * tenant has — 260-odd options with no structure, `provider` sitting
+ * unread in a field nothing here grouped on. `<optgroup>` costs nothing
+ * beyond this and needs no change on the server: `provider` was already a
+ * plain string on every row (see `SettingsRoute.tsx`'s own grouping, done
+ * for the same reason).
+ */
+function groupLlmConfigsByProvider(configs: LLMConfig[]): Array<[string, LLMConfig[]]> {
+  const byProvider = new Map<string, LLMConfig[]>();
+  for (const config of configs) {
+    const key = config.provider || "Other";
+    const list = byProvider.get(key);
+    if (list === undefined) byProvider.set(key, [config]);
+    else list.push(config);
+  }
+  return Array.from(byProvider.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+/**
  * What {agent} is wired to, **and where it gets rewired.**
  *
  * This tab was read-only when it first shipped: it resolved every id to a
@@ -570,10 +589,14 @@ export function ConfigTab() {
                     }}
                   >
                     <option value="">Tenant default</option>
-                    {llmConfigs.map((config) => (
-                      <option key={config.id} value={config.id}>
-                        {config.name} · {config.model}
-                      </option>
+                    {groupLlmConfigsByProvider(llmConfigs).map(([provider, configs]) => (
+                      <optgroup key={provider} label={provider}>
+                        {configs.map((config) => (
+                          <option key={config.id} value={config.id}>
+                            {config.name} · {config.model}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
 

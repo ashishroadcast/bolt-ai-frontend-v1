@@ -172,9 +172,61 @@ describe("SettingsRoute", () => {
     await waitFor(() => {
       expect(screen.getByText("Default OpenRouter")).toBeInTheDocument();
     });
-    expect(screen.getByText(/openrouter · anthropic\/claude-sonnet-4\.5/)).toBeInTheDocument();
+    // Provider is the group heading now, not repeated in every row.
+    expect(screen.getByText("openrouter")).toBeInTheDocument();
+    expect(screen.getByText("anthropic/claude-sonnet-4.5")).toBeInTheDocument();
     expect(screen.getByText("Own key")).toBeInTheDocument(); // has_api_key badge
     expect(screen.getByText("Default")).toBeInTheDocument();
+  });
+
+  it("groups models by provider, collapsing a large shelf with nothing active by default", async () => {
+    const active = Array.from({ length: 3 }, (_, index) => ({
+      ...OPENROUTER_CONFIG,
+      id: 100 + index,
+      name: `Omni ${index}`,
+      provider: "omniroute",
+      is_default: index === 0,
+    }));
+    const dead = Array.from({ length: 20 }, (_, index) => ({
+      ...OPENROUTER_CONFIG,
+      id: 200 + index,
+      name: `Dead ${index}`,
+      provider: "openrouter",
+      is_default: false,
+      is_active: false,
+    }));
+    renderSettings(routeFetch({ configs: [...active, ...dead] }));
+
+    await waitFor(() => expect(screen.getByText("Omni 0")).toBeInTheDocument());
+
+    // The provider with something usable opens by default; the 20-row
+    // shelf with nothing active does not — an operator should not have to
+    // scroll past dead rows to find the one provider that actually works.
+    const omniGroup = screen.getByText("omniroute").closest("details")!;
+    const openrouterGroup = screen.getByText("openrouter").closest("details")!;
+    expect(omniGroup).toHaveAttribute("open");
+    expect(openrouterGroup).not.toHaveAttribute("open");
+    expect(within(omniGroup).getByText("3 models · 3 active")).toBeInTheDocument();
+    expect(within(openrouterGroup).getByText("20 models · 0 active")).toBeInTheDocument();
+  });
+
+  it("activates and deactivates a model via PATCH, independent of which is default", async () => {
+    const fetchMock = routeFetch({
+      configs: [{ ...OPENROUTER_CONFIG, id: 2, name: "Qwen Flash", is_default: false, is_active: false }],
+    });
+    renderSettings(fetchMock);
+
+    await waitFor(() => expect(screen.getByText("Qwen Flash")).toBeInTheDocument());
+    const row = screen.getByText("Qwen Flash").closest("tr")!;
+    expect(within(row).getByText("Inactive")).toBeInTheDocument();
+
+    fireEvent.click(within(row).getByRole("button", { name: "Activate" }));
+
+    await waitFor(() => expect(within(row).getByText("Active")).toBeInTheDocument());
+    const patch = fetchMock.mock.calls.find(
+      ([input]) => input instanceof Request && input.method === "PATCH",
+    )![0] as Request;
+    expect(JSON.parse(await patch.clone().text())).toEqual({ is_active: true });
   });
 
   it("adds a model, and the key never lands in the DOM after saving", async () => {
