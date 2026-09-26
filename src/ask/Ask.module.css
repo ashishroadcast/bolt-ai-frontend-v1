@@ -98,6 +98,27 @@
   min-height: var(--ask-screen-min-height, 100%);
   height: var(--ask-screen-height, auto);
   min-width: 0;
+  /*
+   * In the console, `<main>` (Shell.module.css's `.thread`) is ALSO a
+   * column flex container — so without this, `.screen`'s explicit
+   * `min-height: 100%` above overrides the automatic content-based minimum
+   * a flex item gets by default, and `.screen` shrinks to fit `<main>`'s
+   * box instead of overflowing it. The thread then never grows past
+   * `<main>`'s own height; `.scroll` below quietly becomes the real
+   * scrollport instead (its own `overflow-y: auto` catching what `.screen`
+   * no longer passes through), two levels below the `[data-scroll-region]`
+   * mark `useStickToBottom.ts` reads — so a reply streaming in never
+   * autoscrolled, because the write landed on an element that had nothing
+   * left to scroll.
+   *
+   * `flex-shrink: 0` keeps `.screen` at its natural (content) height, so
+   * `<main>` overflows the way `useStickToBottom.ts`'s "WHO SCROLLS"
+   * comment already assumed it did. Inert in the embedded build: there
+   * `.screen`'s parent is a plain sized `<div>`, not a flex container, so
+   * this has nothing to shrink against and `.scroll` keeps owning the
+   * overflow exactly as `element.css` intends.
+   */
+  flex-shrink: 0;
 }
 
 /* The 4px gradient stripe across the very top of the panel — the one
