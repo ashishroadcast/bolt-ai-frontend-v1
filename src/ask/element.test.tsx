@@ -82,9 +82,11 @@ describe("<bolt-ai-ask> dashboards surface", () => {
     document.body.appendChild(element);
     element.baseUrl = "http://ask.test";
 
+    // No `<select>` any more — the picker only ever names an armed agent as
+    // static text, "Chatting with X".
     await waitFor(() => {
-      const select = element.shadowRoot?.querySelector("select");
-      expect(select?.value).toBe("Dashboard-Builder");
+      const spans = Array.from(element.shadowRoot?.querySelectorAll("span") ?? []);
+      expect(spans.some((span) => span.textContent === "Dashboard-Builder")).toBe(true);
     });
 
     // Loaded now, so an unknown command is a definite no.

@@ -29,8 +29,12 @@ function mount(channel: AgentSelectionChannel) {
   render(<Ask config={{ ...testAskConfig, agentSelection: channel }} />);
 }
 
-function picker(): HTMLSelectElement {
-  return screen.getByRole("combobox", { name: "Agent to run this question against" }) as HTMLSelectElement;
+/** The name on the picker's "Chatting with X" line, or `null` when nothing
+ * has armed an agent yet — `AgentPicker` renders nothing in that case (it no
+ * longer defaults to anything, auto-routing being the point). */
+function armedName(): string | null {
+  const label = screen.queryByText("Chatting with");
+  return label === null ? null : (label.nextElementSibling?.textContent ?? null);
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -72,14 +76,16 @@ describe("selectAgent inside Ask", () => {
     const channel = new AgentSelectionChannel();
     mount(channel);
     release();
-    await waitFor(() => expect(picker().value).toBe("Sales Analyst"));
+    // Agents loaded, nothing armed yet — the bar has nothing to say.
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    expect(armedName()).toBeNull();
 
     let armed = false;
     act(() => {
       armed = channel.request("dashboard");
     });
     expect(armed).toBe(true);
-    expect(picker().value).toBe("Dashboard-Builder");
+    expect(armedName()).toBe("Dashboard-Builder");
 
     // Unknown and deactivated commands are unavailable, and change nothing.
     act(() => {
@@ -90,10 +96,10 @@ describe("selectAgent inside Ask", () => {
       armed = channel.request("old");
     });
     expect(armed).toBe(false);
-    expect(picker().value).toBe("Dashboard-Builder");
+    expect(armedName()).toBe("Dashboard-Builder");
   });
 
-  it("defers a request made before the agents load, and it beats the picker's default", async () => {
+  it("defers a request made before the agents load, and applies it once they do", async () => {
     const { release } = agentsOnDemand([SALES, DASHBOARD]);
     const channel = new AgentSelectionChannel();
     mount(channel);
@@ -103,7 +109,7 @@ describe("selectAgent inside Ask", () => {
     expect(channel.pendingCommand).toBe("dashboard");
 
     await act(async () => release());
-    await waitFor(() => expect(picker().value).toBe("Dashboard-Builder"));
+    await waitFor(() => expect(armedName()).toBe("Dashboard-Builder"));
     expect(channel.pendingCommand).toBeNull();
   });
 
@@ -113,6 +119,6 @@ describe("selectAgent inside Ask", () => {
     expect(channel.request("form")).toBe(true);
     mount(channel);
     await act(async () => release());
-    await waitFor(() => expect(picker().value).toBe("Form-Builder"));
+    await waitFor(() => expect(armedName()).toBe("Form-Builder"));
   });
 });

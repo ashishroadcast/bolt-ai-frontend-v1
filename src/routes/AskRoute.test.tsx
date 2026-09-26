@@ -111,16 +111,26 @@ describe("AskRoute", () => {
 
   it("invites a question when there is no history and nothing running", () => {
     renderAskRoute(routeFetch());
-    expect(screen.getByText("Ask about your business, in plain language")).toBeInTheDocument();
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
   });
 
-  it("shows who a question will run against, resolved from the real agent list", async () => {
-    renderAskRoute(routeFetch());
-    await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: /agent to run this question against/i })).toHaveValue(
-        "Sales Analyst",
-      );
+  it("sends a question with no agent named, so the server routes it itself", async () => {
+    const fetchMock = routeFetch({
+      runFrames: [`data: {"type":"start","messageId":"msg-1"}`, `data: {"type":"finish"}`, `data: [DONE]`],
     });
+    renderAskRoute(fetchMock);
+
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "top items last week" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => urlOf(call[0]).endsWith("/agent/run"))).toBe(true);
+    });
+    const request = fetchMock.mock.calls.find((call) => urlOf(call[0]).endsWith("/agent/run"))![0] as Request;
+    const body = await request.json();
+    expect(body).toMatchObject({ message: "top items last week" });
+    expect(body.agent).toBeUndefined();
   });
 
   it("shows the thread once a run starts, and the empty state never comes back", async () => {
@@ -135,7 +145,7 @@ describe("AskRoute", () => {
     await waitFor(() => {
       expect(screen.getByText("top items last week")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Ask about your business, in plain language")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hi! Welcome to AI Assistant")).not.toBeInTheDocument();
   });
 
   it("reopening a conversation from the history panel renders its sheets and never the expanded run rail", async () => {
@@ -188,7 +198,7 @@ describe("AskRoute", () => {
 
     // History is a drawer now, so it has to be opened before there is a
     // row to click at all.
-    fireEvent.click(screen.getByRole("button", { name: /^History$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
 
     // Named "Open conversation: ..." specifically, not just /Top items
     // last week/ — the row also carries a Share and a Delete button
@@ -265,17 +275,17 @@ describe("AskRoute", () => {
       }),
     );
 
-    expect(screen.queryByRole("dialog", { name: "Conversation history" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^History$/ }));
-    expect(screen.getByRole("dialog", { name: "Conversation history" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+    expect(screen.getByRole("region", { name: "Conversation history" })).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: /^Open conversation: Top items last week$/i }));
 
     await waitFor(() => {
       expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
     });
-    expect(screen.queryByRole("dialog", { name: "Conversation history" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
   });
 
   it("starts a fresh conversation from the thread it is showing", async () => {
@@ -286,14 +296,14 @@ describe("AskRoute", () => {
     );
 
     // Nothing to start over from yet, so nothing offers to.
-    expect(screen.queryByRole("button", { name: /^New$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Start a new conversation$/ })).not.toBeInTheDocument();
 
     act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales Analyst" }));
     await waitFor(() => expect(screen.getByText("top items last week")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: /^New$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
 
-    expect(screen.getByText("Ask about your business, in plain language")).toBeInTheDocument();
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
     expect(screen.queryByText("top items last week")).not.toBeInTheDocument();
   });
 
@@ -336,6 +346,6 @@ describe("AskRoute", () => {
       expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
     });
     expect(screen.getByText("top items last week")).toBeInTheDocument();
-    expect(screen.queryByText("Ask about your business, in plain language")).not.toBeInTheDocument();
+    expect(screen.queryByText("Hi! Welcome to AI Assistant")).not.toBeInTheDocument();
   });
 });

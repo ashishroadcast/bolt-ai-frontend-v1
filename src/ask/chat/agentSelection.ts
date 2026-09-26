@@ -80,10 +80,11 @@ export class AgentSelectionChannel {
 /**
  * Answers the channel from inside the tree. Renders nothing.
  *
- * Mounted AFTER `AgentPicker`, and that order is load-bearing: when the list
- * lands, the picker's effect defaults the selection to the first agent and
- * this one's effect then arms the requested agent — effects run in tree
- * order, so the request is the one that sticks.
+ * Mounted AFTER `AgentPicker` in `Ask.tsx` — no longer load-bearing the way
+ * it once was (the picker set no default of its own to race against once
+ * question-routing stopped requiring a manual pick), but still the
+ * sensible order: this is the more specific request, and it should be the
+ * one namable in the picker's own "Chatting with" line once it resolves.
  */
 export function AgentSelectionBridge(): null {
   const { agentSelection } = useAskConfig();
