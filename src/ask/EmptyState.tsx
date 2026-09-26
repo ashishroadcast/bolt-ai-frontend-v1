@@ -1,6 +1,7 @@
 import { Bot, ChartColumn, FileSpreadsheet, FileText, Sparkles, type LucideIcon } from "lucide-react";
 import type { ReactElement } from "react";
 import { useChatContext } from "./chat/ChatContext.tsx";
+import { useAskAgents } from "./chat/useAskAgents.ts";
 import styles from "./EmptyState.module.css";
 
 interface QuickAction {
@@ -52,7 +53,15 @@ export interface EmptyStateProps {
 
 export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
   const { status, sendMessage, selectedAgent } = useChatContext();
-  const canSend = selectedAgent !== null && status !== "streaming";
+  const { agents } = useAskAgents();
+  // Not `selectedAgent !== null` — matches Composer.tsx's own gate (see
+  // its docstring): a question with no agent armed is the ordinary case
+  // now, routed automatically once it reaches the server
+  // (`app.api.run._choose_agent`). Requiring a selection here left these
+  // cards permanently disabled the moment the manual picker's own
+  // agents[0] default went away, since nothing else ever set
+  // `selectedAgent` at all.
+  const canSend = agents.length > 0 && status !== "streaming";
 
   function runQuickAction(action: QuickAction) {
     if (!canSend) return;
