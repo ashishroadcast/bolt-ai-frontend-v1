@@ -128,8 +128,8 @@ export interface RunMetaProps {
   toolCount: number | null;
   score: number | null;
   usage: UsageMetadata | null;
-  /** Wall clock this client measured, used only when the run reported no
-   * `usage.duration_ms` of its own. */
+  /** Wall clock this client measured for the whole run. `usage.duration_ms`
+   * is not an end-to-end measurement, so it is not shown as run duration. */
   observedMs: number | null;
   onRerun?: () => void;
   /** Forget the cached plan behind this answer and run it fresh. Passed
@@ -148,8 +148,8 @@ export interface RunMetaProps {
  * The one dense line under an answer: what to do with it, then what it
  * cost to produce. Everything after the actions is read straight off the
  * stream — the agent named on the request, the tool calls the run made,
- * the judge's score, the models `usage.calls[]` billed, the run's own
- * duration and dollar cost.
+ * the judge's score, the models `usage.calls[]` billed, this session's
+ * client-measured elapsed time and the dollar cost.
  *
  * **Fields are omitted, never zero-filled — and a zero counts as absent.**
  * Two different things produce a zero here and only one of them is a
@@ -178,7 +178,7 @@ export function RunMeta({
 }: RunMetaProps): ReactElement {
   const rowId = messageRowId(messageId);
   const models = modelsFromUsage(usage);
-  const durationMs = usage?.duration_ms ?? observedMs;
+  const durationMs = observedMs;
 
   return (
     <div className={styles.strip}>
@@ -223,7 +223,12 @@ export function RunMeta({
           </span>
         ))}
         {durationMs !== null && durationMs !== undefined && (
-          <span className={styles.fact}>{formatDuration(durationMs)}</span>
+          <span
+            className={styles.fact}
+            title="Total elapsed time from submitting the question to receiving the answer"
+          >
+            {formatDuration(durationMs)}
+          </span>
         )}
         {usage !== null && usage.cost_usd > 0 && (
           <span className={styles.fact}>{formatCost(usage.cost_usd)}</span>

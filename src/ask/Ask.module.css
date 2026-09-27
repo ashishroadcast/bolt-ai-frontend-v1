@@ -52,15 +52,9 @@
   --radius-control: 8px;
   --lift-float: 0 8px 24px -12px rgba(31, 40, 39, 0.18);
 
-  /*
-   * How wide a conversation may get, set once and read by the thread
-   * (Thread.module.css) and the composer alike. It is a chat, and a chat
-   * that runs the full width of a 1600px pane is the "huge" Saurabh was
-   * describing: the eye loses the line it is on between one end and the
-   * other. Wide enough that a six-column table still has room; short
-   * enough that prose does not.
-   */
-  --chat-col: 820px;
+  /* Shared width for the transcript and composer. Let cards and tables
+     breathe on desktop; Thread.module.css independently caps prose lines. */
+  --chat-col: 1180px;
   /*
    * How far the composer bar bleeds outward to meet its host's own padding.
    *
@@ -260,7 +254,8 @@
 }
 
 .composerInner {
-  width: 100%;
+  width: min(100%, var(--chat-col));
+  margin-inline: auto;
 }
 
 /* ── The welcome state: hero orb + quick actions ─────────────────────

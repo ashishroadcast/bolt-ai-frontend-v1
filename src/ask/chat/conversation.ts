@@ -67,8 +67,8 @@ function toUsage(raw: unknown): UsageMetadata | null {
  *
  * `usage` is the exception to "no run metadata survives": `app.api.run`
  * persists `messages.meta.usage` in the same commit as `ui_parts`, so a
- * reopened answer can still say what it cost, how long it took and which
- * model produced it — just not *how* it got there.
+ * reopened answer can still say what it cost and which model produced it —
+ * just not *how* it got there or the full elapsed time.
  *
  * Each part's wire type/data goes through `wireParts.toUIPart` — the same
  * function `useChat.ts` uses for a *live* part — so a reopened table and a

@@ -242,10 +242,10 @@ export function useChat(): UseChatResult {
 
     const summaryFrom = (outcome: "done" | "error", errorText: string | null) => {
       const segments = buildPhaseTimeline(events);
-      const totalMs =
-        segments.length > 0
-          ? segments[segments.length - 1]!.endedAt - segments[0]!.startedAt
-          : Date.now() - runStartAt;
+      // `usage.duration_ms` is the sum of provider-reported model-call
+      // durations, and the phase durations are independent measurements.
+      // Measure the user's actual wait directly from submit to terminal event.
+      const totalMs = Math.max(0, Date.now() - runStartAt);
       const trace = buildRunTrace(traceEvents);
       return { status: outcome, totalMs, errorText, segments, trace, agentName } satisfies RunSummary;
     };

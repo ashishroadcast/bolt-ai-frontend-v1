@@ -1,16 +1,11 @@
 /*
  * The thread, as a conversation rather than a transcript.
  *
- * Saurabh, reviewing this screen: "chat window not looking like chat
- * window. huge." Two things were wrong and they compounded. The column ran
- * the full width of the pane, so a four-sentence answer stretched to a
- * measure nobody reads comfortably; and the two sides were told apart only
- * by whether they had a border, which is not a difference a reader
- * notices. So: one centred column at a fixed measure, a filled bubble
- * pinned to the right for the question, and an agent tile in a left gutter
- * for the answer. Alignment, fill and gutter are three independent
- * signals — the exchange still reads in greyscale, which is the tokens.css
- * rule about form carrying meaning applied to layout.
+ * Keep each turn in a centered column while leaving enough width for long
+ * answers, reasoning cards, and data tables. Prose has its own comfortable
+ * line measure; expanding the transcript does not force text to span the
+ * whole pane. A filled question bubble and the assistant avatar keep the
+ * two sides easy to distinguish.
  *
  * `--chat-col` comes from AskRoute (the screen owns how wide its column
  * is, and the composer has to agree with it); `--chat-measure` is set here
@@ -18,7 +13,7 @@
  * a typographic decision belonging to the thread.
  */
 .thread {
-  --chat-measure: 66ch;
+  --chat-measure: 88ch;
   display: flex;
   flex-direction: column;
   gap: 22px;

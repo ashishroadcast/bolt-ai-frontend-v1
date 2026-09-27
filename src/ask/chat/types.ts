@@ -36,8 +36,8 @@ export interface ChatMessage {
    * to `messages.meta.usage` alongside `ui_parts`. Lives on the message
    * rather than inside `runSummary` for exactly that reason: a reopened
    * conversation has no trace and no segments, but it does still know
-   * what the run cost, how long it took and which model answered, and the
-   * metadata strip should keep saying so.
+   * what the run cost and which model answered. The persisted duration is
+   * provider-reported model time, not reliable end-to-end elapsed time.
    */
   usage?: UsageMetadata | null;
   /**

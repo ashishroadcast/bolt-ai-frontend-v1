@@ -294,7 +294,8 @@ interface AnsweredTurnProps {
  * A reopened message has no `runSummary` at all (its transient phase
  * parts were never persisted), so it renders no reasoning card and no
  * debug toggle — but it does still carry `usage`, so the strip keeps
- * reporting the run's real cost, duration and model.
+ * reporting the run's cost and model. Its persisted duration is not used
+ * as end-to-end time because it records provider timings.
  */
 
 /**
@@ -306,13 +307,12 @@ function usedCachedPlan(message: ChatMessage): boolean {
   return phases.some((phase) => phase.phase === "plan" && phase.state === "cached");
 }
 
-/** The duration Figma's "Worked For 12m" header reads — `null` for an
- * error (nothing was worked for) or a run this session never measured at
- * all (a reopened message with no usage). Same source RunMeta's facts
- * strip reads, so the two never disagree. */
+/** The actual client-measured elapsed time for this live run. Historical
+ * usage.duration_ms is provider model time, so it must not be presented as
+ * end-to-end time in the "Worked For" header. */
 function workedForMs(message: ChatMessage): number | null {
   if (message.runSummary?.status === "error") return null;
-  return message.usage?.duration_ms ?? message.runSummary?.totalMs ?? null;
+  return message.runSummary?.totalMs ?? null;
 }
 
 function AnsweredTurn({
