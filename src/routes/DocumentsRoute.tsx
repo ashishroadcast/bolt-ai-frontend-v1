@@ -1,5 +1,5 @@
 import { FileText, Folder, Lock, Tag } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
@@ -10,6 +10,7 @@ import { createDatasource, listDatasources, type DataSource } from "./datasource
 import {
   ACCEPTED_EXTENSIONS,
   UNTAGGED_GROUP,
+  addKnowledgeSource,
   childTags,
   classifyUpload,
   deleteDocument,
@@ -18,11 +19,14 @@ import {
   isReingestable,
   listDocumentTags,
   listDocuments,
+  listKnowledgeSources,
   reingestDocument,
+  syncKnowledgeSource,
   tagLabel,
   tagSegments,
   uploadDocument,
   type DocumentRecord,
+  type KnowledgeSourceRecord,
   type TagTree,
 } from "./documentsApi.ts";
 import styles from "./DocumentsRoute.module.css";
@@ -232,6 +236,10 @@ export function DocumentsRoute() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSourceRecord[]>([]);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceBusy, setSourceBusy] = useState<number | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [rowStates, setRowStates] = useState<Record<number, RowState>>({});
   const [chunksDocumentId, setChunksDocumentId] = useState<number | null>(null);
   const [classifyDocumentId, setClassifyDocumentId] = useState<number | null>(null);
@@ -289,19 +297,35 @@ export function DocumentsRoute() {
     }
   }, []);
 
-  async function refreshAll(datasourceId: number) {
-    await Promise.all([refreshDocuments(datasourceId), refreshTree(datasourceId)]);
-  }
+  const refreshKnowledgeSources = useCallback(async (datasourceId: number) => {
+    try {
+      setKnowledgeSources(await listKnowledgeSources(datasourceId));
+    } catch (err) {
+      setSourceError(errorMessage(err));
+    }
+  }, []);
+
+  const refreshAll = useCallback(
+    async (datasourceId: number) => {
+      await Promise.all([
+        refreshDocuments(datasourceId),
+        refreshTree(datasourceId),
+        refreshKnowledgeSources(datasourceId),
+      ]);
+    },
+    [refreshDocuments, refreshTree, refreshKnowledgeSources],
+  );
 
   useEffect(() => {
     if (corpus === null) return;
     void refreshDocuments(corpus.id);
     void refreshTree(corpus.id);
+    void refreshKnowledgeSources(corpus.id);
     // corpus.id alone (plus the two refetchers, which are memoised on the
     // filter): a freshly-created corpus is a new object each time, so
     // identity would refetch on every unrelated re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [corpus?.id, refreshDocuments, refreshTree]);
+  }, [corpus?.id, refreshDocuments, refreshTree, refreshKnowledgeSources]);
 
   // Self-terminating poll: reschedules itself only while something in the
   // list is still mid-pipeline, and stops the moment nothing is (task
@@ -309,14 +333,16 @@ export function DocumentsRoute() {
   // hit").
   useEffect(() => {
     if (corpus === null || documents === null) return;
-    const stillWorking = documents.some((row) => ingestPhase(row.status) === "working");
+    const stillWorking =
+      documents.some((row) => ingestPhase(row.status) === "working") ||
+      knowledgeSources.some((source) => source.status === "pending" || source.status === "syncing");
     if (!stillWorking) return;
     const corpusId = corpus.id;
     const timer = setTimeout(() => {
-      void refreshDocuments(corpusId);
+      void refreshAll(corpusId);
     }, POLL_INTERVAL_MS);
     return () => clearTimeout(timer);
-  }, [documents, corpus, refreshDocuments]);
+  }, [documents, knowledgeSources, corpus, refreshAll]);
 
   function rowState(id: number): RowState {
     return rowStates[id] ?? BLANK_ROW_STATE;
@@ -378,6 +404,46 @@ export function DocumentsRoute() {
     }
   }
 
+  async function handleAddKnowledgeSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sourceBusy !== null || !sourceUrl.trim()) return;
+    setSourceError(null);
+    setSourceBusy(-1);
+    try {
+      let target = corpus;
+      if (target === null) {
+        target = await createDatasource({
+          name: "Documents",
+          type: "knowledge",
+          database_name: "Documents",
+          isolation_mode: "connection",
+        });
+        setCorpus(target);
+      }
+      await addKnowledgeSource(target.id, sourceUrl.trim());
+      setSourceUrl("");
+      await refreshAll(target.id);
+    } catch (err) {
+      setSourceError(errorMessage(err));
+    } finally {
+      setSourceBusy(null);
+    }
+  }
+
+  async function handleSyncKnowledgeSource(id: number) {
+    if (corpus === null) return;
+    setSourceError(null);
+    setSourceBusy(id);
+    try {
+      await syncKnowledgeSource(id);
+      await refreshAll(corpus.id);
+    } catch (err) {
+      setSourceError(errorMessage(err));
+    } finally {
+      setSourceBusy(null);
+    }
+  }
+
   async function handleReingest(id: number) {
     if (corpus === null) return;
     patchRow(id, { busy: true, error: null });
@@ -416,7 +482,7 @@ export function DocumentsRoute() {
       <PageHeader
         kicker="Connections"
         title="Knowledge"
-        description="Connect the menus, SOPs and policy documents you want the agent to cite. File them under a classification, and restrict the sensitive ones — the agent can only quote what the person asking is allowed to read."
+        description="Connect the menus, SOPs and policy documents you want the agent to cite. Upload files or import a public GitBook, then file content under a classification and restrict sensitive documents."
         actionLabel={uploading ? "Uploading…" : "Add a document"}
         onAction={openFilePicker}
         actionDisabled={uploading}
@@ -441,6 +507,62 @@ export function DocumentsRoute() {
           </select>
         </div>
       )}
+
+      <section className={styles.gitbookPanel} aria-labelledby="gitbook-heading">
+        <div className={styles.gitbookHeader}>
+          <div>
+            <h2 id="gitbook-heading">GitBook sources</h2>
+            <p>Import a public GitBook into this library. Sync again to refresh changed pages.</p>
+          </div>
+        </div>
+        <form className={styles.gitbookForm} onSubmit={(event) => void handleAddKnowledgeSource(event)}>
+          <label htmlFor="gitbook-url">Public GitBook URL</label>
+          <div className={styles.gitbookInputRow}>
+            <input
+              id="gitbook-url"
+              type="url"
+              required
+              value={sourceUrl}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              placeholder="https://roadcast.gitbook.io/"
+              disabled={sourceBusy !== null}
+            />
+            <button className={styles.actionBtn} type="submit" disabled={sourceBusy !== null || sourceUrl.trim() === ""}>
+              {sourceBusy === -1 ? "Adding…" : "Add GitBook"}
+            </button>
+          </div>
+        </form>
+        {sourceError !== null && <p role="alert" className={styles.gitbookError}>{sourceError}</p>}
+        {knowledgeSources.length > 0 && (
+          <ul className={styles.gitbookList}>
+            {knowledgeSources.map((source) => {
+              const working = source.status === "pending" || source.status === "syncing";
+              const label = source.status === "ready" ? "Ready" : source.status === "failed" ? "Failed" : "Syncing";
+              const tone = source.status === "ready" ? styles.good : source.status === "failed" ? styles.critical : styles.amber;
+              return (
+                <li key={source.id} className={styles.gitbookSource}>
+                  <div className={styles.gitbookSourceInfo}>
+                    <a href={source.url} target="_blank" rel="noreferrer noopener">{source.name}</a>
+                    <span className={`${styles.pill} ${tone}`}>{label}</span>
+                    <span className={styles.statusDetail}>
+                      {source.page_count} pages{source.last_synced_at ? ` · Synced ${formatDate(source.last_synced_at)}` : ""}
+                    </span>
+                    {source.last_error !== null && <span className={styles.gitbookError}>{source.last_error}</span>}
+                  </div>
+                  <button
+                    type="button"
+                    className={styles.actionBtn}
+                    disabled={working || sourceBusy !== null}
+                    onClick={() => void handleSyncKnowledgeSource(source.id)}
+                  >
+                    {sourceBusy === source.id || working ? "Syncing…" : "Sync"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       <label className={styles.visuallyHidden} htmlFor="document-upload">
         Add a document
@@ -469,7 +591,7 @@ export function DocumentsRoute() {
         <EmptyState
           icon={FileText}
           title="Give the agent something to read"
-          body="PDF, DOCX, PPTX, XLSX, HTML or Markdown, up to 50 MiB each — the agent can quote and cite any of it."
+          body="Upload PDF, DOCX, PPTX, XLSX, HTML or Markdown files, or import a public GitBook URL above. The agent can cite each source."
         />
       )}
 
@@ -512,7 +634,13 @@ export function DocumentsRoute() {
                         return (
                           <tr key={row.id}>
                             <td>
-                              <span className={styles.filename}>{row.filename}</span>
+                              {row.source_url ? (
+                                <a className={styles.filename} href={row.source_url} target="_blank" rel="noreferrer noopener">
+                                  {row.filename}
+                                </a>
+                              ) : (
+                                <span className={styles.filename}>{row.filename}</span>
+                              )}
                               <span className={styles.rowMeta}>
                                 {row.required_permission !== null && (
                                   <span className={`${styles.badge} ${styles.restricted}`}>

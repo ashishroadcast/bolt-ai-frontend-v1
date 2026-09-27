@@ -377,3 +377,100 @@
   color: var(--critical);
   background: var(--critical-soft);
 }
+
+.gitbookPanel {
+  margin: 0 0 var(--stack);
+  padding: 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+
+.gitbookHeader h2 {
+  margin: 0;
+  color: var(--fg);
+  font-family: var(--font-display);
+  font-size: var(--text-h2);
+}
+
+.gitbookHeader p {
+  margin: 4px 0 12px;
+  color: var(--fg-muted);
+  font-size: var(--text-body);
+}
+
+.gitbookForm label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--fg-muted);
+  font-size: var(--text-caption);
+}
+
+.gitbookInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.gitbookInputRow input {
+  flex: 1;
+  min-width: 0;
+  height: var(--control-h-sm);
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunk);
+  color: var(--fg);
+  font: inherit;
+}
+
+.gitbookList {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gitbookSource {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.gitbookSourceInfo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gitbookSourceInfo > a {
+  color: var(--signal);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.gitbookError {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  color: var(--critical);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .gitbookPanel {
+    padding: 12px;
+  }
+
+  .gitbookInputRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gitbookSource {
+    align-items: flex-start;
+  }
+}

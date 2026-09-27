@@ -37,6 +37,7 @@ function doc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     id: 1,
     datasource_id: 5,
+    source_url: null,
     filename: "menu.pdf",
     content_type: "application/pdf",
     size_bytes: 2048,

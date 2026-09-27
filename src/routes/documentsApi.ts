@@ -22,6 +22,7 @@ export type DocumentStatus =
 export interface DocumentRecord {
   id: number;
   datasource_id: number;
+  source_url: string | null;
   filename: string;
   content_type: string;
   size_bytes: number;
@@ -38,6 +39,38 @@ export interface DocumentRecord {
   /** The permission code a reader must hold to see this document at all,
    * or `null` for "anyone who can read documents". */
   required_permission: string | null;
+}
+
+export type KnowledgeSourceStatus = "pending" | "syncing" | "ready" | "failed";
+
+export interface KnowledgeSourceRecord {
+  id: number;
+  datasource_id: number;
+  name: string;
+  url: string;
+  status: KnowledgeSourceStatus;
+  page_count: number;
+  last_synced_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export function listKnowledgeSources(datasourceId: number): Promise<KnowledgeSourceRecord[]> {
+  const query = new URLSearchParams({ datasource_id: String(datasourceId) });
+  return gatewayClient.agentFetch<KnowledgeSourceRecord[]>(`/agent/knowledge-sources?${query.toString()}`);
+}
+
+export function addKnowledgeSource(datasourceId: number, url: string): Promise<KnowledgeSourceRecord> {
+  return gatewayClient.agentFetch<KnowledgeSourceRecord>("/agent/knowledge-sources", {
+    method: "POST",
+    body: JSON.stringify({ datasource_id: datasourceId, url }),
+  });
+}
+
+export function syncKnowledgeSource(id: number): Promise<KnowledgeSourceRecord> {
+  return gatewayClient.agentFetch<KnowledgeSourceRecord>(`/agent/knowledge-sources/${id}/sync`, {
+    method: "POST",
+  });
 }
 
 /**

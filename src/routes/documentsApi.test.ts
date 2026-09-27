@@ -197,6 +197,7 @@ function tagged(id: number, tags: string[], filename = `doc-${id}.pdf`): Documen
   return {
     id,
     datasource_id: 5,
+    source_url: null,
     filename,
     content_type: "application/pdf",
     size_bytes: 1,
