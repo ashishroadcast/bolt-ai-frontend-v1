@@ -154,6 +154,7 @@
   .inspector {
     border-left: 0;
     border-top: 1px solid var(--rule);
+    max-height: 50vh;
   }
 
   /* Closed on mobile: an accordion header, not a slim tab — a 40px vertical
@@ -165,6 +166,14 @@
 
   .inspector[data-state="closed"] .title {
     display: block;
+  }
+
+  .inspector .toggle svg {
+    transform: rotate(90deg);
+  }
+
+  .inspector[data-state="open"] .toggle svg {
+    transform: rotate(-90deg);
   }
 }
 

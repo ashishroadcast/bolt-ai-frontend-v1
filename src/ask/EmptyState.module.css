@@ -51,6 +51,9 @@
   opacity: 0.8;
 }
 
+/* White, not the accent gradient: the agent mark is drawn in the accent's
+   own light blue/teal tones, so on the gradient disc it disappeared
+   entirely — it needs the contrast of a plain surface behind it. */
 .orbCore {
   position: absolute;
   left: 50%;
@@ -62,7 +65,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--ask-accent-gradient);
+  background: var(--surface, #ffffff);
   box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--ask-accent-from) 60%, transparent);
   color: var(--on-signal);
 }

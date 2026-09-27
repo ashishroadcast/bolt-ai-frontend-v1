@@ -84,29 +84,397 @@
 }
 
 /*
- * The thumbnail: the real 12-column grid, drawn small. Rows are a fixed few
- * pixels so a tall layout reads as tall rather than being squashed to fit.
+ * The thumbnail: the real 12-column grid, drawn as a polished miniature dashboard.
  */
+.thumbWrapper {
+  margin-bottom: 14px;
+  background: var(--surface-sunk, #f8fafc);
+  border: 1px solid var(--rule, #e2e8f0);
+  border-radius: var(--radius-card, 8px);
+  overflow: hidden;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.thumbHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--surface, #ffffff);
+  border-bottom: 1px solid var(--rule-soft, #edf2f7);
+}
+
+.thumbDots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule, #cbd5e1);
+}
+
+.thumbTitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-faint, #94a3b8);
+}
+
 .thumb {
-  --thumb-row: 5px;
+  /*
+   * The row height IS the thumbnail's fidelity knob. A small widget spans 2
+   * rows: at 16px that left ~0px for a chart body under the cell's title, so
+   * the mini-graphics' minimum heights pushed cells past their fixed grid
+   * tracks and into the rows below. 30px keeps every viz readable inside its
+   * own cell, at any panel width, because it does not depend on width.
+   */
+  --thumb-row: 30px;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 2px;
-  padding: 6px;
-  border-radius: var(--radius-control);
-  background: var(--surface-sunk);
+  gap: 6px;
+  padding: 10px;
+  background: var(--surface-sunk, #f8fafc);
 }
 
 .cell {
-  border-radius: 2px;
-  background: var(--signal-band);
+  container-type: inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--rule-soft, #e2e8f0);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  box-sizing: border-box;
+  /* Grid items default to an automatic minimum height, which let content
+   * push a cell past its spanned tracks into the rows below. */
+  min-height: 0;
+  min-width: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* KPI tiles read as the lighter row they are on the real canvas. */
-.cell[data-viz="kpi"],
-.cell[data-viz="gauge"] {
-  background: var(--signal-soft);
-  box-shadow: inset 0 0 0 1px var(--signal-band);
+.cell:hover {
+  border-color: var(--signal, #3b82f6);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.12);
+}
+
+.cellHead {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.cellIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--signal, #2563eb);
+  flex: none;
+  opacity: 0.9;
+}
+
+.cellTitle {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--fg, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cellBadge {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 1px 4.5px;
+  border-radius: 3px;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cellBadgeNeutral {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 500;
+  color: var(--fg-faint, #64748b);
+  background: var(--surface-sunk, #f1f5f9);
+  padding: 1px 4.5px;
+  border-radius: 3px;
+  line-height: 1.2;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@container (max-width: 95px) {
+  .cellBadge,
+  .cellBadgeNeutral {
+    display: none;
+  }
+}
+
+/* A KPI cell this narrow is 3 columns on a phone-width panel: the value
+ * alone, rather than a trend chip wrapping under it. */
+@container (max-width: 110px) {
+  .miniKpiTrend {
+    display: none;
+  }
+
+  .miniKpiValue {
+    font-size: 13px;
+  }
+}
+
+.cellBody {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.miniKpi {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.miniKpiValue {
+  font-family: var(--font-display, var(--font-mono));
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fg, #1e293b);
+  line-height: 1;
+}
+
+.miniKpiTrend {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.2;
+}
+
+.miniGauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+/* flex-basis 0, not height:auto: an intrinsically-sized SVG wanted more than
+ * the cell body had, and the overflow clipped the arc away entirely. */
+.miniSvgGauge {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 58px;
+}
+
+.miniGaugeVal {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--fg, #1e293b);
+  margin-top: 1px;
+}
+
+.miniChart {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 0;
+}
+
+.miniSvg {
+  width: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  display: block;
+}
+
+.chartFoot {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  color: var(--fg-faint, #94a3b8);
+  padding: 3px 2px 0;
+  line-height: 1;
+  margin-top: 2px;
+  border-top: 1px dashed var(--rule-soft, #f1f5f9);
+}
+
+.miniBars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 3px;
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  padding: 4px 2px 2px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--rule-soft, #e2e8f0);
+}
+
+.bar {
+  flex: 1;
+  max-width: 12px;
+  min-height: 4px;
+  background: linear-gradient(180deg, var(--signal, #3b82f6), #93c5fd);
+  border-radius: 2px 2px 0 0;
+  opacity: 0.85;
+}
+
+.barActive {
+  background: linear-gradient(180deg, #1d4ed8, #3b82f6);
+  opacity: 1;
+}
+
+/* A horizontal-bar chart in miniature: strips growing right from a shared
+ * left baseline, the shape an hbar opens with. */
+.miniHbar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 5px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 5px 3px 5px 6px;
+  box-sizing: border-box;
+  border-left: 1px solid var(--rule-soft, #e2e8f0);
+}
+
+.hbar {
+  height: 7px;
+  border-radius: 3.5px;
+  background: linear-gradient(90deg, #2563eb, #93c5fd);
+  opacity: 0.8;
+}
+
+.hbarActive {
+  background: linear-gradient(90deg, #1d4ed8, #3b82f6);
+  opacity: 1;
+}
+
+.miniDonut {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.miniSvgDonut {
+  height: 100%;
+  max-height: 54px;
+  width: auto;
+  aspect-ratio: 1;
+  flex: none;
+}
+
+.miniDonutLegend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 3.5px;
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  color: var(--fg-faint, #64748b);
+  line-height: 1;
+}
+
+.dotBlue {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #2563eb;
+}
+
+.dotGreen {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.dotAmber {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #f59e0b;
+}
+
+.miniTable {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  justify-content: center;
+}
+
+.tableRowHead,
+.tableRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tableColHead {
+  height: 4px;
+  background: var(--signal, #3b82f6);
+  border-radius: 1.5px;
+  opacity: 0.6;
+}
+
+.tableCol {
+  height: 3px;
+  background: var(--rule, #cbd5e1);
+  border-radius: 1px;
+  opacity: 0.65;
 }
 
 .widgets {

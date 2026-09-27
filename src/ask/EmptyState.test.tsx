@@ -67,14 +67,14 @@ describe("EmptyState quick actions", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderEmptyState();
 
-    const card = await screen.findByRole("button", { name: /Summarize Report/ });
+    const card = await screen.findByRole("button", { name: /Create Dashboard/ });
     await waitFor(() => expect(card).toBeEnabled());
 
     fireEvent.click(card);
 
     await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
     const body = await runCalls(fetchMock)[0]!.json();
-    expect(body).toMatchObject({ message: "Summarize the key trends in this month's reports." });
+    expect(body).toMatchObject({ message: "Create a dashboard to show daily usage of vehicles." });
     // No agent selected yet — the whole point of auto-routing is that
     // this is sent unnamed, not blocked or defaulted to something guessed
     // client-side.
@@ -86,7 +86,7 @@ describe("EmptyState quick actions", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderEmptyState();
 
-    const card = await screen.findByRole("button", { name: /Summarize Report/ });
+    const card = await screen.findByRole("button", { name: /Create Dashboard/ });
     await waitFor(() => expect(card).toBeDisabled());
 
     fireEvent.click(card);

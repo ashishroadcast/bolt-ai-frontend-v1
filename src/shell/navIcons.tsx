@@ -1,5 +1,4 @@
 import {
-  Bot,
   Boxes,
   Cable,
   Database,
@@ -15,6 +14,8 @@ import {
   Workflow,
   type LucideIcon,
 } from "lucide-react";
+import type { ComponentType } from "react";
+import { AgentIcon } from "../ask/AgentIcon.tsx";
 
 /**
  * The nav-item -> icon mapping for `Rail.tsx`, kept here rather than
@@ -30,14 +31,17 @@ import {
  * label, since the path is the stable identity a nav item won't rename
  * out from under.
  */
-export const NAV_ICONS: Record<string, LucideIcon> = {
+export const NAV_ICONS: Record<
+  string,
+  LucideIcon | ComponentType<{ className?: string; size?: number; "aria-hidden"?: boolean | "true" | "false" }>
+> = {
   "/": LayoutDashboard,
   "/ask": MessageSquareText,
   "/documents": FileText,
   "/databases": Database,
   "/test-suites": FlaskConical,
   "/prompts": ScrollText,
-  "/agents": Bot,
+  "/agents": AgentIcon,
   "/orchestrators": Workflow,
   "/channels": Cable,
   "/mcp-servers": Plug,

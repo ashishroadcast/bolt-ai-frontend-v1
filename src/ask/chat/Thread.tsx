@@ -1,5 +1,6 @@
-import { Bot, Copy } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useState, type ReactElement, type ReactNode } from "react";
+import { AgentIcon } from "../AgentIcon.tsx";
 import { useAgents } from "./useAskAgents.ts";
 import { renderUIPart, type UIPart } from "../parts/catalog.tsx";
 import { AnswerText } from "./AnswerText.tsx";
@@ -35,7 +36,7 @@ function NetworkLostNotice(): ReactElement {
   return (
     <div className={styles.networkLost} role="status">
       <span className={styles.networkLostIcon} aria-hidden="true">
-        <Bot size={16} strokeWidth={2} />
+        <AgentIcon size={16} />
       </span>
       <span className={styles.networkLostLabel}>Network connection lost!</span>
     </div>
@@ -228,7 +229,7 @@ function AgentTurn({ children }: { children: ReactNode }): ReactElement {
   return (
     <div className={styles.answerTurn}>
       <span className={styles.avatar} aria-hidden="true">
-        <Bot size={14} strokeWidth={2} />
+        <AgentIcon size={14} />
       </span>
       <div className={styles.answer}>{children}</div>
     </div>
@@ -338,7 +339,7 @@ function AnsweredTurn({
       {summary !== undefined && summary.status === "error" && (
         <div role="alert" className={styles.failure}>
           <span className={styles.failureIcon} aria-hidden="true">
-            <Bot size={16} strokeWidth={2} />
+            <AgentIcon size={16} />
           </span>
           <span className={styles.failureBody}>
             <span className={styles.failureTitle}>Something went wrong</span>

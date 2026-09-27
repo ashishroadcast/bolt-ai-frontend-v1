@@ -1,5 +1,6 @@
-import { Bot, History, MessageSquarePlus, X } from "lucide-react";
+import { History, MessageSquarePlus, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { AgentIcon } from "./AgentIcon.tsx";
 import styles from "./Ask.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
 import { AgentSelectionBridge } from "./chat/agentSelection.ts";
@@ -9,6 +10,7 @@ import { Composer } from "./chat/Composer.tsx";
 import { EmptyState } from "./EmptyState.tsx";
 import { HistoryPanel } from "./chat/HistoryPanel.tsx";
 import { Thread } from "./chat/Thread.tsx";
+import { SCROLL_REGION_ATTR } from "./chat/useStickToBottom.ts";
 import { AskProvider, useAskConfig, type AskConfig } from "./config.tsx";
 
 /**
@@ -140,7 +142,7 @@ export function AskScreen({
       <div className={styles.panelHeader}>
         <div className={styles.agentProfile}>
           <span className={styles.avatarShield} aria-hidden="true">
-            <Bot size={16} strokeWidth={2} />
+            <AgentIcon size={18} />
           </span>
           <span className={styles.headerTitle}>AI Agent Assistant</span>
         </div>
@@ -187,7 +189,7 @@ export function AskScreen({
         <AgentSelectionBridge />
       </div>
 
-      <div className={styles.scroll}>
+      <div className={styles.scroll} {...{ [SCROLL_REGION_ATTR]: "" }}>
         {isEmpty ? (
           <div className={styles.empty}>
             <EmptyState title={title} body={body} />

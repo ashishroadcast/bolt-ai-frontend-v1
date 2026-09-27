@@ -1,6 +1,7 @@
-import { Bot, Database, FileText, Sparkles, Workflow, type LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Database, FileText, Sparkles, Workflow, type LucideIcon } from "lucide-react";
+import { useEffect, useState, type ComponentType } from "react";
 import { Link } from "react-router-dom";
+import { AgentIcon } from "../ask/AgentIcon.tsx";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { useAgents } from "../agents/useAgents.ts";
 import { useOrchestrators } from "../agents/useOrchestrators.ts";
@@ -51,7 +52,7 @@ function useKnowledgeCounts(): KnowledgeCounts {
 }
 
 interface StatTileProps {
-  icon: LucideIcon;
+  icon: LucideIcon | ComponentType<{ size?: number; strokeWidth?: number; "aria-hidden"?: boolean | "true" | "false" }>;
   label: string;
   value: number | null;
   detail?: string;
@@ -101,7 +102,7 @@ export function DashboardRoute() {
       <div className={styles.body}>
         <div className={styles.grid}>
           <StatTile
-            icon={Bot}
+            icon={AgentIcon}
             label="Agents"
             value={agentsLoading ? null : agents.length}
             detail={agentsLoading ? undefined : `${activeAgents} active`}

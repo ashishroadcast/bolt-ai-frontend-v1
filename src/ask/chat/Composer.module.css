@@ -97,19 +97,6 @@
   min-width: 0;
 }
 
-.paperclipBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  padding: 6px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fg-dim);
-  cursor: not-allowed;
-}
-
 .field {
   flex: 1 1 auto;
   min-width: 0;
@@ -226,13 +213,15 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: 1px solid var(--rule);
   border-radius: var(--radius-control);
   background: transparent;
-  color: var(--fg-faint);
+  /* fg-dim, not fg-faint: the glyph is a single thin diagonal, and at the
+   * faint tint it disappeared next to the mic button entirely. */
+  color: var(--fg-dim);
   cursor: pointer;
 }
 

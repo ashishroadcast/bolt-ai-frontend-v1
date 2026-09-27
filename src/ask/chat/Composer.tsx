@@ -1,4 +1,4 @@
-import { ArrowRight, Mic, Paperclip, Slash, Square, X } from "lucide-react";
+import { ArrowRight, Mic, Slash, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useAskConfig, type AskHostContext } from "../config.tsx";
 import { useChatContext } from "./ChatContext.tsx";
@@ -460,19 +460,10 @@ export function Composer() {
         </div>
       )}
       <div className={styles.leftBox}>
-        {/* Visible per the design, but there is nowhere for an attachment
-            to go yet — no upload endpoint exists in agent-service's wire
-            protocol. Disabled rather than wired to nothing, which would be
-            a click that silently does nothing at all. */}
-        <button
-          type="button"
-          className={styles.paperclipBtn}
-          disabled
-          aria-label="Attachments aren't supported yet"
-          title="Attachments aren't supported yet"
-        >
-          <Paperclip size={18} strokeWidth={2} aria-hidden="true" />
-        </button>
+        {/* No attachment button: there is nowhere for an attachment to go
+            yet — no upload endpoint exists in agent-service's wire protocol.
+            Re-add the disabled Paperclip button (see git history) when one
+            does. */}
         <input
           ref={inputRef}
           type="text"
@@ -542,7 +533,7 @@ export function Composer() {
             inputRef.current?.focus();
           }}
         >
-          <Slash size={12} strokeWidth={2.5} aria-hidden="true" />
+          <Slash size={14} strokeWidth={2.5} aria-hidden="true" />
         </button>
       )}
       <button type="submit" className={styles.send} disabled={!canSend} aria-label={isStreaming ? "Asking" : "Ask"}>

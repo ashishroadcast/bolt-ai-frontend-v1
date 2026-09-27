@@ -1,5 +1,6 @@
-import { Bot, ChartColumn, FileSpreadsheet, FileText, Sparkles, type LucideIcon } from "lucide-react";
+import { FileSpreadsheet, LayoutDashboard, Radio, Sparkles, type LucideIcon } from "lucide-react";
 import type { ReactElement } from "react";
+import { AgentIcon } from "./AgentIcon.tsx";
 import { useChatContext } from "./chat/ChatContext.tsx";
 import { useAskAgents } from "./chat/useAskAgents.ts";
 import styles from "./EmptyState.module.css";
@@ -14,23 +15,24 @@ interface QuickAction {
   prompt: string;
 }
 
-/** Figma's four starter cards (ai-agent-welcome-panel: card-summarize-report,
- * card-compare-metrics, card-generate-insights, card-export-data). Fixed
- * rather than configurable — nothing has asked for a host override yet,
+/** The four starter cards, first drafted from Figma's ai-agent-welcome-panel
+ * and since re-prioritised by product for the fleet tenant: a dashboard
+ * action first, forms second, the two original survivors kept in place.
+ * Fixed rather than configurable — nothing has asked for a host override yet,
  * and inventing one on spec would be the premature-abstraction this
  * codebase's own house rule warns against. */
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    icon: FileText,
-    title: "Summarize Report",
-    body: "Get a quick overview of any workspace report",
-    prompt: "Summarize the key trends in this month's reports.",
+    icon: LayoutDashboard,
+    title: "Create Dashboard",
+    body: "Daily vehicle usage, drafted for you",
+    prompt: "Create a dashboard to show daily usage of vehicles.",
   },
   {
-    icon: ChartColumn,
-    title: "Compare Metrics",
-    body: "Analyze performance trends side-by-side",
-    prompt: "Compare performance trends across the last two periods.",
+    icon: FileSpreadsheet,
+    title: "Create Forms",
+    body: "Generate a ready-to-use form from a simple prompt",
+    prompt: "Create a form for collecting daily sales figures.",
   },
   {
     icon: Sparkles,
@@ -39,10 +41,10 @@ const QUICK_ACTIONS: QuickAction[] = [
     prompt: "Generate insights from the current workspace data.",
   },
   {
-    icon: FileSpreadsheet,
-    title: "Create Forms",
-    body: "Generate a ready-to-use form from a simple prompt",
-    prompt: "Create a form for collecting daily sales figures.",
+    icon: Radio,
+    title: "Live Fleet Data",
+    body: "Motion, speed, address and more, as it happens",
+    prompt: "Show live fleet data like motion, speed, and current address.",
   },
 ];
 
@@ -75,7 +77,7 @@ export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
           <span className={styles.orbRingOuter} />
           <span className={styles.orbRingInner} />
           <span className={styles.orbCore}>
-            <Bot size={32} strokeWidth={1.75} />
+            <AgentIcon size={34} />
           </span>
         </div>
 

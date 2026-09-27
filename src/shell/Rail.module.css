@@ -70,14 +70,31 @@
   color: var(--signal);
 }
 
+.group {
+  display: flex;
+  flex-direction: column;
+}
+
 @media (max-width: 900px) {
   .rail {
     flex-direction: row;
     overflow-x: auto;
-    padding: 8px;
-    gap: 4px;
+    overflow-y: hidden;
+    padding: 6px 12px;
+    gap: 6px;
     border-right: 0;
     border-bottom: 1px solid var(--rule);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+  }
+
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .group {
+    display: contents;
   }
 
   .label {
@@ -87,12 +104,15 @@
   .link {
     border-left: 0;
     border-bottom: 2px solid transparent;
+    border-radius: var(--radius-control);
     white-space: nowrap;
-    padding: 6px 11px;
+    padding: 6px 12px;
+    flex-shrink: 0;
   }
 
   .link.on {
     border-left: 0;
     border-bottom-color: var(--signal);
+    background: var(--signal-soft);
   }
 }

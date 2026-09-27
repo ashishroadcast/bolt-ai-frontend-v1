@@ -76,43 +76,12 @@
   background: var(--surface);
   border-inline: 1px solid var(--rule-soft);
   box-shadow: 0 0 8px 0 rgba(31, 40, 39, 0.08);
-  /*
-   * WHO SCROLLS.
-   *
-   * In the console, the shell's thread column is the scrollport and this
-   * screen simply grows inside it — hence `min-height: 100%` and no overflow
-   * of its own. Embedded there IS no such ancestor: the panel gives the
-   * widget a fixed height and nothing inside it scrolled, so a conversation
-   * longer than the panel was clipped with no way to reach the rest of it.
-   *
-   * `element.css` flips these three on the shadow host, so the embedded
-   * build bounds itself (`height: 100%`, `min-height: 0`) and lets `.scroll`
-   * below own the overflow. The fallbacks keep the console exactly as it was.
-   */
-  min-height: var(--ask-screen-min-height, 100%);
-  height: var(--ask-screen-height, auto);
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  flex: 1 1 auto;
   min-width: 0;
-  /*
-   * In the console, `<main>` (Shell.module.css's `.thread`) is ALSO a
-   * column flex container — so without this, `.screen`'s explicit
-   * `min-height: 100%` above overrides the automatic content-based minimum
-   * a flex item gets by default, and `.screen` shrinks to fit `<main>`'s
-   * box instead of overflowing it. The thread then never grows past
-   * `<main>`'s own height; `.scroll` below quietly becomes the real
-   * scrollport instead (its own `overflow-y: auto` catching what `.screen`
-   * no longer passes through), two levels below the `[data-scroll-region]`
-   * mark `useStickToBottom.ts` reads — so a reply streaming in never
-   * autoscrolled, because the write landed on an element that had nothing
-   * left to scroll.
-   *
-   * `flex-shrink: 0` keeps `.screen` at its natural (content) height, so
-   * `<main>` overflows the way `useStickToBottom.ts`'s "WHO SCROLLS"
-   * comment already assumed it did. Inert in the embedded build: there
-   * `.screen`'s parent is a plain sized `<div>`, not a flex container, so
-   * this has nothing to shrink against and `.scroll` keeps owning the
-   * overflow exactly as `element.css` intends.
-   */
-  flex-shrink: 0;
+  position: relative;
 }
 
 /* The 4px gradient stripe across the very top of the panel — the one
@@ -123,6 +92,9 @@
   height: 4px;
   width: 100%;
   background: var(--ask-accent-gradient);
+  position: sticky;
+  top: 0;
+  z-index: 12;
 }
 
 /*
@@ -143,6 +115,10 @@
   height: 52px;
   padding: 0 20px;
   border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  position: sticky;
+  top: 4px;
+  z-index: 11;
 }
 
 .agentProfile {
@@ -217,6 +193,10 @@
   flex: none;
   padding: 10px 20px;
   border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  position: sticky;
+  top: 56px;
+  z-index: 10;
 }
 
 .scroll {
@@ -251,6 +231,9 @@
   border-top: 1px solid var(--rule-soft);
   box-shadow: 0 -4px 8px rgba(183, 239, 255, 0.1);
   padding: 16px 16px 24px;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
 }
 
 .composerInner {

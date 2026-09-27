@@ -71,7 +71,7 @@ export function Rail() {
   return (
     <nav className={styles.rail} aria-label="Console sections">
       {GROUPS.map((group) => (
-        <div key={group.label}>
+        <div key={group.label} className={styles.group}>
           <div className={styles.label}>{group.label}</div>
           {group.items.map((item) => (
             <RailLink key={item.to} {...item} />

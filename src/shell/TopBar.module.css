@@ -68,5 +68,23 @@
   outline-offset: 1px;
 }
 
-/* The strip is the first thing to go when the bar gets tight: it is
-   ambient, and the clock beside it carries the same fact in words. */
+@media (max-width: 600px) {
+  .topbar {
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .identity {
+    gap: 8px;
+  }
+
+  .who {
+    display: none;
+  }
+
+  .signOut {
+    padding: 4px 8px;
+    font-size: var(--text-micro);
+    white-space: nowrap;
+  }
+}

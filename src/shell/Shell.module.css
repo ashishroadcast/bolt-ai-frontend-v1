@@ -46,6 +46,10 @@
   gap: var(--stack);
 }
 
+.thread:has([class*="screen"]) {
+  overflow-y: hidden;
+}
+
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
@@ -62,5 +66,12 @@
 
   .thread {
     border-right: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .thread {
+    padding: 12px 12px 16px;
+    gap: 12px;
   }
 }

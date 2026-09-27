@@ -25,6 +25,7 @@
  */
 
 export { Ask, AskScreen, type AskProps } from "./Ask.tsx";
+export { AgentIcon, type AgentIconProps } from "./AgentIcon.tsx";
 // The conversation, separately from the screen. A host that needs a run to
 // survive navigation (the console does) mounts this above its router and
 // renders `AskScreen` at the route; a host that does not use `Ask`.
