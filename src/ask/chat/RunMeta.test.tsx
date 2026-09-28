@@ -46,7 +46,7 @@ describe("RunMeta", () => {
     expect(screen.getByText("2 tools")).toBeInTheDocument();
     expect(screen.getByText("score 0.82")).toBeInTheDocument();
     expect(screen.getByText("openai/gpt-5-mini")).toBeInTheDocument();
-    expect(screen.getByText("1m 39s")).toBeInTheDocument();
+    expect(screen.getByText("Worked for 1m 39s")).toBeInTheDocument();
     expect(screen.getByText("$0.0216")).toBeInTheDocument();
     expect(screen.getByText("37,250 tok")).toBeInTheDocument();
   });
@@ -59,7 +59,7 @@ describe("RunMeta", () => {
     expect(screen.queryByText("openai/gpt-5-mini")).not.toBeInTheDocument();
     // The wall clock this client measured is a real observation, so it
     // stays even with no usage.
-    expect(screen.getByText("1m 39s")).toBeInTheDocument();
+    expect(screen.getByText("Worked for 1m 39s")).toBeInTheDocument();
   });
 
   it("omits a zero token count, which means unreported rather than free", () => {

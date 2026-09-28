@@ -1,4 +1,4 @@
-import type { RunTrace } from "./runTrace.ts";
+import { formatMinutes, type RunTrace } from "./runTrace.ts";
 
 /**
  * What the agent is doing right now, in words, for the wait indicator.
@@ -54,8 +54,9 @@ export function currentStepLabel(trace: RunTrace): string {
 }
 
 /**
- * Whole seconds since `startedAt`, as `"12s"` past a minute and `"1m 04s"`
- * beyond it.
+ * Whole seconds since `startedAt`, as `"12s"` under a minute and `"1m 04s"`
+ * beyond it — the same `formatMinutes` the finished answer's duration
+ * uses, so the figure does not change shape the moment the run ends.
  *
  * Seconds only — no tenths. A counter flickering ten times a second reads
  * as agitation, and nobody waiting on a forty-second run needs to know
@@ -64,7 +65,5 @@ export function currentStepLabel(trace: RunTrace): string {
 export function formatElapsed(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000));
   if (total < 60) return `${total}s`;
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  return formatMinutes(total);
 }

@@ -202,6 +202,19 @@ describe("Thread", () => {
     expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
   });
 
+  it("says how long the run worked once, in the strip under the answer", async () => {
+    // It was said twice: a "Worked For" header above the prose and the same
+    // figure in the strip, and the two were not even formatted alike.
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getAllByText(/worked for/i)).toHaveLength(1);
+    expect(screen.getByText(/^Worked for \d+\.\ds$/)).toBeInTheDocument();
+  });
+
   it("reopening a conversation renders sheets but never the expanded rail", async () => {
     fetchMock.mockImplementation(
       routeFetch(() => new Response(

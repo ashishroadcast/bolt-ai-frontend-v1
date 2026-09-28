@@ -147,10 +147,26 @@ function readArray(data: Record<string, unknown>, key: string): unknown[] | null
   return Array.isArray(value) ? value : null;
 }
 
+/**
+ * Whole seconds past a minute, as `"1m 04s"` — the one way this package
+ * writes a long duration. The live counter (`runStatus.formatElapsed`) and
+ * the finished figure used to disagree, "1m 04s" while the run went and
+ * "1m 4s" once it had, which reads as two different measurements.
+ */
+export function formatMinutes(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * A finished duration: tenths under a minute ("12.3s"), `formatMinutes`
+ * past it. The switch happens at whatever ROUNDS to a minute, so 59.96s
+ * reads "1m 00s" rather than "60.0s".
+ */
 export function formatDuration(ms: number): string {
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  const seconds = Math.round(ms / 1000);
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const tenths = Math.round(ms / 100);
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)}s`;
+  return formatMinutes(Math.round(ms / 1000));
 }
 
 /**

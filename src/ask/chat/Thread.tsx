@@ -21,7 +21,7 @@ import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
 import { RerunButton, RunMeta } from "./RunMeta.tsx";
-import { EMPTY_TRACE, formatDuration, type RunTrace } from "./runTrace.ts";
+import { EMPTY_TRACE, type RunTrace } from "./runTrace.ts";
 import styles from "./Thread.module.css";
 import type { ChatMessage } from "./types.ts";
 
@@ -325,9 +325,17 @@ function usedCachedPlan(message: ChatMessage): boolean {
   return phases.some((phase) => phase.phase === "plan" && phase.state === "cached");
 }
 
-/** The actual client-measured elapsed time for this live run. Historical
- * usage.duration_ms is provider model time, so it must not be presented as
- * end-to-end time in the "Worked For" header. */
+/**
+ * The client-measured elapsed time for a run this session watched, which
+ * RunMeta's strip reports as "Worked for 12.3s". Historical
+ * `usage.duration_ms` is provider model time, so it must not be presented
+ * as end-to-end time. None for a failed run: how long it took to fail is
+ * not something a reader acts on.
+ *
+ * Reported once, in the strip. Figma's "Worked For" header above the prose
+ * said the same figure a second time, a few lines up, and in a different
+ * format from the strip's.
+ */
 function workedForMs(message: ChatMessage): number | null {
   if (message.runSummary?.status === "error") return null;
   return message.runSummary?.totalMs ?? null;
@@ -392,15 +400,6 @@ function AnsweredTurn({
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
       <Sheets parts={visible} />
-      {/* Figma's "Worked For 12m" — the same duration RunMeta's facts strip
-          reports below, surfaced again here because Figma places it as the
-          answer's own header rather than only in the measurements strip. */}
-      {workedForMs(message) !== null && (
-        <p className={styles.answerHeader}>
-          <span className={styles.answerHeaderLead}>Worked For </span>
-          <span className={styles.answerHeaderValue}>{formatDuration(workedForMs(message)!)}</span>
-        </p>
-      )}
       {/* Hidden only when the summary that replaces it is itself on screen. */}
       {!rendersItsOwnProse(visible) && (
         <RevealedAnswer
@@ -417,7 +416,7 @@ function AnsweredTurn({
         toolCount={summary !== undefined ? trace.tools.length : null}
         score={trace.score}
         usage={message.usage ?? null}
-        observedMs={summary?.totalMs ?? null}
+        observedMs={workedForMs(message)}
         onRerun={onRerun}
         onRetryFresh={onRetryFresh}
         rerunDisabled={rerunDisabled}

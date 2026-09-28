@@ -142,7 +142,10 @@ describe("modelsFromUsage", () => {
 describe("formatting", () => {
   it("reads a sub-minute run in seconds and a longer one in minutes", () => {
     expect(formatDuration(400)).toBe("0.4s");
-    expect(formatDuration(65_393)).toBe("1m 5s");
+    // Zero-padded, the way the live counter writes it.
+    expect(formatDuration(65_393)).toBe("1m 05s");
+    expect(formatDuration(59_960)).toBe("1m 00s");
+    expect(formatDuration(59_940)).toBe("59.9s");
   });
 
   it("never prints a real cost as free", () => {

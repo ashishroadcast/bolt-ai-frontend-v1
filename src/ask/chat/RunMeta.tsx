@@ -240,7 +240,7 @@ export function RunMeta({
             className={styles.fact}
             title="Total elapsed time from submitting the question to receiving the answer"
           >
-            {formatDuration(durationMs)}
+            Worked for {formatDuration(durationMs)}
           </span>
         )}
         {showRunDetails && usage !== null && usage.cost_usd > 0 && (
