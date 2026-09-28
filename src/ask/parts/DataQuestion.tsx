@@ -69,7 +69,10 @@ export function DataQuestion({
       setSent(answer);
     } catch (err: unknown) {
       // The commonest failure is a 404 because the run gave up waiting, so
-      // the message says that rather than "something went wrong".
+      // the message says that rather than "something went wrong". The client
+      // words every refusal for a reader, so its message is shown as it is —
+      // a 403 now says it is a missing permission (`ForbiddenError`), where
+      // it used to tell someone who was signed in to sign in again.
       setFailed(
         err instanceof Error && err.message !== ""
           ? err.message

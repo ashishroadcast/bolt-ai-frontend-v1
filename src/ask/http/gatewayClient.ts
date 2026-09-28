@@ -1,53 +1,24 @@
-import { GatewayError, UnauthorizedError } from "./errors.ts";
+import {
+  AgentApiError,
+  errorFromResponse,
+  GatewayError,
+  NetworkError,
+  stringDetailMessage,
+  UnauthorizedError,
+} from "./errors.ts";
 
-/**
- * A non-2xx from an `/agent/*` call, carrying whatever JSON the server
- * actually sent — most importantly FastAPI's own `detail` field, which is
- * how a validation refusal, a permission denial, or the promotion gate's
- * own `{reason, regressed_cases}` refusal (`app.learning.gate`, surfaced
- * through `app.api.admin`'s `POST /agent/admin/promote` as
- * `HTTPException(422, detail={"reason": ..., "regressed_cases": [...]})`)
- * reaches a caller at all. Before this, `agentFetch` below discarded the
- * response body entirely on a non-2xx — a caller had a status code and
- * nothing else, so the four distinct promotion refusals were
- * indistinguishable from the client.
- *
- * A `GatewayError` subclass, not a change to `GatewayError` itself
- * (`./errors.ts` is out of this task's file list, and its own
- * constructor only takes `status`/`graphQLErrors`) — every existing
- * `catch (GatewayError)` / `instanceof GatewayError` call site still
- * matches an `AgentApiError`, and the `UnauthorizedError`/`onUnauthorized`
- * 401/403 path below is untouched, so auth behaviour does not change.
+/*
+ * `AgentApiError` and `stringDetailMessage` used to be defined here, when
+ * `./errors.ts` was out of bounds for the task that needed them. They live
+ * with the other error types now and are re-exported so every existing
+ * `import { AgentApiError } from "…/gatewayClient.ts"` keeps working.
  */
-export class AgentApiError extends GatewayError {
-  /** The parsed JSON error body (typically `{detail: ...}`), or
-   * `undefined` when the response body was not valid JSON at all (an
-   * upstream proxy's own error page, an empty body, …) — a caller that
-   * wants FastAPI's `detail` reads it off here (`error.body?.detail`)
-   * rather than re-parsing `message`. */
-  readonly body: unknown;
+export { AgentApiError, stringDetailMessage };
 
-  constructor(message: string, status: number, body: unknown) {
-    super(message, { status });
-    this.name = "AgentApiError";
-    this.body = body;
-  }
-}
-
-/** FastAPI's `detail` when it is a plain string — the common case
- * (`detail="artifact not found"`) — usable directly as an error message.
- * A structured `detail` (the promotion gate's `{reason,
- * regressed_cases}`) is not a message on its own; a caller that wants it
- * reads `error.body` instead, so this returns `null` for that shape
- * rather than `JSON.stringify`-ing something not meant to be read as
- * prose. Exported so `../chat/runStream.ts`'s own non-2xx handling (it
- * cannot route through `agentFetch` below at all — see that module's own
- * docstring for why) can reuse this exact extraction instead of a second,
- * independent copy of it. */
-export function stringDetailMessage(body: unknown): string | null {
-  if (typeof body !== "object" || body === null || !("detail" in body)) return null;
-  const detail = (body as { detail: unknown }).detail;
-  return typeof detail === "string" ? detail : null;
+/** `fetch`'s own cancellation, which must reach the caller untouched:
+ * `useChat` tells a deliberate stop from a failure by exactly this shape. */
+function isAbort(err: unknown, signal: AbortSignal | null | undefined): boolean {
+  return (err instanceof DOMException && err.name === "AbortError") || signal?.aborted === true;
 }
 
 export interface GatewayClientOptions {
@@ -62,15 +33,15 @@ export interface GatewayClientOptions {
    * on a non-Promise value just resolves to it.
    */
   getToken: () => string | null | Promise<string | null>;
-  /** Called once whenever a request comes back 401/403 and no configured
-   * refresh recovered it, or finds no token to send. */
+  /** Called once whenever a request comes back 401 and no configured
+   * refresh recovered it, or finds no token to send. Never on a 403 — see
+   * `GatewayClient.refusal` for why that would be a sign-in loop. */
   onUnauthorized: () => void;
   /**
    * Attempts one token refresh, resolving true if the session now has a
    * fresh token worth retrying with, false if refresh failed (in which
    * case the caller is responsible for treating this the same as any
-   * other unauthorized response). Optional — omitted, a 401/403 behaves
-   * exactly as before this option existed.
+   * other unauthorized response). Optional — omitted, a 401 is final.
    *
    * GatewayClient dedupes concurrent calls to this itself (see
    * `runRefresh` below): three requests that all 401 around the same time
@@ -187,17 +158,95 @@ export class GatewayClient {
    * injected function does itself. Resolves false without calling
    * `refresh` at all when none was configured, which is exactly the old
    * (pre-refresh) behaviour for every caller that doesn't pass one.
+   *
+   * A refresh that throws counts as one that failed. It is the host's code,
+   * and its exception says nothing a reader could act on.
    */
   private async runRefresh(): Promise<boolean> {
     if (this.refresh === undefined) return false;
     if (this.refreshInFlight === null) {
-      const attempt = this.refresh();
+      const attempt = this.refresh().catch(() => false);
       this.refreshInFlight = attempt;
       void attempt.finally(() => {
         if (this.refreshInFlight === attempt) this.refreshInFlight = null;
       });
     }
     return this.refreshInFlight;
+  }
+
+  /**
+   * The credential for one request, or the refusal for having none.
+   *
+   * A provider that throws is treated as one that returned null: the
+   * exception is the host's, and "no credential" is what it means here.
+   */
+  private async requireToken(): Promise<string> {
+    const token = await this.readToken();
+    if (token === null) {
+      this.onUnauthorized();
+      throw new UnauthorizedError(401);
+    }
+    return token;
+  }
+
+  private async readToken(): Promise<string | null> {
+    try {
+      return await this.getToken();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * `fetch`, with the one failure it reports by throwing turned into words.
+   *
+   * A request that never got an HTTP answer rejects with a bare
+   * `TypeError("Failed to fetch")`, and before this that string was what the
+   * failed-run card printed. A cancellation passes through untouched — see
+   * `isAbort`.
+   */
+  private async send(url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetch(new Request(url, init));
+    } catch (err) {
+      if (isAbort(err, init.signal)) throw err;
+      throw new NetworkError(err);
+    }
+  }
+
+  /**
+   * What a non-2xx becomes, in one place for all three request paths.
+   *
+   * ONLY a 401 clears the session. A 403 is "we know exactly who you are,
+   * and you may not do this" — an authenticated state, not a broken one, so
+   * signing the operator out on it is both wrong and unrecoverable: they
+   * land on sign-in, sign in again, and the next call 403s them straight
+   * back out. Observed the moment this console met bolt-v2: the token
+   * authenticates fine, but bolt-ai's own permission names (`agent.agents`,
+   * `agent.chat.use`) are not seeded in bolt-v2's RBAC, so every gated route
+   * answers 403 and the dashboard's first call bounced the operator to
+   * sign-in. It is a `ForbiddenError` now, a different class from
+   * `UnauthorizedError`, so nothing that reacts to one can catch the other.
+   */
+  private async refusal(response: Response, authed: boolean): Promise<GatewayError> {
+    if (response.status === 401 && authed) this.onUnauthorized();
+    return errorFromResponse(response);
+  }
+
+  /** A 2xx body as JSON — or, when it is not JSON (a proxy's page served
+   * with a 200), an error that says so instead of `SyntaxError: Unexpected
+   * token '<'`. */
+  private async readJson<T>(response: Response): Promise<T> {
+    try {
+      return (await response.json()) as T;
+    } catch (err) {
+      if (isAbort(err, null)) throw err;
+      throw new GatewayError("The assistant sent a reply this screen couldn't read.", {
+        status: response.status,
+        retryable: true,
+        cause: err,
+      });
+    }
   }
 
   /**
@@ -218,23 +267,16 @@ export class GatewayClient {
       for (const [key, value] of Object.entries(options.headers)) headers.set(key, value);
     }
     if (useAuth) {
-      const token = await this.getToken();
-      if (token === null) {
-        this.onUnauthorized();
-        throw new UnauthorizedError(401);
-      }
-      headers.set("Authorization", `Bearer ${token}`);
+      headers.set("Authorization", `Bearer ${await this.requireToken()}`);
     }
     this.applyContextHeaders(headers);
 
-    const request = new Request(`${this.baseUrl}/graphql`, {
+    const response = await this.send(`${this.baseUrl}/graphql`, {
       method: "POST",
       headers,
       body: JSON.stringify({ query, variables }),
       signal: options.signal,
     });
-
-    const response = await fetch(request);
 
     // A 401 gets exactly one refresh-and-retry; a 403 never does (a valid
     // token lacking permission isn't fixed by a new one), and a retry
@@ -252,14 +294,31 @@ export class GatewayClient {
   }
 
   /**
-   * Any `/agent/*` call — `path` must start with `/agent/`. Always
-   * carries `Authorization: Bearer <token>` (spec §10.1: "sent as
-   * Authorization: Bearer on every /agent/* call"); a 401/403 response,
-   * or having no token to send in the first place, both end the session
-   * the same way, via onUnauthorized — unless a configured `refresh`
-   * recovers a 401 first (see `graphql`'s matching comment; the same
-   * one-retry rule applies here).
+   * The front half `agentStream` and `agentFetch` share: the path check,
+   * the credential, the headers, the request. One copy, so the two cannot
+   * disagree about any of them.
    */
+  private async sendAgent(
+    method: "agentFetch" | "agentStream",
+    path: string,
+    init: RequestInit,
+  ): Promise<Response> {
+    if (!path.startsWith("/agent/")) {
+      throw new GatewayError(`${method} path must start with /agent/, got "${path}"`);
+    }
+
+    const token = await this.requireToken();
+
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${token}`);
+    if (!headers.has("Content-Type") && init.body !== undefined) {
+      headers.set("Content-Type", "application/json");
+    }
+    this.applyContextHeaders(headers);
+
+    return this.send(`${this.baseUrl}${path}`, { ...init, headers });
+  }
+
   /**
    * `agentFetch`'s auth contract, but hands back the raw `Response` instead
    * of parsing it.
@@ -274,60 +333,31 @@ export class GatewayClient {
    * contract is a second place for the credential, the `Organisation` header
    * and `X-Client` to drift out of step with this class.
    *
-   * Only the SUCCESS path is returned raw. A refusal is still classified
-   * here — 401 and 403 mean the same thing whatever the body's content type,
-   * and the caller should not have to know that.
+   * Only the SUCCESS path is returned raw. Every refusal is classified here,
+   * into the same typed errors `agentFetch` throws — a non-2xx carries a
+   * small buffered JSON body, never the stream, so reading it is safe.
    */
   async agentStream(path: string, init: RequestInit = {}): Promise<Response> {
-    if (!path.startsWith("/agent/")) {
-      throw new GatewayError(`agentStream path must start with /agent/, got "${path}"`);
-    }
-
-    const token = await this.getToken();
-    if (token === null) {
-      this.onUnauthorized();
-      throw new UnauthorizedError(401);
-    }
-
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${token}`);
-    if (!headers.has("Content-Type") && init.body !== undefined) {
-      headers.set("Content-Type", "application/json");
-    }
-    this.applyContextHeaders(headers);
-
-    const response = await fetch(new Request(`${this.baseUrl}${path}`, { ...init, headers }));
+    const response = await this.sendAgent("agentStream", path, init);
 
     // No retry. Unlike `agentFetch`, re-sending this request would start a
     // second agent RUN — the expensive, side-effecting kind — and the
     // credential this class is given does not refresh anyway.
-    if (response.status === 401 || response.status === 403) {
-      if (response.status === 401) this.onUnauthorized();
-      throw new UnauthorizedError(response.status);
-    }
+    if (!response.ok) throw await this.refusal(response, true);
     return response;
   }
 
+  /**
+   * Any `/agent/*` call — `path` must start with `/agent/`. Always
+   * carries `Authorization: Bearer <token>` (spec §10.1: "sent as
+   * Authorization: Bearer on every /agent/* call"); a 401 response, or
+   * having no token to send in the first place, both end the session the
+   * same way, via onUnauthorized — unless a configured `refresh` recovers
+   * a 401 first (see `graphql`'s matching comment; the same one-retry rule
+   * applies here). A 403 never does; see `refusal`.
+   */
   async agentFetch<T>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
-    if (!path.startsWith("/agent/")) {
-      throw new GatewayError(`agentFetch path must start with /agent/, got "${path}"`);
-    }
-
-    const token = await this.getToken();
-    if (token === null) {
-      this.onUnauthorized();
-      throw new UnauthorizedError(401);
-    }
-
-    const headers = new Headers(init.headers);
-    headers.set("Authorization", `Bearer ${token}`);
-    if (!headers.has("Content-Type") && init.body !== undefined) {
-      headers.set("Content-Type", "application/json");
-    }
-    this.applyContextHeaders(headers);
-
-    const request = new Request(`${this.baseUrl}${path}`, { ...init, headers });
-    const response = await fetch(request);
+    const response = await this.sendAgent("agentFetch", path, init);
 
     if (response.status === 401 && !isRetry) {
       const refreshed = await this.runRefresh();
@@ -336,65 +366,22 @@ export class GatewayClient {
       }
     }
 
-    // ONLY a 401 clears the session. A 403 is "we know exactly who you are,
-    // and you may not do this" — an authenticated state, not a broken one, so
-    // signing the operator out on it is both wrong and unrecoverable: they
-    // land on sign-in, sign in again, and the next call 403s them straight
-    // back out. Observed the moment this console met bolt-v2: the token
-    // authenticates fine, but bolt-ai's own permission names (`agent.agents`,
-    // `agent.chat.use`) are not seeded in bolt-v2's RBAC, so every gated route
-    // answers 403 and the dashboard's first call bounced the operator to
-    // sign-in. The permission gap is a real deployment task; treating it as a
-    // sign-out hid it behind a login loop.
-    if (response.status === 401) {
-      this.onUnauthorized();
-      throw new UnauthorizedError(response.status);
-    }
-    if (response.status === 403) {
-      throw new UnauthorizedError(response.status);
-    }
-    if (!response.ok) {
-      // Read the body before throwing — a non-2xx from FastAPI is almost
-      // always JSON (`{"detail": ...}`), but a proxy/gateway-level failure
-      // in front of it might not be, so a parse failure degrades to
-      // `undefined` rather than throwing a second, unrelated error out of
-      // this catch. See AgentApiError's own docstring for why the body is
-      // preserved at all.
-      const body: unknown = await response.json().catch(() => undefined);
-      throw new AgentApiError(
-        stringDetailMessage(body) ?? `Request to ${path} failed (${response.status}).`,
-        response.status,
-        body,
-      );
-    }
+    if (!response.ok) throw await this.refusal(response, true);
     if (response.status === 204) {
       return undefined as T;
     }
-    return (await response.json()) as T;
+    return this.readJson<T>(response);
   }
 
   private async readGraphQLResponse<T>(response: Response, wasAuthed: boolean): Promise<T> {
     // GraphQL services in this repo authenticate optionally at the HTTP
     // layer and deny via the @auth directive inside a 200 response
     // (pkg/middleware/jwt.go) — but the gateway itself can still return a
-    // bare 401/403 (e.g. its own JWT check), so both are handled here.
-    // Same split as `agentFetch`: only a 401 is a session problem. See the
-    // comment there for why signing out on a 403 turns a missing permission
-    // into an unrecoverable login loop.
-    if (response.status === 401) {
-      if (wasAuthed) this.onUnauthorized();
-      throw new UnauthorizedError(response.status);
-    }
-    if (response.status === 403) {
-      throw new UnauthorizedError(response.status);
-    }
-    if (!response.ok) {
-      throw new GatewayError(`Gateway request failed (${response.status}).`, {
-        status: response.status,
-      });
-    }
+    // bare 401/403 (e.g. its own JWT check), so both are handled here, by
+    // the same `refusal` the REST paths use.
+    if (!response.ok) throw await this.refusal(response, wasAuthed);
 
-    const body = (await response.json()) as GraphQLResponseBody<T>;
+    const body = await this.readJson<GraphQLResponseBody<T>>(response);
     if (body.errors && body.errors.length > 0) {
       throw new GatewayError(body.errors[0]!.message, {
         graphQLErrors: body.errors.map((error) => error.message),
