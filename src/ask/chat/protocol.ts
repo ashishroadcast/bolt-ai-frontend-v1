@@ -19,8 +19,13 @@ export interface StartChunk {
   messageId: string;
   /** `session_id`, and now `agent_name` — the only place a caller who named
    * no agent on the request learns which one `app.api.run._choose_agent`
-   * picked, since nothing else on the wire echoes that decision back. */
-  messageMetadata?: { session_id?: number; agent_name?: string };
+   * picked, since nothing else on the wire echoes that decision back.
+   *
+   * `routing_fallback` is `true` when that pick was not a confident one: the
+   * router could not tell who should answer and fell back to a default.
+   * Absent from a run that named its agent, and from an agent-service that
+   * predates the field — both mean "not a fallback". */
+  messageMetadata?: { session_id?: number; agent_name?: string; routing_fallback?: boolean };
 }
 
 export interface TextStartChunk {

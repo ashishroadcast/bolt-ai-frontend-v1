@@ -86,6 +86,13 @@ export interface RunSummary {
    * agent that could not have answered. An unnamed run says nothing.
    */
   agentName: string | null;
+  /**
+   * `true` when the server routed this question to `agentName` only because
+   * it could not tell who should answer (`messageMetadata.routing_fallback`
+   * on the start chunk) — the cue for a "Not sure who should answer" line.
+   * Absent or `false` otherwise, including for a run that named its agent.
+   */
+  routingFallback?: boolean;
 }
 
 /**
@@ -122,4 +129,7 @@ export interface ActiveRun {
    * run starts, from the same `options.agent` the request was sent with,
    * and `null` when the caller named none. */
   agentName: string | null;
+  /** `RunSummary.routingFallback`, known from the start chunk on — so the
+   * rail can say it is unsure while the run is still going. */
+  routingFallback?: boolean;
 }
