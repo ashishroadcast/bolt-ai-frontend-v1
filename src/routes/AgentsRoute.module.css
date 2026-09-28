@@ -221,3 +221,12 @@
   font-size: var(--text-body);
   font-family: var(--font-mono);
 }
+
+/* A shared agent's card says why it has no Configure or Deactivate, rather
+   than leaving the reader to wonder where the controls went. */
+.sharedNote {
+  margin: 0 0 12px;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg-faint);
+}

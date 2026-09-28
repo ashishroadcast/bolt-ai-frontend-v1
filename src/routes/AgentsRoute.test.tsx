@@ -357,4 +357,35 @@ describe("AgentsRoute", () => {
     await waitFor(() => expect(screen.getByText("Ask screen")).toBeInTheDocument());
     expect(chatRef.current!.selectedAgent).toBe("Retired Bot");
   });
+
+  // --- agents a parent organisation shares ----------------------------------
+
+  it("shows a shared agent as askable but not configurable, without reading its owner-only detail", async () => {
+    const spy = vi.spyOn(gatewayClient, "agentFetch").mockImplementation(
+      routeAgentFetch({
+        "/agent/agents": [
+          { id: 1, name: "Analytics", description: "Own agent", is_active: true, owned: true },
+          { id: 9, name: "Fleet", description: "Shared agent", is_active: true, owned: false },
+        ],
+        "/agent/agents/1": agentDetail(1),
+        "/agent/datasources": [],
+        "/agent/llm-configs": [],
+        "/agent/mcp-servers": [],
+      }),
+    );
+
+    renderAgentsRoute();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Fleet" })).toBeInTheDocument());
+
+    const fleet = cardFor("Fleet");
+    expect(within(fleet).getByText("Shared")).toBeInTheDocument();
+    expect(within(fleet).queryByText("Configure")).not.toBeInTheDocument();
+    expect(within(fleet).queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
+    expect(within(fleet).getByRole("button", { name: "Ask" })).toBeInTheDocument();
+    expect(within(cardFor("Analytics")).getByText("Configure")).toBeInTheDocument();
+    // The owner-only detail was never asked for, so nothing reports "agent not found".
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("/agent/agents/1"));
+    expect(spy).not.toHaveBeenCalledWith("/agent/agents/9");
+    expect(screen.queryByText(/couldn.t read what these agents are wired to/)).not.toBeInTheDocument();
+  });
 });

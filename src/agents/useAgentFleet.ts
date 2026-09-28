@@ -110,21 +110,29 @@ export function useAgentFleet(): UseAgentFleetResult {
           return;
         }
 
-        const [details, datasources, llmConfigs, mcpServers] = await Promise.all([
-          Promise.all(agents.map((agent) => getAgent(agent.id))),
+        // Only this organisation's own agents: one a parent organisation
+        // shares can be run here, but its configuration is the owner's and
+        // `GET /agent/agents/{id}` answers 404 for it. Asking anyway turned the
+        // whole screen's wiring into "agent not found".
+        const owned = agents.filter((agent) => agent.owned !== false);
+        if (owned.length === 0) return;
+        const [ownedDetails, datasources, llmConfigs, mcpServers] = await Promise.all([
+          Promise.all(owned.map((agent) => getAgent(agent.id))),
           listDatasources(),
           listLlmConfigs(),
           listMcpServers(),
         ]);
         if (cancelled) return;
+        const detailById = new Map(ownedDetails.map((detail, index) => [owned[index]!.id, detail]));
 
         const datasourceName = new Map(datasources.map((d) => [d.id, d.name]));
         const modelName = new Map(llmConfigs.map((c) => [c.id, c.name]));
         const serverName = new Map(mcpServers.map((s) => [s.id, s.name]));
 
         setRows(
-          agents.map((agent, index) => {
-            const detail = details[index]!;
+          agents.map((agent) => {
+            const detail = detailById.get(agent.id);
+            if (detail === undefined) return { agent, wiring: null };
             const pinned = PROMPT_PHASES.filter(
               (phase) => detail.llm_bindings[phase] !== undefined,
             );

@@ -118,13 +118,15 @@ interface AgentCardProps {
 
 function AgentCard({ row, busy, error, onToggleActive, onAsk }: AgentCardProps) {
   const { agent, wiring } = row;
+  const shared = agent.owned === false;
 
   return (
     <article className={`${styles.card} ${agent.is_active ? "" : styles.cardIdle}`}>
       <header className={styles.cardHead}>
         <h3 className={styles.name}>
-          <Link to={`/agents/${agent.id}`}>{agent.name}</Link>
+          {shared ? agent.name : <Link to={`/agents/${agent.id}`}>{agent.name}</Link>}
         </h3>
+        {shared && <StatusPill tone="neutral" label="Shared" />}
         {agent.is_active ? (
           <StatusPill tone="good" label="Active" />
         ) : (
@@ -176,6 +178,12 @@ function AgentCard({ row, busy, error, onToggleActive, onAsk }: AgentCardProps) 
         </dl>
       )}
 
+      {shared && (
+        <p className={styles.sharedNote}>
+          Shared by a parent organisation. You can ask it; only its owner can change it.
+        </p>
+      )}
+
       {error !== null && (
         <p role="alert" className={styles.cardError}>
           {error}
@@ -183,24 +191,28 @@ function AgentCard({ row, busy, error, onToggleActive, onAsk }: AgentCardProps) 
       )}
 
       <footer className={styles.actions}>
-        <Link className={styles.primaryAction} to={`/agents/${agent.id}/config`}>
-          Configure
-        </Link>
-        <button type="button" className={styles.action} onClick={onAsk}>
+        {!shared && (
+          <Link className={styles.primaryAction} to={`/agents/${agent.id}/config`}>
+            Configure
+          </Link>
+        )}
+        <button type="button" className={shared ? styles.primaryAction : styles.action} onClick={onAsk}>
           Ask
         </button>
-        <button
-          type="button"
-          className={styles.action}
-          disabled={busy}
-          onClick={onToggleActive}
-          // The label is the verb, the pill above is the state — a button
-          // reading "Active" would be ambiguous about which of the two it
-          // is saying.
-          aria-label={`${agent.is_active ? "Deactivate" : "Activate"} ${agent.name}`}
-        >
-          {busy ? "Saving…" : agent.is_active ? "Deactivate" : "Activate"}
-        </button>
+        {!shared && (
+          <button
+            type="button"
+            className={styles.action}
+            disabled={busy}
+            onClick={onToggleActive}
+            // The label is the verb, the pill above is the state — a button
+            // reading "Active" would be ambiguous about which of the two it
+            // is saying.
+            aria-label={`${agent.is_active ? "Deactivate" : "Activate"} ${agent.name}`}
+          >
+            {busy ? "Saving…" : agent.is_active ? "Deactivate" : "Activate"}
+          </button>
+        )}
       </footer>
     </article>
   );
