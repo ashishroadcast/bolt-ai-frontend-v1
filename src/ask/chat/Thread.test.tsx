@@ -146,6 +146,28 @@ describe("Thread", () => {
     expect(screen.getByText("120 tok")).toBeInTheDocument();
   });
 
+  it("says so under an answer the router was not sure about, and only then", async () => {
+    const frames = (fallback: boolean) => [
+      `data: {"type":"start","messageId":"msg-9","messageMetadata":{"session_id":9,"agent_name":"Knowledge","routing_fallback":${fallback}}}`,
+      `data: {"type":"text-delta","id":"answer","delta":"I answer questions about how bolt-v2 works."}`,
+      `data: {"type":"finish"}`,
+      `data: [DONE]`,
+    ];
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(frames(true))));
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("who won the cricket?"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(
+      screen.getByText(/Not sure which agent this question was for, so Knowledge answered\./),
+    ).toBeInTheDocument();
+
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(frames(false))));
+    act(() => chatRef.current!.sendMessage("how do I add a geofence?"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(screen.getAllByText(/Not sure which agent this question was for/)).toHaveLength(1);
+  });
+
   it("names no agent when the caller named none, rather than a default that may not exist", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
     const { chatRef } = renderThread();

@@ -513,6 +513,19 @@ function AnsweredTurn({
         />
       )}
 
+      {/* The router could not tell which agent this question was for and
+          fell back (`routing_fallback` on the start chunk). Said once, on the
+          turn it happened, because an off-topic refusal from the wrong agent
+          otherwise reads as the product refusing. */}
+      {summary?.routingFallback === true && status === "done" && (
+        <p className={styles.routingHint}>
+          {agentName !== null
+            ? `Not sure which agent this question was for, so ${agentName} answered.`
+            : "Not sure which agent this question was for."}{" "}
+          If this misses, add a little more about what you need.
+        </p>
+      )}
+
       <RunMeta
         messageId={message.id}
         answerText={message.content}

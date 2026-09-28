@@ -280,3 +280,11 @@
   margin-left: auto;
   flex: none;
 }
+
+/* Under an answer the router was unsure about: quiet, secondary text. */
+.routingHint {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
