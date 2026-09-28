@@ -39,8 +39,9 @@ function CellGraphic({ viz, height }: { viz: string; height: number }): ReactEle
     case "kpi":
       return (
         <div className={styles.miniKpi}>
-          <div className={styles.miniKpiValue}>1,428</div>
-          <div className={styles.miniKpiTrend}>+12.4%</div>
+          {/* A dash, not a figure: the draft has no data yet, and the same
+              invented number on every tile read as the fleet's real total. */}
+          <div className={styles.miniKpiValue}>—</div>
         </div>
       );
     case "gauge":
@@ -305,7 +306,7 @@ function LayoutThumbnail({ widgets }: { widgets: AskDashboardDraftWidget[] }): R
           <div className={styles.dot} />
           <div className={styles.dot} />
         </div>
-        <div className={styles.thumbTitle}>Canvas Layout Preview</div>
+        <div className={styles.thumbTitle}>Layout preview · no data yet</div>
       </div>
       <div
         className={styles.thumb}
@@ -335,9 +336,6 @@ function LayoutThumbnail({ widgets }: { widgets: AskDashboardDraftWidget[] }): R
                   <VisualizationIcon visualization={widget.visualization} size={11} />
                 </div>
                 <div className={styles.cellTitle}>{title}</div>
-                {(widget.visualization === "line" || widget.visualization === "area") && (
-                  <div className={styles.cellBadge}>+8.4%</div>
-                )}
                 {(widget.visualization === "bar" || widget.visualization === "column" || widget.visualization === "hbar") && (
                   <div className={styles.cellBadgeNeutral}>Top 8</div>
                 )}

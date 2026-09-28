@@ -7,14 +7,11 @@ import styles from "./RunDebug.module.css";
  * tool calls it made, the SQL as it was really scoped and run, and the
  * judge's own reasoning.
  *
- * **Every section here renders only when the stream carried it, and the
- * one section that can never render says so.** The plan's steps are
- * genuinely absent from the wire — `app.agent.phases.plan` emits them,
- * and `app.api.run._PHASE_DOMAIN_EVENT_TYPES` then drops the `plan`
- * event before anything frames it as a part, so the console has never
- * received them. That note is written out rather than left as a missing
- * section, because a debug panel that quietly omits the plan is
- * indistinguishable from a run that had none.
+ * **Every section here renders only when the stream carried it.** The plan
+ * is the one that is always shown: its steps ride the plan phase's own
+ * `data-phase` part, and when there are none the section says why rather
+ * than disappearing, because a debug panel that quietly omits the plan is
+ * indistinguishable from a run that had one and lost it.
  */
 export interface RunDebugProps {
   trace: RunTrace;
@@ -55,15 +52,31 @@ function ToolCall({ tool }: { tool: TraceTool }): ReactElement {
 
 export function RunDebug({ trace }: RunDebugProps): ReactElement {
   const hasParams = trace.executedSqlParams !== null && Object.keys(trace.executedSqlParams).length > 0;
+  const planPhase = trace.phases.find((phase) => phase.phase === "plan");
+  const planSteps = planPhase?.plan ?? [];
 
   return (
     <div className={styles.panel}>
       <section className={styles.section}>
         <h4 className={styles.sectionTitle}>Plan</h4>
-        <p className={styles.absent}>
-          This run&apos;s plan steps never reach the console — the service emits them, then drops them
-          before they become a stream part. Nothing here is hidden; there is nothing to show.
-        </p>
+        {planSteps.length > 0 ? (
+          <>
+            <ol className={styles.tools}>
+              {planSteps.map((step, index) => (
+                <li key={index} className={styles.argText}>
+                  {step}
+                </li>
+              ))}
+            </ol>
+            {planPhase?.rationale && <p className={styles.absent}>{planPhase.rationale}</p>}
+          </>
+        ) : (
+          <p className={styles.absent}>
+            {planPhase === undefined
+              ? "No plan was written: this agent answers in one step, or the question was a plain lookup the planner is skipped for."
+              : "The planner ran but wrote no steps for this run."}
+          </p>
+        )}
       </section>
 
       {trace.tools.length > 0 && (

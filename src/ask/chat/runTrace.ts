@@ -69,6 +69,10 @@ export interface TracePhase {
   sql: string | null;
   sqlParams: Record<string, unknown> | null;
   planGate: unknown[] | null;
+  /** `plan` only: the steps the planner wrote, and why. Both null when the
+   * planner never ran (a direct lookup, or a single-model agent). */
+  plan: string[] | null;
+  rationale: string | null;
 }
 
 export interface TraceTool {
@@ -247,6 +251,8 @@ function toPhase(data: Record<string, unknown>): TracePhase | null {
     sql: readString(data, "sql"),
     sqlParams: readRecord(data, "sql_params"),
     planGate: readArray(data, "plan_gate"),
+    plan: readArray(data, "plan")?.map(String) ?? null,
+    rationale: readString(data, "rationale"),
   };
 }
 

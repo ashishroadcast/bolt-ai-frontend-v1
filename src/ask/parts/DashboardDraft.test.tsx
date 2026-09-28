@@ -71,6 +71,14 @@ describe("DashboardDraft", () => {
     expect((cells[2] as HTMLElement).style.gridColumn).toBe("1 / span 12");
   });
 
+  it("draws no invented figures in the layout preview", () => {
+    // The same 1,428 on every KPI tile read as the fleet's real total.
+    show(draft());
+    expect(screen.queryByText("1,428")).not.toBeInTheDocument();
+    expect(screen.queryByText("+8.4%")).not.toBeInTheDocument();
+    expect(screen.getByText(/no data yet/i)).toBeInTheDocument();
+  });
+
   it("renders read-only in a host with no dashboard builder", () => {
     show(draft());
     expect(screen.queryByRole("button", { name: /Open in builder/ })).not.toBeInTheDocument();

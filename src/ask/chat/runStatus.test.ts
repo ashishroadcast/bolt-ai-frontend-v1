@@ -12,6 +12,8 @@ function phase(name: string): TracePhase {
     sql: null,
     sqlParams: null,
     planGate: null,
+    plan: null,
+    rationale: null,
   };
 }
 

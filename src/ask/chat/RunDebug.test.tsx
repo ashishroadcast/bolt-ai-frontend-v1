@@ -48,10 +48,30 @@ describe("RunDebug", () => {
     expect(screen.getByText(/below bar · 0\.42/)).toBeInTheDocument();
   });
 
-  it("says plainly that the plan never reaches the console, rather than omitting the section", () => {
+  it("says why there is no plan, rather than omitting the section", () => {
     render(<RunDebug trace={TRACE} />);
     expect(screen.getByText("Plan")).toBeInTheDocument();
-    expect(screen.getByText(/plan steps never reach the console/)).toBeInTheDocument();
+    expect(screen.getByText(/No plan was written/)).toBeInTheDocument();
+  });
+
+  it("lists the planner's steps and rationale when it wrote some", () => {
+    const planPhase = {
+      phase: "plan",
+      state: "done",
+      durationMs: 900,
+      score: null,
+      reasoning: null,
+      sql: null,
+      sqlParams: null,
+      planGate: null,
+      plan: ["Read yesterday's summary rows", "Rank vehicles by distance"],
+      rationale: "One table holds daily distance.",
+    };
+    render(<RunDebug trace={{ ...TRACE, phases: [planPhase] }} />);
+    expect(screen.getByText("Read yesterday's summary rows")).toBeInTheDocument();
+    expect(screen.getByText("Rank vehicles by distance")).toBeInTheDocument();
+    expect(screen.getByText("One table holds daily distance.")).toBeInTheDocument();
+    expect(screen.queryByText(/No plan was written/)).not.toBeInTheDocument();
   });
 
   it("renders no validation or SQL section for a run that produced neither", () => {
