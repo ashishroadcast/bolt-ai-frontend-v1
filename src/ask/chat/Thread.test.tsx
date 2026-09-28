@@ -179,6 +179,29 @@ describe("Thread", () => {
     expect(screen.getByText(/passed · 0\.82/)).toBeInTheDocument();
   });
 
+  it("keeps the SQL, the score, the models and the cost from a reader the tenant hides reasoning from", async () => {
+    // "Show debug" and the footer ignored the setting: with reasoning off a
+    // reader could still open the SQL and the raw run_sql rows, and read the
+    // judge's score and the run's dollar cost under every answer.
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: true } });
+
+    act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales-Analyst" }));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show debug" })).not.toBeInTheDocument();
+    expect(screen.queryByText("SELECT item FROM sales")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 tool")).not.toBeInTheDocument();
+    expect(screen.queryByText(/score 0\.82/)).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.0005")).not.toBeInTheDocument();
+    expect(screen.queryByText("120 tok")).not.toBeInTheDocument();
+    // Who answered, how long it took, and Copy are for every reader.
+    expect(screen.getByText("Sales-Analyst")).toBeInTheDocument();
+    expect(screen.getByText(/worked for/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
+  });
+
   it("reopening a conversation renders sheets but never the expanded rail", async () => {
     fetchMock.mockImplementation(
       routeFetch(() => new Response(

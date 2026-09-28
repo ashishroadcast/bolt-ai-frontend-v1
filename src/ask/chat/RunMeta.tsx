@@ -142,6 +142,18 @@ export interface RunMetaProps {
    * empty drawer. */
   isDebugOpen?: boolean;
   onToggleDebug?: () => void;
+  /**
+   * Whether the tenant lets this reader see how the run worked
+   * (`AskDisclosure.showReasoning`). Off, the strip keeps what any reader
+   * can use — Copy, Rerun, the rating, who answered and how long it took —
+   * and drops the tool count, the judge's score, the model ids, the dollar
+   * cost, the tokens and the debug toggle. Those are the same machinery the
+   * setting hides from the reasoning card, and leaving them here meant a
+   * reader the tenant chose to spare it could still open the SQL.
+   *
+   * Required rather than defaulted, so a new caller has to decide.
+   */
+  showRunDetails: boolean;
 }
 
 /**
@@ -175,6 +187,7 @@ export function RunMeta({
   rerunDisabled,
   isDebugOpen,
   onToggleDebug,
+  showRunDetails,
 }: RunMetaProps): ReactElement {
   const rowId = messageRowId(messageId);
   const models = modelsFromUsage(usage);
@@ -207,17 +220,17 @@ export function RunMeta({
             {agentName}
           </span>
         )}
-        {toolCount !== null && (
+        {showRunDetails && toolCount !== null && (
           <span className={styles.fact}>
             {toolCount} tool{toolCount === 1 ? "" : "s"}
           </span>
         )}
-        {score !== null && (
+        {showRunDetails && score !== null && (
           <span className={styles.fact} data-tone={score >= PASS_SCORE ? "good" : "weak"}>
             score {score.toFixed(2)}
           </span>
         )}
-        {models.map((model) => (
+        {showRunDetails && models.map((model) => (
           <span key={model} className={styles.fact} title={model}>
             {model}
           </span>
@@ -230,15 +243,15 @@ export function RunMeta({
             {formatDuration(durationMs)}
           </span>
         )}
-        {usage !== null && usage.cost_usd > 0 && (
+        {showRunDetails && usage !== null && usage.cost_usd > 0 && (
           <span className={styles.fact}>{formatCost(usage.cost_usd)}</span>
         )}
-        {usage !== null && usage.total_tokens > 0 && (
+        {showRunDetails && usage !== null && usage.total_tokens > 0 && (
           <span className={styles.fact}>{formatCount(usage.total_tokens)} tok</span>
         )}
       </span>
 
-      {onToggleDebug && (
+      {showRunDetails && onToggleDebug && (
         <button type="button" className={styles.debugToggle} onClick={onToggleDebug} aria-expanded={isDebugOpen}>
           {isDebugOpen ? "Hide debug" : "Show debug"}
         </button>

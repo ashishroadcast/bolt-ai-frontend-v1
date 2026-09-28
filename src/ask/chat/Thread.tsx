@@ -350,7 +350,12 @@ function AnsweredTurn({
   const visible = visibleParts(message.parts, disclosure.showQueryResults);
   const agentName = summary?.agentName ?? hydratedAgentName;
   const trace: RunTrace = summary?.trace ?? EMPTY_TRACE;
-  const hasDebug = trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null;
+  // The drawer holds the SQL, every tool's input and the raw rows run_sql
+  // returned — the most detailed machinery there is — so it follows the
+  // same setting as the reasoning card, not merely whether a trace exists.
+  const canDebug =
+    disclosure.showReasoning &&
+    (trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null);
 
   return (
     <AgentTurn>
@@ -417,10 +422,11 @@ function AnsweredTurn({
         onRetryFresh={onRetryFresh}
         rerunDisabled={rerunDisabled}
         isDebugOpen={isDebugOpen}
-        onToggleDebug={hasDebug ? () => setIsDebugOpen((open) => !open) : undefined}
+        onToggleDebug={canDebug ? () => setIsDebugOpen((open) => !open) : undefined}
+        showRunDetails={disclosure.showReasoning}
       />
 
-      {isDebugOpen && hasDebug && <RunDebug trace={trace} />}
+      {isDebugOpen && canDebug && <RunDebug trace={trace} />}
     </AgentTurn>
   );
 }

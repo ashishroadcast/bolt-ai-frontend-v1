@@ -25,6 +25,7 @@ function renderStrip(overrides: Partial<RunMetaProps> = {}) {
     usage: USAGE,
     observedMs: 99_000,
     rerunDisabled: false,
+    showRunDetails: true,
     ...overrides,
   };
   return render(<RunMeta {...props} />, { wrapper: TestAskProvider });
@@ -108,6 +109,7 @@ describe("RunMeta", () => {
         usage={null}
         observedMs={1000}
         rerunDisabled={false}
+        showRunDetails
         isDebugOpen={false}
         onToggleDebug={onToggleDebug}
       />,
@@ -195,6 +197,7 @@ describe("RunMeta", () => {
           usage={USAGE}
           observedMs={99_000}
           rerunDisabled={false}
+          showRunDetails
           onRetryFresh={() => {}}
         />,
       );
@@ -209,5 +212,54 @@ describe("RunMeta", () => {
 
       expect(onRetryFresh).toHaveBeenCalledOnce();
     });
+  });
+});
+
+describe("RunMeta under the tenant's disclosure", () => {
+  function strip(showRunDetails: boolean) {
+    return render(
+      <RunMeta
+        messageId="400084"
+        answerText="Top store: The Bombay Canteen."
+        agentName="Sales-Analyst"
+        toolCount={2}
+        score={0.82}
+        usage={USAGE}
+        observedMs={99_000}
+        rerunDisabled={false}
+        onRerun={() => {}}
+        isDebugOpen={false}
+        onToggleDebug={() => {}}
+        showRunDetails={showRunDetails}
+      />,
+      { wrapper: TestAskProvider },
+    );
+  }
+
+  it("keeps the machinery out of a reader's strip when the tenant hides reasoning", () => {
+    strip(false);
+
+    expect(screen.queryByText("2 tools")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^score /)).not.toBeInTheDocument();
+    expect(screen.queryByText("openai/gpt-5-mini")).not.toBeInTheDocument();
+    expect(screen.queryByText(/^\$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tok$/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /debug/i })).not.toBeInTheDocument();
+    // What any reader can use stays.
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rerun this question" })).toBeInTheDocument();
+    expect(screen.getByText("Sales-Analyst")).toBeInTheDocument();
+    expect(screen.getByText(/1m 39s/)).toBeInTheDocument();
+  });
+
+  it("shows all of it when the tenant shows reasoning", () => {
+    strip(true);
+
+    expect(screen.getByText("2 tools")).toBeInTheDocument();
+    expect(screen.getByText("score 0.82")).toBeInTheDocument();
+    expect(screen.getByText("openai/gpt-5-mini")).toBeInTheDocument();
+    expect(screen.getByText("$0.0216")).toBeInTheDocument();
+    expect(screen.getByText("37,250 tok")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show debug" })).toBeInTheDocument();
   });
 });
