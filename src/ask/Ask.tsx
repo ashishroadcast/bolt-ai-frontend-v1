@@ -127,7 +127,7 @@ export function AskScreen({
   emptyState,
   conversationLink,
 }: Omit<AskProps, "config">) {
-  const { messages, activeRun, loadConversation, clearConversation } = useChatContext();
+  const { messages, activeRun, status, loadConversation, clearConversation } = useChatContext();
   const { copy, onClose } = useAskConfig();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
@@ -192,9 +192,30 @@ export function AskScreen({
   const linkLoading = linkOpen?.state === "loading";
   const linkFailed = linkOpen?.state === "failed" && linkOpen.shownOver === messages ? linkOpen : null;
 
-  function startOverFromLink() {
+  // "New conversation" while a question is still running asks first, in
+  // the page: starting over stops that run, and one click on an icon was
+  // too easy a way to throw away an answer that was nearly there. Not
+  // `window.confirm`, which some embedding hosts turn into a silent no-op.
+  const [confirmingNew, setConfirmingNew] = useState(false);
+  // Put away by itself once the run ends: the question it asks is then
+  // about nothing. Adjusted during render rather than in an effect, so the
+  // stale prompt is never painted; and reset rather than hidden, so it
+  // cannot reappear on its own when the next question starts.
+  const [confirmStatus, setConfirmStatus] = useState(status);
+  if (status !== confirmStatus) {
+    setConfirmStatus(status);
+    if (status !== "streaming") setConfirmingNew(false);
+  }
+
+  function startNewConversation() {
+    setConfirmingNew(false);
     setLinkOpen(null);
     clearConversation();
+  }
+
+  function requestNewConversation() {
+    if (status === "streaming") setConfirmingNew(true);
+    else startNewConversation();
   }
 
   let linkNotice: ReactNode = null;
@@ -211,7 +232,7 @@ export function AskScreen({
           That conversation couldn't be opened. It may have been deleted, or it belongs to someone else.
         </p>
         <div className={screenStyles.noticeActions}>
-          <button type="button" className={screenStyles.primaryBtn} onClick={startOverFromLink}>
+          <button type="button" className={screenStyles.primaryBtn} onClick={requestNewConversation}>
             <MessageSquarePlus size={15} strokeWidth={2} aria-hidden="true" />
             <span>Start a new conversation</span>
           </button>
@@ -259,6 +280,26 @@ export function AskScreen({
     wasHistoryOpen.current = isHistoryOpen;
   }, [isHistoryOpen]);
 
+  // Into the confirmation on the safe answer, so Enter keeps the run; and
+  // back to the header's button when it goes, if nothing else took focus
+  // — its buttons are gone, and focus would otherwise fall to the page.
+  // After History's effect above, on purpose: "Start a new conversation"
+  // in History closes it and asks in the same commit, and the question is
+  // where focus belongs.
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  const keepWaitingRef = useRef<HTMLButtonElement>(null);
+  const confirmTextId = useId();
+  const wasConfirming = useRef(false);
+  useLayoutEffect(() => {
+    if (confirmingNew) {
+      keepWaitingRef.current?.focus();
+    } else if (wasConfirming.current) {
+      const focused = document.activeElement;
+      if (focused === null || focused === document.body) newButtonRef.current?.focus();
+    }
+    wasConfirming.current = confirmingNew;
+  }, [confirmingNew]);
+
   return (
     // One agent fetch for the screen. Both the picker and the composer's `/`
     // menu read the same list, and each used to fetch its own copy.
@@ -303,9 +344,10 @@ export function AskScreen({
             </button>
             {!isEmpty && (
               <button
+                ref={newButtonRef}
                 type="button"
                 className={styles.iconAction}
-                onClick={clearConversation}
+                onClick={requestNewConversation}
                 aria-label="Start a new conversation"
                 title="New conversation"
               >
@@ -325,6 +367,34 @@ export function AskScreen({
             )}
           </div>
         </div>
+
+        {confirmingNew && (
+          <div
+            role="alertdialog"
+            aria-labelledby={confirmTextId}
+            className={screenStyles.confirm}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setConfirmingNew(false);
+            }}
+          >
+            <p id={confirmTextId} className={screenStyles.confirmText}>
+              A question is still running. Stop it and start a new conversation?
+            </p>
+            <div className={screenStyles.noticeActions}>
+              <button type="button" className={screenStyles.primaryBtn} onClick={startNewConversation}>
+                Stop and start new
+              </button>
+              <button
+                ref={keepWaitingRef}
+                type="button"
+                className={screenStyles.secondaryBtn}
+                onClick={() => setConfirmingNew(false)}
+              >
+                Keep waiting
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className={styles.pickerRow}>
           <AgentPicker />
@@ -367,6 +437,10 @@ export function AskScreen({
           onClose={closeHistory}
           onMinimize={onClose}
           conversationLink={conversationLink}
+          onStartNew={() => {
+            closeHistory();
+            requestNewConversation();
+          }}
         />
       )}
     </div>

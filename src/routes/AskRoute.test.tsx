@@ -301,6 +301,103 @@ describe("AskRoute", () => {
     expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
   });
 
+  // --- starting over while a question is still running ---------------------
+
+  /** A run that stays open until the test ends it, so there is a question
+   * "still running" to ask about. */
+  function runningFetch() {
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const encoder = new TextEncoder();
+    const base = routeFetch();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (!urlOf(input).endsWith("/agent/run")) return base(input);
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+          c.enqueue(encoder.encode(`data: {"type":"start","messageId":"msg-1"}\n\n`));
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    });
+    function finish() {
+      controller?.enqueue(encoder.encode(`data: {"type":"finish"}\n\ndata: [DONE]\n\n`));
+      controller?.close();
+    }
+    return { fetchMock, finish };
+  }
+
+  const STILL_RUNNING = "A question is still running. Stop it and start a new conversation?";
+
+  async function startRunning(chatRef: { current: UseChatResult | null }) {
+    act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales Analyst" }));
+    await waitFor(() => expect(screen.getByText("top items last week")).toBeInTheDocument());
+    expect(chatRef.current!.status).toBe("streaming");
+  }
+
+  it("asks before a new conversation stops a question that is still running", async () => {
+    const { fetchMock } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+
+    // Asked, in the page; nothing thrown away yet, and the safe answer is
+    // the one Enter would give.
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep waiting" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Start a new conversation$/ })).toHaveFocus();
+
+    // Escape is "Keep waiting" too.
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Keep waiting" }), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop and start new" }));
+
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
+    expect(screen.queryByText("top items last week")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("asks the same from History's own Start a new conversation", async () => {
+    const { fetchMock } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
+
+    expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+  });
+
+  it("puts the question away by itself once the run has finished", async () => {
+    const { fetchMock, finish } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+
+    await act(async () => finish());
+
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Nothing was stopped or cleared on its behalf.
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    // With the run over, starting again needs no question.
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
+  });
+
   it("keeps the History button's aria-expanded and aria-controls in step with the panel, and returns focus to it", () => {
     renderAskRoute(routeFetch());
     const button = screen.getByRole("button", { name: /^Conversation history$/ });
@@ -346,6 +443,9 @@ describe("AskRoute", () => {
 
     act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales Analyst" }));
     await waitFor(() => expect(screen.getByText("top items last week")).toBeInTheDocument());
+    // Finished first: while it is still running, starting over asks (see
+    // the "still running" tests below). This one is about the plain case.
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
 
     fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
 

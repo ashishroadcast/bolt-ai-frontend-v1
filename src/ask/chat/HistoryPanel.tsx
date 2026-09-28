@@ -313,9 +313,17 @@ export interface HistoryPanelProps {
    * ever copies a link to a screen the host already knows how to open.
    */
   conversationLink?: (conversationId: number) => string;
+  /**
+   * The footer's "Start a new conversation". Omitted, it clears the thread
+   * and closes the panel itself. `Ask.tsx` passes one so this button asks
+   * first while a question is still running, exactly as the header's does
+   * — a second way to the same action must not be the one that skips the
+   * question.
+   */
+  onStartNew?: () => void;
 }
 
-export function HistoryPanel({ id, onClose, onMinimize, conversationLink }: HistoryPanelProps) {
+export function HistoryPanel({ id, onClose, onMinimize, conversationLink, onStartNew }: HistoryPanelProps) {
   const client = useAskClient();
   const { loadConversation, activeConversationId, clearConversation } = useChatContext();
   const [searchInput, setSearchInput] = useState("");
@@ -459,6 +467,10 @@ export function HistoryPanel({ id, onClose, onMinimize, conversationLink }: Hist
   }
 
   function handleStartNew() {
+    if (onStartNew !== undefined) {
+      onStartNew();
+      return;
+    }
     clearConversation();
     onClose();
   }

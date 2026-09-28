@@ -78,6 +78,36 @@
   gap: 8px;
 }
 
+/* "A question is still running…" — directly under the header whose button
+   asked it, so the answer is next to the question, and above the thread so
+   the run it is about stays in view. */
+.confirm {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--signal-soft, var(--surface-sunk));
+}
+
+.confirmText {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+@container ask (max-width: 34rem) {
+  .confirm {
+    padding: 10px 14px;
+  }
+}
+
 .primaryBtn,
 .secondaryBtn {
   display: inline-flex;
