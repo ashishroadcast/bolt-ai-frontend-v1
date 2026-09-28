@@ -292,22 +292,38 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   const [source, setSource] = useState<ConversationSource>("mine");
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const isFirstRun = useRef(true);
   const searchRef = useRef<HTMLInputElement>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Which list is on screen, so "Load older" pages THAT list. The live
+  // search box is the wrong source: during the debounce it already holds
+  // the next search while the rows (and the cursor) still belong to the
+  // last one. `generation` goes up the moment a new list is asked for, and
+  // an older page that lands after that is dropped rather than appended to
+  // rows it does not belong to.
+  const generation = useRef(0);
+  const shownList = useRef<{ search: string; source: ConversationSource; generation: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const delay = isFirstRun.current ? 0 : SEARCH_DEBOUNCE_MS;
     isFirstRun.current = false;
+    generation.current += 1;
+    const thisGeneration = generation.current;
 
     const timer = setTimeout(() => {
       listConversations(client, searchInput, source)
         .then((result) => {
           if (cancelled) return;
+          shownList.current = { search: searchInput, source, generation: thisGeneration };
           setItems(result.items);
+          setNextCursor(result.next_cursor);
+          setLoadMoreError(null);
           setError(null);
         })
         .catch((err: unknown) => {
@@ -331,7 +347,38 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   function handleSourceChange(next: ConversationSource) {
     if (next === source) return;
     setItems(null);
+    setNextCursor(null);
     setSource(next);
+  }
+
+  /**
+   * The next, older page of the list on screen, appended below it.
+   *
+   * The server pages 20 at a time and says where the next page starts;
+   * this used to ignore that, so anything older than the 20 most recent
+   * conversations was unreachable except by guessing a search term.
+   */
+  async function handleLoadMore() {
+    const list = shownList.current;
+    if (list === null || nextCursor === null) return;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const result = await listConversations(client, list.search, list.source, nextCursor);
+      if (generation.current !== list.generation) return;
+      setItems((prev) => {
+        // Pages cannot overlap while the cursor is an id (`id < cursor`),
+        // but the cursor is the server's to define, and two rows with one
+        // key would make React quietly render only one of them.
+        const seen = new Set((prev ?? []).map((it) => it.id));
+        return [...(prev ?? []), ...result.items.filter((it) => !seen.has(it.id))];
+      });
+      setNextCursor(result.next_cursor);
+    } catch {
+      if (generation.current === list.generation) setLoadMoreError("Couldn't load older conversations.");
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   useEffect(() => () => clearTimeout(statusTimer.current), []);
@@ -478,6 +525,23 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
               </ul>
             </div>
           ))}
+        {error === null && items !== null && nextCursor !== null && (
+          <div className={styles.loadMore}>
+            {loadMoreError !== null && (
+              <p role="alert" className={styles.error}>
+                {loadMoreError}
+              </p>
+            )}
+            <button
+              type="button"
+              className={styles.loadMoreBtn}
+              onClick={() => void handleLoadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading…" : "Load older conversations"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className={styles.footer}>

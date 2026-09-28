@@ -234,6 +234,78 @@ describe("HistoryPanel", () => {
     );
   });
 
+  // --- paging (`next_cursor` / `?cursor=`) -------------------------------
+
+  function page(ids: number[], nextCursor: string | null) {
+    return {
+      items: ids.map((id) => ({ ...ONE_ITEM[0], id, title: `Question ${id}` })),
+      next_cursor: nextCursor,
+    };
+  }
+
+  it("loads older conversations with the server's cursor and appends them", async () => {
+    const seen: string[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      seen.push(url);
+      return Promise.resolve(jsonResponse(url.includes("cursor=21") ? page([20, 19], null) : page([22, 21], "21")));
+    });
+    renderPanel(fetchMock);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }));
+
+    await screen.findByText("Question 19");
+    // Appended, not replaced: the first page is still there.
+    expect(screen.getByText("Question 22")).toBeInTheDocument();
+    expect(seen.some((url) => url.includes("cursor=21"))).toBe(true);
+    // The last page says so, and the button goes with it.
+    expect(screen.queryByRole("button", { name: "Load older conversations" })).not.toBeInTheDocument();
+  });
+
+  it("offers no Load older when the first page is the whole list", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(page([2, 1], null))));
+    renderPanel(fetchMock);
+
+    await screen.findByText("Question 2");
+    expect(screen.queryByRole("button", { name: "Load older conversations" })).not.toBeInTheDocument();
+  });
+
+  it("pages a search as the same search, not as the unfiltered list", async () => {
+    const seen: string[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      seen.push(url);
+      if (!url.includes("search=biryani")) return Promise.resolve(jsonResponse(page([9], null)));
+      return Promise.resolve(jsonResponse(url.includes("cursor=") ? page([3], null) : page([7], "7")));
+    });
+    renderPanel(fetchMock);
+    await screen.findByText("Question 9");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search past conversations/i }), {
+      target: { value: "biryani" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }, { timeout: 1000 }));
+
+    await screen.findByText("Question 3");
+    const older = seen.find((url) => url.includes("cursor=7"));
+    expect(older).toContain("search=biryani");
+  });
+
+  it("keeps the list when an older page fails to load, and says so beside the button", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      urlOf(input).includes("cursor=")
+        ? Promise.resolve(jsonResponse({ detail: "nope" }, 500))
+        : Promise.resolve(jsonResponse(page([22, 21], "21"))),
+    );
+    renderPanel(fetchMock);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }));
+
+    await waitFor(() => expect(screen.getByText("Couldn't load older conversations.")).toBeInTheDocument());
+    expect(screen.getByText("Question 22")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load older conversations" })).toBeEnabled();
+  });
+
   it("surfaces a load error rather than an endless loading state", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ detail: "nope" }, 500)));
     renderPanel(fetchMock);

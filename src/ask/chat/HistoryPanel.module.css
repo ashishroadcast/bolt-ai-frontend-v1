@@ -286,6 +286,28 @@
   margin: 0 12px 8px 14px;
 }
 
+/* The end of the list when the server has more: its own centred row, so it
+   reads as "there is more below" rather than as one more row's action. */
+.loadMore {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.loadMoreBtn {
+  composes: pill from "./controls.module.css";
+}
+
+/* Doubled per the shared control's cascade contract (controls.module.css):
+   a full-size target, because this is the only way to reach anything older
+   than the first page. */
+.loadMoreBtn.loadMoreBtn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: var(--text-small);
+}
+
 .status {
   font-size: var(--text-small);
   color: var(--good);

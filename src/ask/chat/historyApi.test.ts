@@ -1,5 +1,48 @@
-import { describe, expect, it } from "vitest";
-import { readableTitle } from "./historyApi.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { testAskClient } from "../testing.tsx";
+import { listConversations, readableTitle } from "./historyApi.ts";
+
+describe("listConversations", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function requestedUrl(fetchMock: ReturnType<typeof vi.fn>): URL {
+    const input = fetchMock.mock.calls[0]![0] as RequestInfo | URL;
+    return new URL(input instanceof Request ? input.url : input.toString());
+  }
+
+  function stubList() {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: [], next_cursor: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("sends a cursor alongside the search and source it pages", async () => {
+    const fetchMock = stubList();
+    await listConversations(testAskClient(), " biryani ", "channel", "41");
+
+    const url = requestedUrl(fetchMock);
+    expect(url.pathname).toBe("/agent/conversations");
+    expect(url.searchParams.get("search")).toBe("biryani");
+    expect(url.searchParams.get("source")).toBe("channel");
+    expect(url.searchParams.get("cursor")).toBe("41");
+  });
+
+  it("sends no cursor for a first page", async () => {
+    const fetchMock = stubList();
+    await listConversations(testAskClient(), "", "mine", null);
+
+    expect(requestedUrl(fetchMock).search).toBe("");
+  });
+});
 
 describe("readableTitle", () => {
   it("keeps a real question as it was asked, trimmed", () => {

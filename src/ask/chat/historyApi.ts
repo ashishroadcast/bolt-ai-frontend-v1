@@ -92,6 +92,11 @@ export function readableTitle(title: string | null | undefined): string | null {
 
 export interface ConversationListResult {
   items: ConversationSummary[];
+  /**
+   * Where the next, older page starts, or `null` when this page is the
+   * last. Opaque here: it happens to be the last row's id, but only the
+   * server decides that, so it is handed back verbatim as `?cursor=`.
+   */
   next_cursor: string | null;
 }
 
@@ -101,15 +106,22 @@ export interface ConversationListResult {
  * omitted search sends no param at all rather than `?search=`, so an
  * operator clearing the search box gets the same unfiltered list a first
  * load would.
+ *
+ * `cursor` is a previous page's `next_cursor`, and fetches the page after
+ * it. It pages whatever `search` and `source` select, so the caller must
+ * send the same two it got the cursor with — a cursor from the unfiltered
+ * list applied to a search would skip every match newer than it.
  */
 export function listConversations(
   client: GatewayClient,
   search?: string,
   source: ConversationSource = "mine",
+  cursor?: string | null,
 ): Promise<ConversationListResult> {
   const trimmed = search?.trim() ?? "";
   const params = new URLSearchParams();
   if (trimmed !== "") params.set("search", trimmed);
+  if (cursor !== undefined && cursor !== null) params.set("cursor", cursor);
   // Omitted for "mine" rather than sent explicitly: that is the server's
   // own default, and not sending it keeps this request byte-identical to
   // the one this console made before channels existed — so an older
