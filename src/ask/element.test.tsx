@@ -129,7 +129,7 @@ describe("<bolt-ai-ask> client lifetime", () => {
     element.setAttribute("placeholder", "Ask about this dashboard");
     element.setAttribute("empty-title", "Dashboards");
     await waitFor(() => {
-      const input = element.shadowRoot?.querySelector("input");
+      const input = element.shadowRoot?.querySelector("textarea");
       expect(input?.getAttribute("placeholder")).toBe("Ask about this dashboard");
     });
     expect(agentCalls()).toBe(1);

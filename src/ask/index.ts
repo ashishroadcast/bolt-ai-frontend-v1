@@ -63,3 +63,9 @@ export {
 // phase detail has to be able to name it.
 export type { PhaseSegment } from "./chat/phaseTimeline.ts";
 export type { AskAgent } from "./chat/useAskAgents.ts";
+
+// Language. The widget resolves its own from `lang`; a React host that
+// knows its user's language wraps Ask in the provider instead.
+export { AskLocaleProvider, useAskLocale, useAskStrings } from "./i18n/AskLocale.tsx";
+export { resolveAskLocale, type AskDir, type AskLocale } from "./i18n/locale.ts";
+export type { AskStrings } from "./i18n/strings.ts";

@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { AskScreen } from "./Ask.tsx";
 import { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import { ChatProvider, useChatContext } from "./chat/ChatContext.tsx";
+import { AskLocaleProvider } from "./i18n/AskLocale.tsx";
+import { resolveAskLocale } from "./i18n/locale.ts";
 import {
   AskProvider,
   type AskConfig,
@@ -198,6 +200,9 @@ export class BoltAiAskElement extends HTMLElement {
       // Opens that conversation — on mount, or whenever it changes. See
       // `conversationchange` for the other direction.
       "conversation-id",
+      // So a host that sets or changes the element's own `lang` re-renders
+      // it in that language. A change on an ANCESTOR is not observed.
+      "lang",
     ];
   }
 
@@ -689,19 +694,28 @@ export class BoltAiAskElement extends HTMLElement {
     // `<Ask>`'s own tree, spelled out so `ElementBridge` can sit inside the
     // `ChatProvider` beside the screen. Keyed on the scope, so `resetScope()`
     // remounts all of it: a new client, a new agent list, an empty thread.
+    // The host's language, read where it is set (this element, an ancestor,
+    // <html>) and stamped on the mount point so a screen reader pronounces
+    // the text in it. `dir` is resolved but deliberately NOT applied yet: most
+    // of the widget's stylesheets still say left/right, and mirroring them
+    // half-way reads worse than not mirroring at all.
+    const { locale } = resolveAskLocale(this);
+    if (this.mountPoint !== null) this.mountPoint.lang = locale;
     this.root.render(
-      <AskProvider key={this.scope} config={config}>
-        <ChatProvider>
-          <ElementBridge
-            connect={this.connectChat}
-            onConversationChange={this.reportConversation}
-            open={this.openRequest}
-            onOpenTaken={this.takeOpenRequest}
-            onOpenFailed={this.openFailed}
-          />
-          <AskScreen />
-        </ChatProvider>
-      </AskProvider>,
+      <AskLocaleProvider locale={locale}>
+        <AskProvider key={this.scope} config={config}>
+          <ChatProvider>
+            <ElementBridge
+              connect={this.connectChat}
+              onConversationChange={this.reportConversation}
+              open={this.openRequest}
+              onOpenTaken={this.takeOpenRequest}
+              onOpenFailed={this.openFailed}
+            />
+            <AskScreen />
+          </ChatProvider>
+        </AskProvider>
+      </AskLocaleProvider>,
     );
   }
 
