@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import { AgentIcon } from "./AgentIcon.tsx";
 import { useChatContext } from "./chat/ChatContext.tsx";
 import { useAskAgents } from "./chat/useAskAgents.ts";
+import { useOnlineStatus } from "./chat/useOnlineStatus.ts";
 import styles from "./EmptyState.module.css";
 
 interface QuickAction {
@@ -56,6 +57,7 @@ export interface EmptyStateProps {
 export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
   const { status, sendMessage, selectedAgent } = useChatContext();
   const { agents } = useAskAgents();
+  const isOnline = useOnlineStatus();
   // Not `selectedAgent !== null` — matches Composer.tsx's own gate (see
   // its docstring): a question with no agent armed is the ordinary case
   // now, routed automatically once it reaches the server
@@ -63,7 +65,11 @@ export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
   // cards permanently disabled the moment the manual picker's own
   // agents[0] default went away, since nothing else ever set
   // `selectedAgent` at all.
-  const canSend = agents.length > 0 && status !== "streaming";
+  //
+  // And offline, like the composer beside them: a card clicked with no
+  // connection went straight to a "Failed to fetch" turn, which says less
+  // than a card that simply cannot be pressed yet.
+  const canSend = agents.length > 0 && status !== "streaming" && isOnline;
 
   function runQuickAction(action: QuickAction) {
     if (!canSend) return;
