@@ -144,14 +144,20 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
             key={index}
             className={isLead ? styles.lead : isClosing ? styles.closing : styles.paragraph}
           >
-            {block.lines.map((spans, lineIndex) => (
-              // eslint-disable-next-line react/no-array-index-key
-              <Fragment key={lineIndex}>
-                {lineIndex > 0 && <br />}
-                <Spans spans={spans} />
-                {caretAfter(lineIndex)}
-              </Fragment>
-            ))}
+            {/* One wrapper, so the closing line's two-column grid (arrow,
+                text) has exactly two items. Without it every <strong> or
+                <a> in the line became its own grid item and wrapped into
+                the 16px arrow column, one letter per line. */}
+            <span>
+              {block.lines.map((spans, lineIndex) => (
+                // eslint-disable-next-line react/no-array-index-key
+                <Fragment key={lineIndex}>
+                  {lineIndex > 0 && <br />}
+                  <Spans spans={spans} />
+                  {caretAfter(lineIndex)}
+                </Fragment>
+              ))}
+            </span>
           </p>
         );
       })}
