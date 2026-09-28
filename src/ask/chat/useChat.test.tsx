@@ -388,6 +388,34 @@ describe("useChat", () => {
     expect(fetchMock.mock.calls.length).toBe(callsBeforeClear);
   });
 
+  it("continues the conversation the server named, so a follow-up carries the earlier turns", async () => {
+    const framesFor = (sessionId: number) => [
+      `data: {"type":"start","messageId":"msg-${sessionId}","messageMetadata":{"session_id":${sessionId},"agent_name":"Report"}}`,
+      `data: {"type":"text-delta","id":"answer","delta":"ok"}`,
+      `data: {"type":"finish"}`,
+      `data: [DONE]`,
+    ];
+    fetchMock.mockImplementation(() => Promise.resolve(sseResponse(framesFor(57))));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    const sentBody = async (call: number) =>
+      (await (fetchMock.mock.calls[call]![0] as Request).clone().json()) as Record<string, unknown>;
+
+    act(() => result.current.sendMessage("Sales this week?"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(await sentBody(0)).not.toHaveProperty("session_id");
+    expect(result.current.activeConversationId).toBe(57);
+
+    act(() => result.current.sendMessage("And last week?"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(await sentBody(1)).toMatchObject({ message: "And last week?", session_id: 57 });
+
+    // A new conversation starts over: no id until its own first run names one.
+    act(() => result.current.clearConversation());
+    act(() => result.current.sendMessage("Something else"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(await sentBody(2)).not.toHaveProperty("session_id");
+  });
+
   it("clearConversation disarms a slash-command agent, so the next question routes itself", () => {
     const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
     act(() => result.current.setSelectedAgent("Dashboard-Builder"));

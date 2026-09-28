@@ -36,12 +36,12 @@ export interface UseChatResult {
    */
   selectedAgent: string | null;
   setSelectedAgent: (name: string | null) => void;
-  /** The conversation id the thread currently on screen was loaded from
-   * (`loadConversation`'s own argument), or `null` for a thread that
-   * hasn't been tied to a persisted conversation yet — a run started
-   * fresh from the composer, before the server has told this client any
-   * id back (`runStream.ts`'s own note: `POST /agent/run` never returns
-   * one). `HistoryPanel.tsx` reads this to know whether the conversation
+  /** The persisted conversation the thread on screen belongs to: the id
+   * `loadConversation` opened, or the one the server named in a fresh
+   * thread's first "start" chunk (`messageMetadata.session_id`). `null`
+   * only for a thread no run has been started in yet. Every follow-up is
+   * sent with it, which is what gives the agent the earlier turns.
+   * `HistoryPanel.tsx` also reads this to know whether the conversation
    * a delete just removed is the one currently open, so it can clear the
    * thread instead of leaving it pointed at a row that no longer exists. */
   activeConversationId: number | null;
@@ -277,6 +277,15 @@ export function useChat(): UseChatResult {
             messageId = chunk.messageId;
             const resolvedAgent = chunk.messageMetadata?.agent_name;
             if (typeof resolvedAgent === "string") agentName = resolvedAgent;
+            // The conversation this run was saved under. A fresh thread has
+            // no id until here, and without keeping it every follow-up was
+            // sent with no `session_id` — a new conversation each time, so
+            // "and last week?" reached the agent with none of the earlier turns.
+            const sessionId = chunk.messageMetadata?.session_id;
+            if (typeof sessionId === "number" && Number.isInteger(sessionId)) {
+              conversationIdRef.current = sessionId;
+              if (mountedRef.current) setActiveConversationId(sessionId);
+            }
             updateActiveRun({ messageId, agentName });
             break;
           }
