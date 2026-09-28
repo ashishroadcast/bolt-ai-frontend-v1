@@ -672,6 +672,33 @@ describe("query result tables and the composed answer", () => {
     expect(screen.queryByText("North depot")).not.toBeInTheDocument();
   });
 
+  it("keeps a table-only answer's table when query results are off, because it is the answer", async () => {
+    // "top 3 stores" composes nothing: the prose only introduces the table.
+    // Hiding the table as working left "Here are the top 3 stores:" with
+    // nothing under it, under every tenant's default.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-1"}`,
+          `data: {"type":"data-table","data":{"columns":["store_name"],"rows":[["Bandra"],["Andheri"],["Powai"]]}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Here are the top 3 stores:"}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: false } });
+
+    act(() => chatRef.current!.sendMessage("top 3 stores"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Here are the top 3 stores:")).toBeInTheDocument();
+    expect(screen.getByText("Bandra")).toBeInTheDocument();
+    expect(screen.getByText("Powai")).toBeInTheDocument();
+  });
+
   it("adds the raw rows, without repeating the answer, when query results are on", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(TABLE_AND_SUMMARY_FRAMES)));
     const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: true } });

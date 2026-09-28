@@ -67,6 +67,16 @@ const COMPOSED_INTENTS = new Set([
  */
 const COLLAPSE_ABOVE_ROWS = 12;
 
+/**
+ * Whether any part composes the answer, so that a table beside it is the
+ * working rather than the answer. Exported because `Thread.tsx` makes the
+ * same call when the tenant hides query results, and a second copy of this
+ * set is how the two would come to disagree about what the answer is.
+ */
+export function hasComposedAnswer(parts: readonly UIPart[]): boolean {
+  return parts.some((part) => COMPOSED_INTENTS.has(part.intent));
+}
+
 function rowsShown(part: UIPart): number {
   const { rows } = part.data as { rows?: unknown };
   return Array.isArray(rows) ? rows.length : 0;

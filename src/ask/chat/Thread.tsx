@@ -10,7 +10,7 @@ import { useAskClient, useAskInspector } from "../config.tsx";
 import type { GatewayClient } from "../http/gatewayClient.ts";
 import { CopyButton } from "./CopyButton.tsx";
 import { useChatContext } from "./ChatContext.tsx";
-import { arrangeParts } from "./partLayout.ts";
+import { arrangeParts, hasComposedAnswer } from "./partLayout.ts";
 import type { PhaseSegment } from "./phaseTimeline.ts";
 import { answerQuestion, forgetCachedPlan } from "./feedbackApi.ts";
 import { ReasoningCard } from "./ReasoningCard.tsx";
@@ -74,18 +74,26 @@ function rendersItsOwnProse(parts: UIPart[]): boolean {
  * for it. Only those tables are working. Every composed panel (summary,
  * stats, chart, comparison), every draft and every question IS the answer.
  *
+ * **A table is working only when something composed an answer from it.**
+ * The same rule `partLayout.arrangeParts` folds tables away by, and for
+ * the same reason: "top 10 stores" has no composed part, and its table is
+ * the answer. Dropping every table here left that turn reading "Here are
+ * the top 10 stores:" with nothing under it — under every tenant's default,
+ * since the setting is off unless someone turns it on.
+ *
  * This used to hide everything but drafts, one exempted intent at a time,
  * and the summary was never exempted. A run that writes its reading with
  * `show_summary` hides its prose in favour of that panel
- * (`rendersItsOwnProse`), so with the setting off — every tenant's default
- * — the turn rendered nothing at all: a question, a footer, and no answer.
+ * (`rendersItsOwnProse`), so with the setting off the turn rendered nothing
+ * at all: a question, a footer, and no answer.
  *
  * One `Sheets` over the visible set, not an answer group and a separate
  * evidence group: `arrangeParts` can only fold a long table under the
  * composed answer when it sees both.
  */
 function visibleParts(parts: UIPart[], showQueryResults: boolean): UIPart[] {
-  return showQueryResults ? parts : parts.filter((part) => part.intent !== "data-table");
+  if (showQueryResults || !hasComposedAnswer(parts)) return parts;
+  return parts.filter((part) => part.intent !== "data-table");
 }
 
 function withAnswering(
