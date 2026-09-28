@@ -16,7 +16,7 @@ import type { PhaseSegment } from "./phaseTimeline.ts";
 import { answerQuestion, forgetCachedPlan } from "./feedbackApi.ts";
 import { ReasoningCard } from "./ReasoningCard.tsx";
 import { Thinking } from "./Thinking.tsx";
-import { useAskDisclosure } from "./useDisclosure.ts";
+import { AskDisclosureProvider, useAskDisclosure } from "./useDisclosure.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
@@ -526,66 +526,71 @@ export function Thread(): ReactElement {
   }
 
   return (
-    <div className={styles.thread} ref={threadRef}>
-      {messages.map((message, index) => {
-        if (message.role === "user") {
+    // One disclosure for the whole list — see AskDisclosureProvider for the
+    // request per answer this replaced. Inside `Thread` rather than in
+    // `Ask.tsx` so every host that renders a thread gets it.
+    <AskDisclosureProvider>
+      <div className={styles.thread} ref={threadRef}>
+        {messages.map((message, index) => {
+          if (message.role === "user") {
+            return (
+              <AskedBubble
+                key={message.id}
+                message={message}
+                onRerun={() => rerun(message.content)}
+                rerunDisabled={rerunDisabled}
+              />
+            );
+          }
+
+          // Messages strictly alternate user -> assistant, one pair per ask
+          // (useChat.ts's runTurn appends the user turn immediately, the
+          // assistant turn only on finish; conversation.hydrateMessages
+          // preserves the same order from the wire) — so the turn this
+          // answer belongs to is always the message right before it.
+          const question = messages[index - 1];
+          const questionText = question?.role === "user" ? question.content : null;
+          // Prefer the agent this run actually used (RunSummary.agentName,
+          // set for anything streamed this session) over whatever's
+          // currently selected in the picker — a rerun should ask the same
+          // agent the original answer came from, not whichever one the
+          // operator has since switched to. A reopened, hydrated message has
+          // no runSummary at all (types.ts's own docstring), so it falls
+          // through to `rerun`'s own `selectedAgent` fallback instead.
           return (
-            <AskedBubble
+            <AnsweredTurn
               key={message.id}
               message={message}
-              onRerun={() => rerun(message.content)}
+              onRerun={
+                questionText !== null
+                  ? () => rerun(questionText, message.runSummary?.agentName ?? undefined)
+                  : undefined
+              }
+              onRetryFresh={
+                questionText !== null && usedCachedPlan(message)
+                  ? () => {
+                      const agent = message.runSummary?.agentName ?? selectedAgent ?? null;
+                      // Forget first, then re-ask — the re-ask must land AFTER
+                      // the plan is gone or it just serves the same cache again.
+                      // A forget that fails (nothing cached, a network blip)
+                      // must not swallow the retry, so rerun runs regardless.
+                      void forgetCachedPlan(client, agent, questionText).finally(() =>
+                        rerun(questionText, agent ?? undefined),
+                      );
+                    }
+                  : undefined
+              }
               rerunDisabled={rerunDisabled}
+              hydratedAgentName={
+                message.agentId === null || message.agentId === undefined
+                  ? null
+                  : (agentNameById.get(message.agentId) ?? null)
+              }
             />
           );
-        }
-
-        // Messages strictly alternate user -> assistant, one pair per ask
-        // (useChat.ts's runTurn appends the user turn immediately, the
-        // assistant turn only on finish; conversation.hydrateMessages
-        // preserves the same order from the wire) — so the turn this
-        // answer belongs to is always the message right before it.
-        const question = messages[index - 1];
-        const questionText = question?.role === "user" ? question.content : null;
-        // Prefer the agent this run actually used (RunSummary.agentName,
-        // set for anything streamed this session) over whatever's
-        // currently selected in the picker — a rerun should ask the same
-        // agent the original answer came from, not whichever one the
-        // operator has since switched to. A reopened, hydrated message has
-        // no runSummary at all (types.ts's own docstring), so it falls
-        // through to `rerun`'s own `selectedAgent` fallback instead.
-        return (
-          <AnsweredTurn
-            key={message.id}
-            message={message}
-            onRerun={
-              questionText !== null
-                ? () => rerun(questionText, message.runSummary?.agentName ?? undefined)
-                : undefined
-            }
-            onRetryFresh={
-              questionText !== null && usedCachedPlan(message)
-                ? () => {
-                    const agent = message.runSummary?.agentName ?? selectedAgent ?? null;
-                    // Forget first, then re-ask — the re-ask must land AFTER
-                    // the plan is gone or it just serves the same cache again.
-                    // A forget that fails (nothing cached, a network blip)
-                    // must not swallow the retry, so rerun runs regardless.
-                    void forgetCachedPlan(client, agent, questionText).finally(() =>
-                      rerun(questionText, agent ?? undefined),
-                    );
-                  }
-                : undefined
-            }
-            rerunDisabled={rerunDisabled}
-            hydratedAgentName={
-              message.agentId === null || message.agentId === undefined
-                ? null
-                : (agentNameById.get(message.agentId) ?? null)
-            }
-          />
-        );
-      })}
-      <LiveTurn />
-    </div>
+        })}
+        <LiveTurn />
+      </div>
+    </AskDisclosureProvider>
   );
 }

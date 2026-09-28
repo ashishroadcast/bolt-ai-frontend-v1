@@ -770,3 +770,83 @@ describe("query result tables and the composed answer", () => {
   });
 });
 
+
+// --- the tenant's disclosure is asked once per thread -----------------------
+//
+// `useAskDisclosure` used to fetch per answer on screen: a 30-turn thread made
+// 31 requests, and every new answer started hidden until its own came back,
+// so the reasoning and the tables vanished and popped back as a run finished.
+
+describe("the tenant's disclosure setting", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function turnsOf(count: number) {
+    return Array.from({ length: count }, (_, turn) => [
+      {
+        id: turn * 2 + 1,
+        role: "user",
+        content: `question ${turn}`,
+        agent_id: null,
+        trace_id: null,
+        meta: null,
+        created_at: "2026-08-20T10:41:00Z",
+      },
+      {
+        id: turn * 2 + 2,
+        role: "assistant",
+        content: `Answer ${turn}.`,
+        agent_id: null,
+        trace_id: null,
+        meta: {
+          ui_parts: [
+            { type: "data-table", data: { columns: ["store"], rows: [[`Store ${turn}`]] } },
+            { type: "data-summary", data: { headline: `Reading ${turn}`, points: [] } },
+          ],
+        },
+        created_at: "2026-08-20T10:41:05Z",
+      },
+    ]).flat();
+  }
+
+  it("is fetched once for the whole thread, and every answer reads it", async () => {
+    let settingsCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = urlOf(input);
+        const json = (body: unknown) =>
+          Promise.resolve(
+            new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+          );
+        if (url.includes("/agent/settings/ask")) {
+          settingsCalls += 1;
+          // Only the first request is ever answered: an answer that asked
+          // for itself would sit hidden for good.
+          return settingsCalls === 1
+            ? json({ show_reasoning: true, show_query_results: true })
+            : new Promise<Response>(() => {});
+        }
+        if (url.includes("/agent/agents")) return json([]);
+        if (url.includes("/agent/conversations/")) {
+          return json({ id: 9, title: null, created_at: "", updated_at: "", messages: turnsOf(5) });
+        }
+        return Promise.resolve(sseResponse(TABLE_AND_SUMMARY_FRAMES));
+      }),
+    );
+    // Not pinned: the setting comes from the tenant, as it does in production.
+    const { chatRef } = renderThread({ disclosure: undefined });
+    await act(() => chatRef.current!.loadConversation(9));
+
+    await waitFor(() => expect(screen.getByText("Store 4")).toBeInTheDocument());
+    expect(screen.getByText("Store 0")).toBeInTheDocument();
+
+    // A new run's answer replaces the live turn with the value already known.
+    act(() => chatRef.current!.sendMessage("how many devices are in each group"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(screen.getByText("North depot")).toBeInTheDocument();
+
+    expect(settingsCalls).toBe(1);
+  });
+});
