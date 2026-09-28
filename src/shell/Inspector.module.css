@@ -154,7 +154,15 @@
   .inspector {
     border-left: 0;
     border-top: 1px solid var(--rule);
-    max-height: 50vh;
+    max-height: 40vh;
+  }
+
+  /* Stacked under the thread, an open inspector with nothing selected took
+     up to half the screen for its "Nothing selected" invitation, and the
+     Ask card got the other half. Until something is selected it is only
+     its header bar; selecting a phase opens it to its full height. */
+  .inspector[data-empty="true"] .body {
+    display: none;
   }
 
   /* Closed on mobile: an accordion header, not a slim tab — a 40px vertical

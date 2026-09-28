@@ -49,6 +49,9 @@
      the bubble and off the panel. */
   min-width: 0;
   overflow-wrap: anywhere;
+  /* The composer takes Shift+Enter new lines now; a pasted query or log
+     should read back the way it was typed. */
+  white-space: pre-wrap;
 }
 
 .askedFoot {

@@ -149,7 +149,12 @@ export function Inspector() {
   const { isOpen, toggle, selection } = useInspector();
 
   return (
-    <aside className={styles.inspector} data-state={isOpen ? "open" : "closed"} aria-label="Inspector">
+    <aside
+      className={styles.inspector}
+      data-state={isOpen ? "open" : "closed"}
+      data-empty={selection === null ? "true" : undefined}
+      aria-label="Inspector"
+    >
       <div className={styles.header}>
         <span className={styles.title}>Inspecting</span>
         <button

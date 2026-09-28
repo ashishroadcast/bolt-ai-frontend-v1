@@ -233,9 +233,22 @@ export function DataTable({
                         </td>
                       );
                     }
+                    const text = value === undefined ? "" : formatCell(value, type);
+                    if (isNumeric(type)) {
+                      return (
+                        <td key={column.key} className={styles.num}>
+                          {text}
+                        </td>
+                      );
+                    }
+                    // A text cell wraps, capped at three lines (`.cellText`):
+                    // one 500-character complaint used to make the table
+                    // thousands of pixels wide. The title keeps it readable.
                     return (
-                      <td key={column.key} className={isNumeric(type) ? styles.num : undefined}>
-                        {value === undefined ? "" : formatCell(value, type)}
+                      <td key={column.key}>
+                        <span className={styles.cellText} title={text}>
+                          {text}
+                        </span>
                       </td>
                     );
                   })}
