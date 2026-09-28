@@ -67,6 +67,31 @@ type WidgetDraftHandler = (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
 type EditWidgetHandler = (widgetId: string) => void;
 type HostContextProvider = () => AskHostContext | null;
 
+/**
+ * The key events kept inside the widget while someone is typing in it. All
+ * three, because a host shortcut may listen on any of them.
+ */
+const CONTAINED_KEY_EVENTS = ["keydown", "keyup", "keypress"] as const;
+
+/** A field that takes typing: where Ctrl+Z, arrows and letters belong to
+ * the text, not to whatever page the widget sits on. */
+function isEditable(target: EventTarget | undefined): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+  // `isContentEditable` where the platform computes it; the attribute walk
+  // for where it does not (jsdom), and for an editable ancestor.
+  return (
+    target.isContentEditable ||
+    target.closest('[contenteditable]:not([contenteditable="false"])') !== null
+  );
+}
+
 export class BoltAiAskElement extends HTMLElement {
   /** Observed so a host that sets them late (or changes them) still works. */
   static get observedAttributes(): string[] {
@@ -272,10 +297,31 @@ export class BoltAiAskElement extends HTMLElement {
   private baseUrlValue: string | null = null;
   private setupAgentsHrefValue: string | null = null;
 
+  /**
+   * Stops a key typed into one of the widget's own fields at the shadow root.
+   *
+   * Shadow DOM retargets a key event to the `<bolt-ai-ask>` host on its way
+   * out, so to the page every key typed in the composer looks like a key
+   * pressed on the element — and bolt-v2's dashboard builder answered
+   * Ctrl+Z / Ctrl+Y typed in the composer by undoing the canvas, and its
+   * scheduler moved on arrow keys. Stopping propagation here keeps typing
+   * where it happened. React still sees it: its listener sits on the mount
+   * point, below this one.
+   *
+   * Never `preventDefault` — the field must still receive the key — and never
+   * Escape, which a host legitimately uses to close the panel. Keys pressed
+   * anywhere else in the widget (a button, the thread) still reach the host.
+   */
+  private readonly containTyping = (event: Event): void => {
+    if ((event as KeyboardEvent).key === "Escape") return;
+    if (isEditable(event.composedPath()[0])) event.stopPropagation();
+  };
+
   connectedCallback(): void {
     if (this.root !== null) return;
 
     const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+    for (const type of CONTAINED_KEY_EVENTS) shadow.addEventListener(type, this.containTyping);
 
     // `adoptedStyleSheets` where available: one parsed sheet shared by every
     // instance of the tag, rather than a fresh `<style>` parsed per element.
@@ -313,6 +359,11 @@ export class BoltAiAskElement extends HTMLElement {
     this.mountPoint = null;
     if (root !== null) {
       queueMicrotask(() => root.unmount());
+    }
+    // The shadow root outlives a disconnect (a reconnect reuses it), so the
+    // listeners are removed here and added again in `connectedCallback`.
+    for (const type of CONTAINED_KEY_EVENTS) {
+      this.shadowRoot?.removeEventListener(type, this.containTyping);
     }
   }
 

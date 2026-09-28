@@ -139,3 +139,79 @@ describe("<bolt-ai-ask> client lifetime", () => {
     await waitFor(() => expect(agentCalls()).toBe(2));
   });
 });
+
+describe("<bolt-ai-ask> keyboard containment", () => {
+  /** A connected element with a field of the test's choosing inside its
+   * shadow root, and a spy on what the host document hears. */
+  function mounted() {
+    const element = create();
+    document.body.appendChild(element);
+    const hostHeard = vi.fn();
+    document.addEventListener("keydown", hostHeard);
+    document.addEventListener("keyup", hostHeard);
+    const cleanup = () => {
+      document.removeEventListener("keydown", hostHeard);
+      document.removeEventListener("keyup", hostHeard);
+    };
+    return { element, hostHeard, cleanup };
+  }
+
+  function press(target: Element, key: string, type = "keydown", init: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent(type, { key, bubbles: true, composed: true, cancelable: true, ...init });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  it("keeps keys typed into the widget's own fields from reaching the host's shortcuts", () => {
+    const { element, hostHeard, cleanup } = mounted();
+    const input = document.createElement("input");
+    const textarea = document.createElement("textarea");
+    const editable = document.createElement("div");
+    editable.setAttribute("contenteditable", "true");
+    element.shadowRoot!.append(input, textarea, editable);
+
+    const undo = press(input, "z", "keydown", { ctrlKey: true });
+    press(input, "z", "keyup", { ctrlKey: true });
+    press(textarea, "ArrowLeft");
+    press(editable, "y", "keydown", { ctrlKey: true });
+
+    expect(hostHeard).not.toHaveBeenCalled();
+    // Contained, not cancelled: the field still gets its key.
+    expect(undo.defaultPrevented).toBe(false);
+    cleanup();
+  });
+
+  it("still lets Escape and keys outside a field through", () => {
+    const { element, hostHeard, cleanup } = mounted();
+    const input = document.createElement("input");
+    const button = document.createElement("button");
+    element.shadowRoot!.append(input, button);
+
+    press(input, "Escape");
+    press(button, "ArrowRight");
+
+    expect(hostHeard).toHaveBeenCalledTimes(2);
+    cleanup();
+  });
+
+  it("stops containing once disconnected, and starts again on reconnect", () => {
+    const { element, hostHeard, cleanup } = mounted();
+    const shadow = element.shadowRoot!;
+    const input = document.createElement("input");
+    shadow.append(input);
+
+    element.remove();
+    // Detached, the event cannot reach the document at all — so listen on
+    // the shadow root's host side directly.
+    const escaped = vi.fn();
+    element.addEventListener("keydown", escaped);
+    press(input, "a");
+    expect(escaped).toHaveBeenCalledTimes(1);
+
+    document.body.appendChild(element);
+    press(input, "a");
+    expect(escaped).toHaveBeenCalledTimes(1);
+    expect(hostHeard).not.toHaveBeenCalled();
+    cleanup();
+  });
+});
