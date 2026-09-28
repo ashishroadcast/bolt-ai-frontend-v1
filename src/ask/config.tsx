@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import type { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import type { PhaseSegment } from "./chat/phaseTimeline.ts";
 import { GatewayClient } from "./http/gatewayClient.ts";
@@ -369,11 +376,22 @@ const CREDENTIAL_RETRY_DELAY_MS = 1_000;
 /**
  * Wraps Ask (or any part of it) with its configuration.
  *
- * Builds the HTTP client here, once per config, rather than at module scope.
- * A module-level singleton would mean two Ask instances on one page sharing
- * one base URL and one credential — fine in the console, wrong in a host that
- * embeds Ask twice, and exactly the kind of hidden global this extraction
- * exists to remove.
+ * Builds the HTTP client here rather than at module scope. A module-level
+ * singleton would mean two Ask instances on one page sharing one base URL and
+ * one credential — fine in the console, wrong in a host that embeds Ask
+ * twice, and exactly the kind of hidden global this extraction exists to
+ * remove.
+ *
+ * **One client per backend, not per config object.** The client is rebuilt
+ * only when `baseUrl` or `clientType` changes — the two things it is actually
+ * made from. It used to be rebuilt whenever the config's identity changed,
+ * and the custom element builds a fresh config on every attribute change, so
+ * bolt-v2 entering or leaving a dashboards screen (which swaps the copy
+ * attributes) threw the client away. Everything keyed on the client — the
+ * agent list, the disclosure settings — fetched again, and the picker flashed
+ * "Finding agents…" over a change of placeholder text. Copy and callbacks
+ * still reach their readers through the context value, which follows the
+ * config; they just no longer take the client with them.
  */
 export function AskProvider({
   config,
@@ -382,26 +400,33 @@ export function AskProvider({
   config: AskConfig;
   children: ReactNode;
 }) {
-  const value = useMemo<AskContextValue>(() => {
-    const { auth } = config;
-    return {
-      config,
-      client: new GatewayClient({
+  // Every callback the client holds reads the CURRENT `auth` through this
+  // ref, so a host that hands over a new auth object — or the element's
+  // fresh config — is honoured on the next request without a new client.
+  const authRef = useRef(config.auth);
+  authRef.current = config.auth;
+
+  const client = useMemo(
+    () =>
+      new GatewayClient({
         baseUrl: config.baseUrl,
-        getToken: () => auth.getCredential(),
-        getOrganisationId: () => auth.getOrganisationId?.() ?? null,
+        getToken: () => authRef.current.getCredential(),
+        getOrganisationId: () => authRef.current.getOrganisationId?.() ?? null,
         clientType: config.clientType,
         refresh: async () => {
-          if (auth.refreshCredential === undefined) return false;
-          return (await auth.refreshCredential()) !== null;
+          const refreshCredential = authRef.current.refreshCredential;
+          if (refreshCredential === undefined) return false;
+          return (await refreshCredential()) !== null;
         },
         credentialRetryDelayMs: CREDENTIAL_RETRY_DELAY_MS,
         // A no-op default rather than a required callback: a host that has
         // nothing to do about a refusal should not have to say so.
-        onUnauthorized: () => auth.onUnauthorized?.(),
+        onUnauthorized: () => authRef.current.onUnauthorized?.(),
       }),
-    };
-  }, [config]);
+    [config.baseUrl, config.clientType],
+  );
+
+  const value = useMemo<AskContextValue>(() => ({ config, client }), [config, client]);
 
   return <AskContext.Provider value={value}>{children}</AskContext.Provider>;
 }

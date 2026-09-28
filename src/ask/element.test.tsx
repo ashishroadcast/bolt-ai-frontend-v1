@@ -107,3 +107,35 @@ describe("<bolt-ai-ask> credential refresh", () => {
     expect(element.refreshCredential).toHaveBeenCalledOnce();
   });
 });
+
+describe("<bolt-ai-ask> client lifetime", () => {
+  it("keeps its client — and its agent list — when only the copy changes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = (input as Request).url;
+      const body = url.endsWith("/agent/agents") ? AGENTS : {};
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const agentCalls = () =>
+      fetchMock.mock.calls.filter(([input]) => (input as Request).url.endsWith("/agent/agents")).length;
+
+    const element = create();
+    element.credentialProvider = () => "boltai_test";
+    document.body.appendChild(element);
+    element.baseUrl = "http://ask.test";
+    await waitFor(() => expect(agentCalls()).toBe(1));
+
+    // What bolt-v2 does entering a dashboards screen.
+    element.setAttribute("placeholder", "Ask about this dashboard");
+    element.setAttribute("empty-title", "Dashboards");
+    await waitFor(() => {
+      const input = element.shadowRoot?.querySelector("input");
+      expect(input?.getAttribute("placeholder")).toBe("Ask about this dashboard");
+    });
+    expect(agentCalls()).toBe(1);
+
+    // A different backend is a different client, and does fetch again.
+    element.baseUrl = "http://other.test";
+    await waitFor(() => expect(agentCalls()).toBe(2));
+  });
+});

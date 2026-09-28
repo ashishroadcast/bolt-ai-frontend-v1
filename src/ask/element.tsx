@@ -405,9 +405,11 @@ export class BoltAiAskElement extends HTMLElement {
     // property setter and `attributeChangedCallback` calls back in here, so
     // the first configuration is what actually mounts Ask.
     if (config === null) return;
-    // A fresh config object per render is fine and intended: `AskProvider`
-    // memoises on its identity, so this is how a changed attribute reaches
-    // the client at all.
+    // A fresh config object per render is fine and intended: it is how a
+    // changed attribute reaches the components that read it. It does not
+    // reach the HTTP client — `AskProvider` rebuilds that only when
+    // `base-url` or `client-type` changes, so a copy attribute swapped by the
+    // host's routing never refetches the agent list.
     this.root.render(<Ask config={config} />);
   }
 
