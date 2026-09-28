@@ -1,4 +1,5 @@
-import { Bot } from "lucide-react";
+import { Bot, X } from "lucide-react";
+import { useEffect } from "react";
 import { useAskConfig, useAskReconnecting } from "../config.tsx";
 import { useAgents } from "./useAskAgents.ts";
 import { useChatContext } from "./ChatContext.tsx";
@@ -23,8 +24,10 @@ import styles from "./AgentPicker.module.css";
  * - a slash command has explicitly armed one name for the rest of this
  *   conversation (`Composer.tsx`'s `choose()`, via `ChatContext.
  *   selectedAgent`) — shown so the operator can see who a follow-up will
- *   keep reaching, with no control to change it back, since asking a
- *   fresh unarmed question is what changes it back.
+ *   keep reaching, with a × to let go of it. That used to be missing, on
+ *   the theory that a fresh unarmed question changes it back; it does not
+ *   — the arming lasts the conversation — so the only way out was starting
+ *   a new conversation and losing the thread.
  *
  * Otherwise (agents loaded, nothing armed) this renders nothing: the
  * common case is now silent by design.
@@ -32,8 +35,19 @@ import styles from "./AgentPicker.module.css";
 export function AgentPicker() {
   const { setupAgentsHref } = useAskConfig();
   const { agents, loading, error, canRetry, retrying, retry } = useAgents();
-  const { selectedAgent } = useChatContext();
+  const { selectedAgent, setSelectedAgent } = useChatContext();
   const reconnecting = useAskReconnecting();
+
+  // An armed agent that is no longer in the list — deactivated or deleted
+  // since it was armed, or armed in a conversation the list has since been
+  // reloaded under — is let go of. Keeping it would send every follow-up to
+  // a name the run can only refuse. Only against a list that actually
+  // loaded: a failed load says nothing about which agents exist.
+  useEffect(() => {
+    if (selectedAgent === null || loading || error !== null) return;
+    const stillThere = agents.some((agent) => agent.is_active && agent.name === selectedAgent);
+    if (!stillThere) setSelectedAgent(null);
+  }, [agents, loading, error, selectedAgent, setSelectedAgent]);
 
   // The host's credential provider came back empty and Ask is giving it a
   // second to recover — usually a token refresh in flight. Said here because
@@ -111,7 +125,18 @@ export function AgentPicker() {
         <Bot size={14} strokeWidth={2} />
       </span>
       <span className={styles.label}>Chatting with</span>
-      <span className={styles.armedName}>{selectedAgent}</span>
+      <span className={styles.armedChip}>
+        <span className={styles.armedName}>{selectedAgent}</span>
+        <button
+          type="button"
+          className={styles.disarm}
+          onClick={() => setSelectedAgent(null)}
+          aria-label={`Stop chatting with ${selectedAgent}`}
+          title="Stop chatting with this agent"
+        >
+          <X size={12} strokeWidth={2.25} aria-hidden="true" />
+        </button>
+      </span>
     </div>
   );
 }

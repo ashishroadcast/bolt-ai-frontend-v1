@@ -30,17 +30,53 @@
   color: var(--fg-faint);
 }
 
-/* The agent a slash command armed, named back — no longer a control, so
-   no border/cursor/focus styling of its own to invite clicking it. */
+/* The agent a slash command armed, named back, with its own × to let go
+   of it. The chip carries the border so the name and the × read as one
+   object; the name itself is plain text, not a control. */
+.armedChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  padding: 5px 4px 5px 10px;
+}
+
 .armedName {
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 13px;
   color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 7px;
-  padding: 5px 10px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.disarm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.disarm:hover {
+  background: var(--ground-lift);
+  color: var(--fg);
+}
+
+.disarm:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
 }
 
 .loading {
@@ -79,10 +115,13 @@
     display: none;
   }
 
+  .armedChip {
+    flex: 1;
+    padding-block: 7px;
+  }
+
   .armedName {
     flex: 1;
-    min-width: 0;
-    padding-block: 7px;
   }
 
   .bar {
