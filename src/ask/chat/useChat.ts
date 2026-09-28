@@ -71,6 +71,18 @@ export interface UseChatResult {
    * `session_id` for a conversation that's gone. Nothing is deleted
    * server-side; a run still in flight is closed and appends nothing. */
   clearConversation: () => void;
+  /**
+   * The question the reader had half-typed when the composer last went away —
+   * History swaps the composer out of the panel, and leaving /ask in the
+   * console unmounts it — so it can be put back when the composer returns.
+   *
+   * Lives here because this provider outlives both. `Composer` types into
+   * state of its own and hands the text over only as it unmounts: a context
+   * update per keystroke would re-render every consumer of this context,
+   * the whole thread included, on every letter.
+   */
+  draft: string;
+  setDraft: (text: string) => void;
 }
 
 export interface SendOptions {
@@ -229,6 +241,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
 
   const isStreamingRef = useRef(false);
   const mountedRef = useRef(true);
@@ -790,5 +803,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     setSelectedAgent,
     activeConversationId,
     clearConversation,
+    draft,
+    setDraft,
   };
 }

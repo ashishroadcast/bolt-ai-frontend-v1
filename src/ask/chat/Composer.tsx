@@ -203,13 +203,20 @@ function useSelectedWidget(
 }
 
 export function Composer() {
-  const [value, setValue] = useState("");
+  const { status, sendMessage, stop, notice, selectedAgent, setSelectedAgent, draft, setDraft } =
+    useChatContext();
+  // Starts from whatever was left half-typed when this composer last
+  // unmounted (opening History, leaving /ask), and hands the text back as it
+  // unmounts again — see `UseChatResult.draft` for why not on every keystroke.
+  const [value, setValue] = useState(draft);
+  const valueRef = useRef(value);
+  valueRef.current = value;
+  useEffect(() => () => setDraft(valueRef.current), [setDraft]);
   // Set when the reader presses Escape, cleared as soon as they type
   // anything else: a menu that reopens on the next keystroke after being
   // dismissed cannot be dismissed at all.
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const { status, sendMessage, stop, notice, selectedAgent, setSelectedAgent } = useChatContext();
   const { copy, hostContextProvider } = useAskConfig();
   const { agents } = useAskAgents();
   const selectedWidget = useSelectedWidget(hostContextProvider, status);

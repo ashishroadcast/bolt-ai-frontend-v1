@@ -170,6 +170,30 @@ describe("Composer", () => {
     expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
   });
 
+  it("keeps a half-typed question when the composer goes away and comes back", async () => {
+    // Opening History swaps the composer out of the panel; leaving /ask in
+    // the console unmounts it. The chat provider outlives both.
+    function Screen({ showComposer }: { showComposer: boolean }) {
+      return (
+        <TestAskProvider>
+          <ChatProvider>
+            <AskAgentsProvider>{showComposer && <Composer />}</AskAgentsProvider>
+          </ChatProvider>
+        </TestAskProvider>
+      );
+    }
+    const { rerender } = render(<Screen showComposer />);
+    const field = () => screen.getByLabelText("Ask a question") as HTMLInputElement;
+    await waitFor(() => expect(field()).toBeEnabled());
+    fireEvent.change(field(), { target: { value: "which vehicles idled over" } });
+
+    rerender(<Screen showComposer={false} />);
+    expect(screen.queryByLabelText("Ask a question")).not.toBeInTheDocument();
+    rerender(<Screen showComposer />);
+
+    expect(field().value).toBe("which vehicles idled over");
+  });
+
   it("does nothing for an empty or whitespace-only question", () => {
     renderComposer("Sales Analyst");
 
