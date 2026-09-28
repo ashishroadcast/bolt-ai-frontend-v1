@@ -7,7 +7,7 @@
  */
 import type { GatewayClient } from "../http/gatewayClient.ts";
 import type { UsageMetadata } from "./protocol.ts";
-import type { ChatMessage } from "./types.ts";
+import type { ChatMessage, PersistedRunStatus } from "./types.ts";
 import { toUIPart } from "./wireParts.ts";
 
 /** Mirrors `agent-service/app/api/conversations.py`'s `MessageOut` — the
@@ -18,7 +18,14 @@ export interface MessageOut {
   content: string;
   agent_id: number | null;
   trace_id: string | null;
-  meta: { ui_parts?: WireUIPart[]; usage?: unknown } | null;
+  /** Free-form JSON on the server, so every key is read defensively —
+   * see `toParts`, `toUsage` and `toRunStatus`. */
+  meta: {
+    ui_parts?: unknown;
+    usage?: unknown;
+    run_status?: unknown;
+    error_text?: unknown;
+  } | null;
   created_at: string;
 }
 
@@ -57,6 +64,39 @@ function toUsage(raw: unknown): UsageMetadata | null {
 }
 
 /**
+ * `messages.meta.ui_parts`, adapted — or none at all for a value that is
+ * not a list. `meta` is a free-form JSON column, and a row whose
+ * `ui_parts` came back as an object or a string used to throw out of
+ * `.map`, which failed the whole conversation rather than one row. A
+ * malformed entry inside the list is skipped for the same reason.
+ */
+function toParts(raw: unknown): ChatMessage["parts"] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry: unknown) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const part = entry as Partial<WireUIPart>;
+    if (typeof part.type !== "string") return [];
+    const data = typeof part.data === "object" && part.data !== null ? part.data : {};
+    const adapted = toUIPart(part.type, data as Record<string, unknown>);
+    return adapted === null ? [] : [adapted];
+  });
+}
+
+/**
+ * `messages.meta.run_status`, the backend's record that the run behind a
+ * row failed or was cancelled. Anything else — including the field being
+ * absent, as it is on every row written before it existed — says nothing,
+ * and `Thread` falls back to what the row's content shows.
+ */
+function toRunStatus(raw: unknown): PersistedRunStatus | undefined {
+  return raw === "error" || raw === "cancelled" ? raw : undefined;
+}
+
+function toErrorText(raw: unknown): string | null {
+  return typeof raw === "string" && raw.trim() !== "" ? raw.trim() : null;
+}
+
+/**
  * Wire messages -> `ChatMessage[]`, the exact shape a live run's messages
  * converge on too (`types.ts`'s own docstring). No `runSummary` is ever
  * attached here — a reopened message's `data-phase` events never reached
@@ -82,16 +122,17 @@ export function hydrateMessages(messages: readonly MessageOut[]): ChatMessage[] 
       id: String(message.id),
       role: message.role,
       content: message.content,
-      parts: (message.meta?.ui_parts ?? []).flatMap((part) => {
-        const adapted = toUIPart(part.type, (part.data ?? {}) as Record<string, unknown>);
-        return adapted === null ? [] : [adapted];
-      }),
+      parts: toParts(message.meta?.ui_parts),
       createdAt: new Date(message.created_at).getTime(),
       // The two pieces of run metadata that really do survive a reload —
       // see `ChatMessage.usage`/`agentId` for why they sit on the message
       // rather than on `runSummary` (which a reopened message never has).
       usage: toUsage(message.meta?.usage),
       agentId: message.agent_id,
+      // How a failed or cancelled run ended. Its `content` is whatever
+      // partial answer it got to, often none.
+      runStatus: toRunStatus(message.meta?.run_status),
+      errorText: toErrorText(message.meta?.error_text),
     }));
 }
 

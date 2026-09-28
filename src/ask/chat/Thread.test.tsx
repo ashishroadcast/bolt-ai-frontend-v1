@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AskInspectorProvider, type AskConfig } from "../config.tsx";
 import { ChatProvider, useChatContext } from "./ChatContext.tsx";
@@ -500,10 +500,79 @@ describe("Thread", () => {
     act(() => chatRef.current!.sendMessage("hello"));
     await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
 
-    expect(screen.getByText(/the run failed unexpectedly \(ref: abc123\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Try asking again\./)).toBeInTheDocument();
+    // Its own sentence, and a Rerun to act on it — not "…abc123) Try asking
+    // again." run together, which read "Failed to fetch Try asking again."
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getByText("the run failed unexpectedly (ref: abc123).")).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Rerun this question" })).toBeInTheDocument();
+    expect(screen.queryByText(/Try asking again/)).not.toBeInTheDocument();
     expect(screen.queryByText(/sorry/i)).not.toBeInTheDocument();
   });
+
+  it("asks nobody whether a failed run was helpful", async () => {
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          // A real row id, so only the failure can be what hides the rating.
+          `data: {"type":"start","messageId":"400084"}`,
+          `data: {"type":"error","errorText":"Failed to fetch"}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("hello"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Failed to fetch.")).toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Rate this answer/ })).not.toBeInTheDocument();
+    // One Rerun on the answer — the tile's — plus the question's own.
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+  });
+
+  it("says no answer was produced when a run finishes with only whitespace", async () => {
+    // It showed "Worked for 12.3s", thumbs, and a Copy that copied spaces.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"400085"}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"  \\n  "}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("No answer was produced.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Copy answer" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+  });
+
+  it("still offers the rating and Copy on an answer that did produce one", async () => {
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse(GOLDEN_FRAMES.map((frame) => frame.replace('"messageId":"msg-1"', '"messageId":"400086"'))),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Was this helpful?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
+    expect(screen.queryByText("No answer was produced.")).not.toBeInTheDocument();
+  });
+
 
   it("copies the question's own text from its own Copy button, not the answer's", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
@@ -884,5 +953,101 @@ describe("the tenant's disclosure setting", () => {
     expect(screen.getByText("North depot")).toBeInTheDocument();
 
     expect(settingsCalls).toBe(1);
+  });
+});
+
+// --- a reopened run that never finished ---------------------------------------
+//
+// agent-service saves an empty assistant row before a run starts, and a run that
+// failed or was cancelled never recorded that it had: reopened, it was a blank
+// answer. The backend now writes `meta.run_status`/`meta.error_text` on such a
+// row; every older row still has neither.
+
+describe("a reopened run that did not end in an answer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function reopen(assistant: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      routeFetch(
+        () =>
+          new Response(
+            JSON.stringify({
+              id: 9,
+              title: null,
+              created_at: "2026-08-20T10:41:00Z",
+              updated_at: "2026-08-20T10:41:05Z",
+              messages: [
+                {
+                  id: 1,
+                  role: "user",
+                  content: "top items last week",
+                  agent_id: null,
+                  trace_id: null,
+                  meta: null,
+                  created_at: "2026-08-20T10:41:00Z",
+                },
+                {
+                  id: 2,
+                  role: "assistant",
+                  content: "",
+                  agent_id: null,
+                  trace_id: null,
+                  meta: null,
+                  created_at: "2026-08-20T10:41:05Z",
+                  ...assistant,
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    const utils = renderThread();
+    return { ...utils, load: () => act(() => utils.chatRef.current!.loadConversation(9)) };
+  }
+
+  it("says an empty row with no recorded status didn't finish, and offers Rerun", async () => {
+    const { load } = reopen({});
+    await load();
+
+    expect(screen.getByText("This answer didn't finish.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy answer" })).not.toBeInTheDocument();
+    // History, not a live failure: nothing to announce.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a recorded failure's own text, and the partial answer it got to", async () => {
+    const { load } = reopen({
+      content: "Chicken Biryani led",
+      meta: { run_status: "error", error_text: "The model took too long to answer" },
+    });
+    await load();
+
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText("The model took too long to answer.")).toBeInTheDocument();
+    expect(screen.getByText("Chicken Biryani led")).toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+  });
+
+  it("says a cancelled run didn't finish, above what it wrote before it stopped", async () => {
+    const { load } = reopen({ content: "Chicken Biryani led", meta: { run_status: "cancelled" } });
+    await load();
+
+    expect(screen.getByText("This answer didn't finish.")).toBeInTheDocument();
+    expect(screen.getByText("What it wrote before it stopped is below.")).toBeInTheDocument();
+    expect(screen.getByText("Chicken Biryani led")).toBeInTheDocument();
+  });
+
+  it("reopens a row whose ui_parts is not a list instead of failing the conversation", async () => {
+    const { load } = reopen({ content: "Chicken Biryani led the week.", meta: { ui_parts: { oops: true } } });
+    await load();
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByText("This answer didn't finish.")).not.toBeInTheDocument();
   });
 });

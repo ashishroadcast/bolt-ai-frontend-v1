@@ -20,7 +20,7 @@ import { AskDisclosureProvider, useAskDisclosure } from "./useDisclosure.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
-import { RerunButton, RunMeta } from "./RunMeta.tsx";
+import { RerunButton, RunMeta, type RunStatus } from "./RunMeta.tsx";
 import { EMPTY_TRACE, type RunTrace } from "./runTrace.ts";
 import styles from "./Thread.module.css";
 import type { ChatMessage } from "./types.ts";
@@ -341,6 +341,99 @@ function workedForMs(message: ChatMessage): number | null {
   return message.runSummary?.totalMs ?? null;
 }
 
+/**
+ * How this turn ended, as far as a reader is concerned.
+ *
+ * A run this session watched says so on `runSummary`; a reopened one says
+ * so on `runStatus`, when the backend recorded it. When nothing recorded a
+ * failure, what is on screen decides: a turn with no text and no part is
+ * not an answer. A run this session watched finished and simply produced
+ * none. A reopened row with nothing in it is the placeholder agent-service
+ * saves before a run starts, which a run that died never filled in — and
+ * every such row older than `run_status` reopens exactly like that.
+ */
+function turnStatus(message: ChatMessage, visible: UIPart[]): RunStatus {
+  if (message.runSummary?.status === "error" || message.runStatus === "error") return "error";
+  if (message.runStatus === "cancelled") return "cancelled";
+  if (visible.length > 0 || message.content.trim() !== "") return "done";
+  return message.runSummary !== undefined ? "empty" : "unfinished";
+}
+
+/**
+ * A failure's own text as a sentence of its own. It used to have "Try
+ * asking again." appended straight after it, which read "Failed to fetch
+ * Try asking again." — the Rerun beside it now says that, as a control.
+ */
+function asSentence(text: string | null | undefined): string | null {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed === "") return null;
+  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+interface TurnNoticeCopy {
+  title: string;
+  detail: string | null;
+}
+
+/** What a turn that did not end in an answer says instead, or `null` for
+ * one that did. */
+function noticeFor(status: RunStatus, message: ChatMessage): TurnNoticeCopy | null {
+  const partial = message.content.trim() !== "";
+  switch (status) {
+    case "error":
+      return {
+        title: "Something went wrong",
+        detail:
+          asSentence(message.runSummary?.errorText ?? message.errorText) ??
+          "The run stopped before it finished.",
+      };
+    case "cancelled":
+      return {
+        title: "This answer didn't finish.",
+        detail: partial ? "What it wrote before it stopped is below." : null,
+      };
+    case "unfinished":
+      return { title: "This answer didn't finish.", detail: null };
+    case "empty":
+      return { title: "No answer was produced.", detail: null };
+    case "done":
+      return null;
+  }
+}
+
+interface TurnNoticeProps extends TurnNoticeCopy {
+  /** Announced the moment it appears — only for a run that failed while
+   * the reader watched, never for one reopened from history. */
+  alert: boolean;
+  onRerun?: () => void;
+  rerunDisabled: boolean;
+}
+
+/**
+ * A turn that did not end in an answer, styled after Figma's "Can't find
+ * anything" tile (see `.failure`), with the one thing to do about it
+ * beside it. The strip under the turn then carries no Rerun of its own —
+ * two in one turn would ask the reader which to press.
+ */
+function TurnNotice({ title, detail, alert, onRerun, rerunDisabled }: TurnNoticeProps): ReactElement {
+  return (
+    <div role={alert ? "alert" : undefined} className={styles.failure}>
+      <span className={styles.failureIcon} aria-hidden="true">
+        <AgentIcon size={16} />
+      </span>
+      <span className={styles.failureBody}>
+        <span className={styles.failureTitle}>{title}</span>
+        {detail !== null && <span className={styles.failureDetail}>{detail}</span>}
+      </span>
+      {onRerun && (
+        <span className={styles.noticeAction}>
+          <RerunButton onRerun={onRerun} disabled={rerunDisabled} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 function AnsweredTurn({
   message,
   onRerun,
@@ -364,19 +457,21 @@ function AnsweredTurn({
   const canDebug =
     disclosure.showReasoning &&
     (trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null);
+  const status = turnStatus(message, visible);
+  const notice = noticeFor(status, message);
 
   return (
     <AgentTurn>
-      {summary !== undefined && summary.status === "error" && (
-        <div role="alert" className={styles.failure}>
-          <span className={styles.failureIcon} aria-hidden="true">
-            <AgentIcon size={16} />
-          </span>
-          <span className={styles.failureBody}>
-            <span className={styles.failureTitle}>Something went wrong</span>
-            <span className={styles.failureDetail}>{summary.errorText} Try asking again.</span>
-          </span>
-        </div>
+      {/* Above the reasoning card, because "this did not finish" outranks
+          "here is how far it got". An empty turn used to render nothing
+          here at all: a footer, thumbs, and a Copy that copied nothing. */}
+      {notice !== null && (
+        <TurnNotice
+          {...notice}
+          alert={summary !== undefined && status === "error"}
+          onRerun={onRerun}
+          rerunDisabled={rerunDisabled}
+        />
       )}
 
       {disclosure.showReasoning && trace.steps.length > 0 && summary !== undefined && (
@@ -417,7 +512,8 @@ function AnsweredTurn({
         score={trace.score}
         usage={message.usage ?? null}
         observedMs={workedForMs(message)}
-        onRerun={onRerun}
+        runStatus={status}
+        onRerun={notice === null ? onRerun : undefined}
         onRetryFresh={onRetryFresh}
         rerunDisabled={rerunDisabled}
         isDebugOpen={isDebugOpen}
@@ -455,7 +551,9 @@ function LiveTurn(): ReactElement | null {
 
   if (activeRun === null) return null;
 
-  const isWaiting = activeRun.text === "";
+  // Trimmed: a run that has streamed only whitespace has still said nothing,
+  // and dropping the wait indicator for it left a blank turn mid-run.
+  const isWaiting = activeRun.text.trim() === "";
   const liveVisible = visibleParts(answerable, disclosure.showQueryResults);
 
   return (

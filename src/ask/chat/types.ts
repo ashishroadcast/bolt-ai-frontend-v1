@@ -49,7 +49,22 @@ export interface ChatMessage {
    * rather than to a guess.
    */
   agentId?: number | null;
+  /**
+   * How a REOPENED run ended when it did not end in an answer —
+   * `messages.meta.run_status`. agent-service saves the assistant row
+   * before the run starts and, for a run that failed or was cancelled,
+   * now records which on it; before that it recorded nothing, and the row
+   * reopened as an empty answer. Absent on a row that finished, and on
+   * every row older than the field. A run this session watched carries
+   * the same fact on `runSummary.status` instead.
+   */
+  runStatus?: PersistedRunStatus;
+  /** `messages.meta.error_text`, the failure a reopened errored run
+   * recorded, or `null` when it recorded none. */
+  errorText?: string | null;
 }
+
+export type PersistedRunStatus = "error" | "cancelled";
 
 export interface RunSummary {
   status: "done" | "error";

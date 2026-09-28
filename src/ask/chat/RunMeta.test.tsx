@@ -263,3 +263,46 @@ describe("RunMeta under the tenant's disclosure", () => {
     expect(screen.getByRole("button", { name: "Show debug" })).toBeInTheDocument();
   });
 });
+
+describe("RunMeta on a turn that did not end in an answer", () => {
+  it("offers no rating on a failed, cancelled, empty or unfinished run", () => {
+    for (const runStatus of ["error", "cancelled", "empty", "unfinished"] as const) {
+      const { unmount } = render(
+        <RunMeta
+          messageId="400084"
+          answerText=""
+          runStatus={runStatus}
+          agentName={null}
+          toolCount={null}
+          score={null}
+          usage={null}
+          observedMs={null}
+          rerunDisabled={false}
+          showRunDetails
+        />,
+        { wrapper: TestAskProvider },
+      );
+      expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("offers no Copy for an answer that is only whitespace", () => {
+    render(
+      <RunMeta
+        messageId="400084"
+        answerText={"  \n "}
+        agentName={null}
+        toolCount={null}
+        score={null}
+        usage={null}
+        observedMs={null}
+        rerunDisabled={false}
+        showRunDetails
+      />,
+      { wrapper: TestAskProvider },
+    );
+
+    expect(screen.queryByRole("button", { name: "Copy answer" })).not.toBeInTheDocument();
+  });
+});

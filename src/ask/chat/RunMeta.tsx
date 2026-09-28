@@ -118,12 +118,26 @@ function RatingButtons({ messageId }: { messageId: number }): ReactElement {
   );
 }
 
+/**
+ * How the turn this strip sits under ended — see `Thread.turnStatus`.
+ * `empty` finished with nothing on screen; `unfinished` is a reopened row
+ * the run never filled in.
+ */
+export type RunStatus = "done" | "empty" | "unfinished" | "cancelled" | "error";
+
 export interface RunMetaProps {
   /** `ChatMessage.id` — a real row id enables the rating controls. */
   messageId: string;
   /** The answer text a Copy click writes, or `""` for an answer that
    * produced none (an errored run). */
   answerText: string;
+  /**
+   * Only a turn that ended in an answer can be rated. "Was this helpful?"
+   * under a failure or a blank turn asks about an answer that does not
+   * exist, and the vote would still be recorded against the run's plan.
+   * Defaults to `"done"`.
+   */
+  runStatus?: RunStatus;
   agentName: string | null;
   toolCount: number | null;
   score: number | null;
@@ -177,6 +191,7 @@ export interface RunMetaProps {
 export function RunMeta({
   messageId,
   answerText,
+  runStatus = "done",
   agentName,
   toolCount,
   score,
@@ -195,7 +210,9 @@ export function RunMeta({
 
   return (
     <div className={styles.strip}>
-      {answerText !== "" && (
+      {/* Trimmed: an answer of only whitespace offered a Copy that
+          copied whitespace. */}
+      {answerText.trim() !== "" && (
         <CopyButton text={answerText} icon={Copy} idleLabel="Copy" ariaLabel="Copy answer" />
       )}
       {onRerun && <RerunButton onRerun={onRerun} disabled={rerunDisabled} />}
@@ -211,7 +228,7 @@ export function RunMeta({
           <span>Retry without cache</span>
         </button>
       )}
-      {rowId !== null && <RatingButtons messageId={rowId} />}
+      {rowId !== null && runStatus === "done" && <RatingButtons messageId={rowId} />}
 
       <span className={styles.facts}>
         {agentName !== null && (

@@ -171,3 +171,59 @@ describe("hydrateMessages / usage", () => {
     expect(hydrateMessages([assistant({})])[0]!.usage).toBeNull();
   });
 });
+
+describe("hydrateMessages / a run that did not end in an answer", () => {
+  // agent-service saves the assistant row before the run starts, and now
+  // records on it that the run failed or was cancelled. Before that it
+  // recorded nothing, and such a row reopened as an empty answer.
+  function assistantRow(meta: unknown, content = ""): MessageOut {
+    return {
+      id: 7,
+      role: "assistant",
+      content,
+      agent_id: 1,
+      trace_id: null,
+      meta: meta as MessageOut["meta"],
+      created_at: "2026-08-20T10:41:05Z",
+    };
+  }
+
+  it("carries a recorded failure and its text onto the message", () => {
+    const [message] = hydrateMessages([
+      assistantRow({ run_status: "error", error_text: "  The model timed out  " }, "Partial"),
+    ]);
+
+    expect(message).toMatchObject({ runStatus: "error", errorText: "The model timed out", content: "Partial" });
+  });
+
+  it("carries a cancellation, which has no text of its own", () => {
+    const [message] = hydrateMessages([assistantRow({ run_status: "cancelled" })]);
+
+    expect(message!.runStatus).toBe("cancelled");
+    expect(message!.errorText).toBeNull();
+  });
+
+  it("says nothing about a status it does not recognise, or a row older than the field", () => {
+    const [unknown, older] = hydrateMessages([
+      assistantRow({ run_status: "exploded", error_text: 42 }),
+      assistantRow(null),
+    ]);
+
+    expect(unknown!.runStatus).toBeUndefined();
+    expect(unknown!.errorText).toBeNull();
+    expect(older!.runStatus).toBeUndefined();
+  });
+
+  it("treats a ui_parts that is not a list, or an entry that is not a part, as nothing", () => {
+    // `meta` is free-form JSON; this used to throw out of `.map` and fail
+    // the whole conversation.
+    const [notAList, badEntries] = hydrateMessages([
+      assistantRow({ ui_parts: { type: "data-table" } }, "a"),
+      assistantRow({ ui_parts: [null, "x", { data: {} }, { type: "data-table", data: null }] }, "b"),
+    ]);
+
+    expect(notAList!.parts).toEqual([]);
+    expect(badEntries!.parts).toHaveLength(1);
+    expect(badEntries!.parts[0]!.intent).toBe("data-table");
+  });
+});
