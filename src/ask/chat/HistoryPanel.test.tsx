@@ -22,11 +22,12 @@ function renderPanel(
   fetchMock: ReturnType<typeof vi.fn>,
   onClose: () => void = () => {},
   onMinimize?: () => void,
+  conversationLink?: (conversationId: number) => string,
 ) {
   vi.stubGlobal("fetch", fetchMock);
   return render(<TestAskProvider>
       <ChatProvider>
-      <HistoryPanel onClose={onClose} onMinimize={onMinimize} />
+      <HistoryPanel onClose={onClose} onMinimize={onMinimize} conversationLink={conversationLink} />
     </ChatProvider>
     </TestAskProvider>,
   );
@@ -53,7 +54,7 @@ describe("HistoryPanel", () => {
     delete navigator.clipboard;
   });
 
-  it("lists a past conversation's snippet, falling back to a formatted date for a null title", async () => {
+  it("heads an untitled conversation 'Untitled conversation', never its date, and keeps the date on its own line", async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         jsonResponse({
@@ -73,15 +74,83 @@ describe("HistoryPanel", () => {
     );
     renderPanel(fetchMock);
 
+    // An agent-service that sends no `preview` still gets the answer as
+    // the row's one line of content.
     await waitFor(() => {
       expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
     });
-    // The heading text is locale/timezone-formatted from created_at (no
-    // title to show), so this asserts it's real, non-empty text rather
-    // than pinning an exact formatted string.
-    const item = screen.getByRole("button", { name: /open conversation/i });
-    expect(item.textContent?.trim()).not.toBe("");
-    expect(item.textContent).not.toContain("null");
+    expect(screen.getByRole("button", { name: "Open conversation: Untitled conversation" })).toBeInTheDocument();
+    const stamp = document.querySelector("time");
+    expect(stamp).toHaveAttribute("dateTime", "2026-08-20T10:41:00Z");
+    expect(stamp?.textContent?.trim()).not.toBe("");
+  });
+
+  it("treats a timestamp or a generated default as no title at all", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            { ...ONE_ITEM[0], id: 1, title: "2026-08-20T10:41:00Z" },
+            { ...ONE_ITEM[0], id: 2, title: "20 Aug, 10:41 am" },
+            { ...ONE_ITEM[0], id: 3, title: "New conversation" },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Open conversation: Untitled conversation" })).toHaveLength(3);
+    });
+  });
+
+  it("previews the latest question, not the answer, when agent-service sends one", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              ...ONE_ITEM[0],
+              title: "Top items last week",
+              preview: "and the week before?",
+              message_count: 4,
+            },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await waitFor(() => expect(screen.getByText("and the week before?")).toBeInTheDocument());
+    expect(screen.getByText("Top items last week")).toBeInTheDocument();
+    expect(screen.queryByText("Chicken Biryani led the week.")).not.toBeInTheDocument();
+  });
+
+  it("does not repeat a one-question conversation's question under its own title", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              ...ONE_ITEM[0],
+              // Trimmed to 80 by agent-service; the preview is the whole
+              // question, so it starts with the title rather than equalling it.
+              title: "Which stores had the largest drop in weekend orders compared with the previous…",
+              preview:
+                "Which stores had the largest drop in weekend orders compared with the previous month, and why?",
+            },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await screen.findByText(/^Which stores had the largest drop/);
+    expect(screen.getAllByText(/^Which stores had the largest drop/)).toHaveLength(1);
+    expect(screen.queryByText("Chicken Biryani led the week.")).not.toBeInTheDocument();
   });
 
   it("renders a pipe-delimited answer as something readable, not as a wall of pipes", async () => {
@@ -166,6 +235,78 @@ describe("HistoryPanel", () => {
     );
   });
 
+  // --- paging (`next_cursor` / `?cursor=`) -------------------------------
+
+  function page(ids: number[], nextCursor: string | null) {
+    return {
+      items: ids.map((id) => ({ ...ONE_ITEM[0], id, title: `Question ${id}` })),
+      next_cursor: nextCursor,
+    };
+  }
+
+  it("loads older conversations with the server's cursor and appends them", async () => {
+    const seen: string[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      seen.push(url);
+      return Promise.resolve(jsonResponse(url.includes("cursor=21") ? page([20, 19], null) : page([22, 21], "21")));
+    });
+    renderPanel(fetchMock);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }));
+
+    await screen.findByText("Question 19");
+    // Appended, not replaced: the first page is still there.
+    expect(screen.getByText("Question 22")).toBeInTheDocument();
+    expect(seen.some((url) => url.includes("cursor=21"))).toBe(true);
+    // The last page says so, and the button goes with it.
+    expect(screen.queryByRole("button", { name: "Load older conversations" })).not.toBeInTheDocument();
+  });
+
+  it("offers no Load older when the first page is the whole list", async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse(page([2, 1], null))));
+    renderPanel(fetchMock);
+
+    await screen.findByText("Question 2");
+    expect(screen.queryByRole("button", { name: "Load older conversations" })).not.toBeInTheDocument();
+  });
+
+  it("pages a search as the same search, not as the unfiltered list", async () => {
+    const seen: string[] = [];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      seen.push(url);
+      if (!url.includes("search=biryani")) return Promise.resolve(jsonResponse(page([9], null)));
+      return Promise.resolve(jsonResponse(url.includes("cursor=") ? page([3], null) : page([7], "7")));
+    });
+    renderPanel(fetchMock);
+    await screen.findByText("Question 9");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: /search past conversations/i }), {
+      target: { value: "biryani" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }, { timeout: 1000 }));
+
+    await screen.findByText("Question 3");
+    const older = seen.find((url) => url.includes("cursor=7"));
+    expect(older).toContain("search=biryani");
+  });
+
+  it("keeps the list when an older page fails to load, and says so beside the button", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) =>
+      urlOf(input).includes("cursor=")
+        ? Promise.resolve(jsonResponse({ detail: "nope" }, 500))
+        : Promise.resolve(jsonResponse(page([22, 21], "21"))),
+    );
+    renderPanel(fetchMock);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load older conversations" }));
+
+    await waitFor(() => expect(screen.getByText("Couldn't load older conversations.")).toBeInTheDocument());
+    expect(screen.getByText("Question 22")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load older conversations" })).toBeEnabled();
+  });
+
   it("surfaces a load error rather than an endless loading state", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ detail: "nope" }, 500)));
     renderPanel(fetchMock);
@@ -240,6 +381,44 @@ describe("HistoryPanel", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("reports a failed open on that row and keeps every other row, with a Retry that works", async () => {
+    // Deleted in another tab first, then found again: the retry is what
+    // a network blip needs, and it must not have lost the list meanwhile.
+    const onClose = vi.fn();
+    let detailCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      if (url.includes("/agent/conversations/4")) {
+        detailCalls += 1;
+        return Promise.resolve(
+          detailCalls === 1
+            ? jsonResponse({ detail: "conversation not found" }, 404)
+            : jsonResponse({ id: 4, title: null, created_at: "", updated_at: "", messages: [] }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          items: [...ONE_ITEM, { ...ONE_ITEM[0], id: 3, title: "Fuel spend by depot" }],
+          next_cursor: null,
+        }),
+      );
+    });
+    renderPanel(fetchMock, onClose);
+    await screen.findByText("Weekend discount spike");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open conversation: Weekend discount spike" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't open this conversation.");
+    expect(alert.closest("li")).toHaveTextContent("Weekend discount spike");
+    expect(screen.getByText("Fuel spend by depot")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry opening Weekend discount spike" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("closes on Escape and on its own back arrow", () => {
     const onClose = vi.fn();
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: [], next_cursor: null })));
@@ -252,9 +431,9 @@ describe("HistoryPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("copies a working link to the conversation when Share is clicked", async () => {
+  it("copies the host's link to the conversation when Share is clicked", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: ONE_ITEM, next_cursor: null })));
-    renderPanel(fetchMock);
+    renderPanel(fetchMock, undefined, undefined, (id) => `https://console.test/ask?conversation=${id}`);
     await screen.findByText("Weekend discount spike");
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -262,9 +441,21 @@ describe("HistoryPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /copy link to weekend discount spike/i }));
 
-    // A real permalink AskRoute.tsx actually understands (?conversation=)
-    // — not a decorative string that happens to look like one.
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/ask?conversation=4")));
+    // Exactly what the host built, byte for byte — the host is the one
+    // that knows a URL which opens it.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://console.test/ask?conversation=4"));
+  });
+
+  it("offers no Share when the host gave no link to share", async () => {
+    // The embedded widget's case: it used to copy `<host origin>/ask?...`,
+    // a page bolt-v2 does not have.
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: ONE_ITEM, next_cursor: null })));
+    renderPanel(fetchMock);
+    await screen.findByText("Weekend discount spike");
+
+    expect(screen.queryByRole("button", { name: /copy link to/i })).not.toBeInTheDocument();
+    // Delete is still there; only Share went.
+    expect(screen.getByRole("button", { name: /delete weekend discount spike/i })).toBeInTheDocument();
   });
 
   it("deletes only after a second, explicit confirmation click", async () => {

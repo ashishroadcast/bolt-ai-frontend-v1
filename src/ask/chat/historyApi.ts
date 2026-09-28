@@ -14,12 +14,12 @@ import type { GatewayClient } from "../http/gatewayClient.ts";
  * `./conversation.ts`'s own `MessageOut`/`ConversationDetailOut` already
  * use for the sibling `GET .../{id}` endpoint.
  *
- * `title` is `null` for every conversation today — `app.api.run`'s own
- * module docstring is explicit that title generation is out of that
- * task's scope ("No title generation ... Phase 5 adds to this row rather
- * than replacing it"), and `app.api.conversations` never sets one either.
- * `HistoryPanel.tsx` falls back to a formatted date when `title` is
- * `null` rather than rendering a blank row.
+ * `title` is the conversation's first question, trimmed to 80 characters,
+ * on an agent-service that derives one. Nothing ever stored a title, so an
+ * older agent-service sends `null` on every row — and a list of rows all
+ * headed by their own timestamp is exactly what people saw. There is no
+ * separate "first question" field to fall back to: this IS that field.
+ * Read it through `readableTitle` below, never raw.
  */
 export interface ConversationSummary {
   id: number;
@@ -27,6 +27,13 @@ export interface ConversationSummary {
   created_at: string;
   updated_at: string;
   message_count: number;
+  /**
+   * The latest question asked in the conversation. Absent (not `null`) on
+   * an agent-service that predates it, which is how `HistoryPanel.tsx`
+   * tells "no question to show" from "this server cannot say" and falls
+   * back to `last_assistant_snippet` only for the second.
+   */
+  preview?: string | null;
   last_assistant_snippet: string | null;
   /**
    * `complaint:<uuid>` or `chatwoot:<account>:<inbox>` for a run that
@@ -48,8 +55,48 @@ export interface ConversationSummary {
  */
 export type ConversationSource = "mine" | "channel" | "all";
 
+// Month and weekday names, and the words that ride along with a clock time.
+// Stripped before asking "is anything left?", so "20 Aug, 10:41 am" and
+// "Tue Sep 23 2026 10:41:00 GMT+0530" both reduce to nothing. Whole words
+// only: "Monthly" must not lose its "Mon".
+const DATE_WORDS =
+  /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|utc|gmt|ist)\b|(?:\b|(?<=\d))(?:am|pm)\b/gi;
+// Uppercase T and Z are ISO 8601's own separators ("2026-08-20T10:41:00Z").
+const DATE_PUNCTUATION = /[\d\s:/.,TZ+()-]/g;
+
+// Titles something other than a person wrote: a client's placeholder, or a
+// row numbered by its id. Each reads as a real heading and says nothing, so
+// a list of them is the timestamp problem again in different words.
+const DEFAULT_TITLES = /^(?:\(?untitled\)?|new|new chat|new conversation|new thread|untitled (?:chat|conversation|thread)|(?:chat|conversation|thread)(?: #?\d+)?)$/i;
+
+/**
+ * `title`, or `null` when there is no title worth heading a row with.
+ *
+ * Null for a blank title, and for one that is really a timestamp or a
+ * generated default. A date is not a name: the row already shows when the
+ * conversation happened on its own muted line, so a timestamp heading
+ * just says it twice and leaves every row looking the same. The caller
+ * picks the fallback; this only decides whether the title can be trusted.
+ */
+export function readableTitle(title: string | null | undefined): string | null {
+  const trimmed = title?.trim() ?? "";
+  if (trimmed === "") return null;
+  if (DEFAULT_TITLES.test(trimmed)) return null;
+  // A timestamp is digits, date words and punctuation, and nothing else.
+  // Requiring a digit keeps a title that is only a month or a day
+  // ("March", "Sunday") a title.
+  const residue = trimmed.replace(DATE_WORDS, "").replace(DATE_PUNCTUATION, "");
+  if (residue === "" && /\d/.test(trimmed)) return null;
+  return trimmed;
+}
+
 export interface ConversationListResult {
   items: ConversationSummary[];
+  /**
+   * Where the next, older page starts, or `null` when this page is the
+   * last. Opaque here: it happens to be the last row's id, but only the
+   * server decides that, so it is handed back verbatim as `?cursor=`.
+   */
   next_cursor: string | null;
 }
 
@@ -59,15 +106,22 @@ export interface ConversationListResult {
  * omitted search sends no param at all rather than `?search=`, so an
  * operator clearing the search box gets the same unfiltered list a first
  * load would.
+ *
+ * `cursor` is a previous page's `next_cursor`, and fetches the page after
+ * it. It pages whatever `search` and `source` select, so the caller must
+ * send the same two it got the cursor with — a cursor from the unfiltered
+ * list applied to a search would skip every match newer than it.
  */
 export function listConversations(
   client: GatewayClient,
   search?: string,
   source: ConversationSource = "mine",
+  cursor?: string | null,
 ): Promise<ConversationListResult> {
   const trimmed = search?.trim() ?? "";
   const params = new URLSearchParams();
   if (trimmed !== "") params.set("search", trimmed);
+  if (cursor !== undefined && cursor !== null) params.set("cursor", cursor);
   // Omitted for "mine" rather than sent explicitly: that is the server's
   // own default, and not sending it keeps this request byte-identical to
   // the one this console made before channels existed — so an older

@@ -1,0 +1,151 @@
+/*
+ * The screen's own states: History shown over the conversation, opening a
+ * linked conversation or failing to, and asking before a new conversation
+ * stops a running question.
+ *
+ * Separate from `Ask.module.css` because these are states of the screen
+ * rather than its layout, and they read the same Ask tokens that sheet
+ * sets on `.screen`, so they restyle with it.
+ */
+
+/* The conversation view — header, picker, thread, composer — as one unit
+   that History can hide without unmounting. `contents`, so its children
+   stay the flex items of `.screen` they were before this wrapper existed;
+   `[hidden]` restated, because an author `display` beats the browser's own
+   `[hidden] { display: none }`. */
+.view {
+  display: contents;
+}
+
+.view[hidden] {
+  display: none;
+}
+
+/* Around the composer, so the whole of it can be disabled at once while a
+   linked conversation loads. A fieldset is the one element whose
+   `disabled` reaches every control inside it, including ones this screen
+   does not render itself. Stripped to nothing, so the composer lays out
+   exactly as it did without it. */
+.composerGate {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  min-inline-size: 0;
+}
+
+/* "Opening conversation…" — where the thread is about to be. */
+.opening {
+  margin: auto;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  color: var(--fg-faint);
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto 24px;
+  padding: 18px 20px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  background: var(--surface-sunk);
+  text-align: center;
+}
+
+/* On its own, with no thread below it: the middle of the panel, where the
+   empty state would otherwise have been. */
+.noticeAlone {
+  margin: auto;
+}
+
+.noticeText {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.noticeActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* "A question is still running…" — directly under the header whose button
+   asked it, so the answer is next to the question, and above the thread so
+   the run it is about stays in view. */
+.confirm {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--signal-soft, var(--surface-sunk));
+}
+
+.confirmText {
+  margin: 0;
+  flex: 1 1 16rem;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--fg);
+}
+
+@container ask (max-width: 34rem) {
+  .confirm {
+    padding: 10px 14px;
+  }
+}
+
+.primaryBtn,
+.secondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.primaryBtn {
+  border: 0;
+  background: var(--ask-accent-gradient, var(--signal));
+  color: var(--on-signal);
+}
+
+.primaryBtn:hover {
+  filter: brightness(1.05);
+}
+
+.secondaryBtn {
+  border: 1px solid var(--rule);
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.secondaryBtn:hover {
+  background: var(--ground-lift);
+}
+
+.primaryBtn:focus-visible,
+.secondaryBtn:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+}

@@ -7,6 +7,7 @@ import { useChatContext } from "./ChatContext.tsx";
 import {
   deleteConversation,
   listConversations,
+  readableTitle,
   type ConversationSource,
   type ConversationSummary,
 } from "./historyApi.ts";
@@ -23,14 +24,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 // already gone.
 const STATUS_MS = 2500;
 
-function formatWhen(iso: string): string {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
+const UNTITLED = "Untitled conversation";
 
 /** A short time-of-day stamp for a row's own card — Figma shows "10:42 AM"
  * beside today's entries and a bare date ("Sep 4") beside older ones,
@@ -78,6 +72,31 @@ function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
 }
 
+/** Whether `preview` only restates `heading` — a one-question conversation's
+ * latest question is its first one, which the title already shows (up to
+ * the 80 characters agent-service trims it to). */
+function repeatsHeading(preview: string, heading: string): boolean {
+  const flat = (text: string) =>
+    text.replace(/\s+/g, " ").trim().replace(/(?:…|\.\.\.)$/, "").trim().toLowerCase();
+  const head = flat(heading);
+  return head !== "" && flat(preview).startsWith(head);
+}
+
+/**
+ * The row's one line of preview: the latest QUESTION, because that is what
+ * someone scanning their history recognises — they remember what they
+ * asked, not how the answer happened to open.
+ *
+ * `null` when that question is the heading again. The answer is shown only
+ * by an agent-service too old to send `preview` at all, where it is the one
+ * line of content the row has.
+ */
+function rowPreview(item: ConversationSummary, heading: string): string | null {
+  if (item.preview === undefined) return answerPreview(item.last_assistant_snippet);
+  const question = answerPreview(item.preview);
+  return question !== null && !repeatsHeading(question, heading) ? question : null;
+}
+
 /**
  * The channel a run arrived over, read from `external_ref`'s prefix
  * (`complaint:<uuid>`, `chatwoot:<account>:<inbox>`), or `null` for a
@@ -98,25 +117,18 @@ function channelLabel(externalRef: string | null | undefined): string | null {
   return "Channel";
 }
 
-/**
- * A working, honest permalink — not a decorative string. `AskRoute.tsx`
- * reads `?conversation=` on mount and calls `loadConversation` with it, so
- * pasting this link (once signed in) actually reopens this conversation
- * rather than landing on the plain Ask screen. There is no sharing
- * backend in this system (task brief) — this is deliberately *not* that:
- * it copies a link to a screen this same console already knows how to
- * open, nothing more.
- */
-function shareLink(id: number): string {
-  return `${window.location.origin}/ask?conversation=${id}`;
-}
-
 interface HistoryItemProps {
   item: ConversationSummary;
   bucket: string;
+  /** What Share copies, or `null` for no Share at all — see
+   * `HistoryPanelProps.conversationLink`. */
+  shareLink: string | null;
   onOpen: () => void;
   onDeleted: (id: number) => void;
   disabled: boolean;
+  /** The last attempt to open THIS row failed. Reported on the row, with
+   * a retry, rather than in place of the list — see `handleOpen`. */
+  openFailed: boolean;
 }
 
 /**
@@ -126,18 +138,17 @@ interface HistoryItemProps {
  * load-bearing actions this console already has and Figma's static frame
  * simply didn't need to depict.
  */
-function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemProps) {
+function HistoryItem({ item, bucket, shareLink, onOpen, onDeleted, disabled, openFailed }: HistoryItemProps) {
   const client = useAskClient();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const channel = channelLabel(item.external_ref);
-  // A channel run's `title` is null for the same reason every other
-  // conversation's is, so it would otherwise fall back to a bare date and
-  // a list of them would read as identical rows. Naming the channel is the
-  // one thing that distinguishes them from each other at a glance.
-  const heading = item.title ?? (channel === null ? formatWhen(item.created_at) : `${channel} · ${formatWhen(item.created_at)}`);
-  const preview = answerPreview(item.last_assistant_snippet);
+  // Never a date. The date has its own line below, and a heading that
+  // repeats it made every row read the same. An untitled channel run is
+  // named for its channel, which is what tells it apart from a typed one.
+  const heading = readableTitle(item.title) ?? channel ?? UNTITLED;
+  const preview = rowPreview(item, heading);
 
   async function handleConfirmDelete() {
     setDeleting(true);
@@ -168,64 +179,87 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
           <MessageCircle size={16} strokeWidth={2} />
         </span>
         <span className={styles.itemBody}>
-          <span className={styles.itemTitleRow}>
-            <span className={styles.itemHeading}>{heading}</span>
-            <span className={styles.itemStamp}>{formatStamp(item.created_at, bucket)}</span>
-          </span>
+          <span className={styles.itemHeading}>{heading}</span>
           {preview !== null && <span className={styles.itemSnippet}>{preview}</span>}
-          <span className={styles.itemCount}>
-            {item.message_count} message{item.message_count === 1 ? "" : "s"}
+          <span className={styles.itemMeta}>
+            <time dateTime={item.created_at}>{formatStamp(item.created_at, bucket)}</time>
+            <span aria-hidden="true">·</span>
+            <span>
+              {item.message_count} message{item.message_count === 1 ? "" : "s"}
+            </span>
           </span>
         </span>
       </button>
 
-      <div className={styles.rowActions}>
-        <CopyButton text={shareLink(item.id)} icon={Link2} idleLabel="Share" ariaLabel={`Copy link to ${heading}`} />
+      {/* Left out when there is nothing to put in it — a channel run in a
+          host that gave no link has neither Share nor Delete — rather than
+          padding the card with an empty strip. */}
+      {(shareLink !== null || channel === null) && (
+        <div className={styles.rowActions}>
+          {shareLink !== null && (
+            <CopyButton text={shareLink} icon={Link2} idleLabel="Share" ariaLabel={`Copy link to ${heading}`} />
+          )}
 
-        {/* No Delete on a channel run. `delete_conversation` keeps the
-            strict (tenant, user) scope that reading widens, so this button
-            could only ever 404 here — and it is refused on purpose: a
-            complaint transcript is what a refund decision rested on, and
-            this endpoint takes its code-execution artifacts with it.
-            Rendering a control whose only outcome is an error is worse
-            than not offering it. */}
-        {channel !== null ? null : confirming ? (
-          <span className={styles.confirmRow}>
-            <span className={styles.confirmText}>Delete this conversation?</span>
+          {/* No Delete on a channel run. `delete_conversation` keeps the
+              strict (tenant, user) scope that reading widens, so this button
+              could only ever 404 here — and it is refused on purpose: a
+              complaint transcript is what a refund decision rested on, and
+              this endpoint takes its code-execution artifacts with it.
+              Rendering a control whose only outcome is an error is worse
+              than not offering it. */}
+          {channel !== null ? null : confirming ? (
+            <span className={styles.confirmRow}>
+              <span className={styles.confirmText}>Delete this conversation?</span>
+              <button
+                type="button"
+                className={styles.confirmBtn}
+                onClick={() => void handleConfirmDelete()}
+                disabled={deleting}
+                aria-label="Confirm delete"
+              >
+                {deleting ? "Deleting…" : "Confirm"}
+              </button>
+              <button
+                type="button"
+                className={styles.cancelBtn}
+                onClick={() => setConfirming(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
             <button
               type="button"
-              className={styles.confirmBtn}
-              onClick={() => void handleConfirmDelete()}
-              disabled={deleting}
-              aria-label="Confirm delete"
+              className={styles.rowAction}
+              onClick={() => setConfirming(true)}
+              aria-label={`Delete ${heading}`}
             >
-              {deleting ? "Deleting…" : "Confirm"}
+              <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
+              <span>Delete</span>
             </button>
-            <button
-              type="button"
-              className={styles.cancelBtn}
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className={styles.rowAction}
-            onClick={() => setConfirming(true)}
-            aria-label={`Delete ${heading}`}
-          >
-            <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
-            <span>Delete</span>
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {deleteError !== null && (
         <p role="alert" className={styles.rowError}>
           {deleteError}
+        </p>
+      )}
+
+      {openFailed && (
+        <p role="alert" className={styles.rowError}>
+          <span>Couldn't open this conversation.</span>
+          <button
+            type="button"
+            className={styles.retryBtn}
+            onClick={onOpen}
+            disabled={disabled}
+            aria-label={`Retry opening ${heading}`}
+          >
+            Retry
+          </button>
         </p>
       )}
     </li>
@@ -234,8 +268,8 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
 
 /**
  * Past conversations, grouped by when they happened: a searchable list,
- * each row showing its own heading, a readable one-line preview of the
- * answer and how many messages it holds; clicking one reopens it via
+ * each row showing the question that started it, the latest question
+ * asked in it, and when and how long it was; clicking one reopens it via
  * `ChatContext.loadConversation` and dismisses the panel.
  *
  * **A full-panel view, not a drawer.** It used to be a `position: fixed`
@@ -249,48 +283,86 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
  * **The preview is cleaned up, not merely truncated** — see
  * `answerPreview.ts`. An analytics answer's own text is routinely a
  * pipe-delimited table, and a row of it read as an unbroken wall of pipes
- * and dashes.
+ * and dashes; an older agent-service still sends only that answer.
  *
- * **Heading falls back to a formatted date, and this is a real gap.**
- * `ConversationSummary` carries `title` (always `null` — nothing in
- * `agent-service` generates one) and the last *assistant* snippet, but
- * never the question that started the conversation, so the title a reader
- * actually wants is not in this endpoint's response at all. Fetching each
- * conversation's detail to recover it would be one request per visible row
- * on every keystroke of the search box. So this shows when the
- * conversation happened rather than inventing a question from data it does
- * not have — the fix belongs in `ConversationSummaryOut`.
+ * **The heading is never a date.** It used to fall back to one, because
+ * `title` was always `null`, and every row then read as its own timestamp
+ * over a line of answer — nothing to recognise a conversation by. The
+ * title is now the first question (agent-service derives it); when a row
+ * has none that `readableTitle` trusts, it says "Untitled conversation"
+ * rather than printing the date a second time. When it happened sits on
+ * its own muted line, with the message count.
  */
 export interface HistoryPanelProps {
+  /** The panel's element id — what the History button's `aria-controls`
+   * names, so the control and the region it opens are tied together. */
+  id?: string;
   /** Returns to the conversation screen. Called on Escape, on the back
    * arrow, and once a conversation has actually opened. */
   onClose: () => void;
   onMinimize?: () => void;
+  /**
+   * A link that reopens a conversation, for Share to copy. Omitted, rows
+   * offer no Share.
+   *
+   * The host's to build, because only the host knows a URL that opens one.
+   * This used to build `<origin>/ask?conversation=<id>` itself — right in
+   * the console, whose Ask route reads that parameter, and a dead link
+   * everywhere else: embedded in bolt-v2 it pointed at a page the host
+   * app does not have. There is no sharing backend (task brief); this only
+   * ever copies a link to a screen the host already knows how to open.
+   */
+  conversationLink?: (conversationId: number) => string;
+  /**
+   * The footer's "Start a new conversation". Omitted, it clears the thread
+   * and closes the panel itself. `Ask.tsx` passes one so this button asks
+   * first while a question is still running, exactly as the header's does
+   * — a second way to the same action must not be the one that skips the
+   * question.
+   */
+  onStartNew?: () => void;
 }
 
-export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
+export function HistoryPanel({ id, onClose, onMinimize, conversationLink, onStartNew }: HistoryPanelProps) {
   const client = useAskClient();
   const { loadConversation, activeConversationId, clearConversation } = useChatContext();
   const [searchInput, setSearchInput] = useState("");
   const [source, setSource] = useState<ConversationSource>("mine");
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const [openFailedId, setOpenFailedId] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const isFirstRun = useRef(true);
   const searchRef = useRef<HTMLInputElement>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Which list is on screen, so "Load older" pages THAT list. The live
+  // search box is the wrong source: during the debounce it already holds
+  // the next search while the rows (and the cursor) still belong to the
+  // last one. `generation` goes up the moment a new list is asked for, and
+  // an older page that lands after that is dropped rather than appended to
+  // rows it does not belong to.
+  const generation = useRef(0);
+  const shownList = useRef<{ search: string; source: ConversationSource; generation: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const delay = isFirstRun.current ? 0 : SEARCH_DEBOUNCE_MS;
     isFirstRun.current = false;
+    generation.current += 1;
+    const thisGeneration = generation.current;
 
     const timer = setTimeout(() => {
       listConversations(client, searchInput, source)
         .then((result) => {
           if (cancelled) return;
+          shownList.current = { search: searchInput, source, generation: thisGeneration };
           setItems(result.items);
+          setNextCursor(result.next_cursor);
+          setLoadMoreError(null);
           setError(null);
         })
         .catch((err: unknown) => {
@@ -314,7 +386,38 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   function handleSourceChange(next: ConversationSource) {
     if (next === source) return;
     setItems(null);
+    setNextCursor(null);
     setSource(next);
+  }
+
+  /**
+   * The next, older page of the list on screen, appended below it.
+   *
+   * The server pages 20 at a time and says where the next page starts;
+   * this used to ignore that, so anything older than the 20 most recent
+   * conversations was unreachable except by guessing a search term.
+   */
+  async function handleLoadMore() {
+    const list = shownList.current;
+    if (list === null || nextCursor === null) return;
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const result = await listConversations(client, list.search, list.source, nextCursor);
+      if (generation.current !== list.generation) return;
+      setItems((prev) => {
+        // Pages cannot overlap while the cursor is an id (`id < cursor`),
+        // but the cursor is the server's to define, and two rows with one
+        // key would make React quietly render only one of them.
+        const seen = new Set((prev ?? []).map((it) => it.id));
+        return [...(prev ?? []), ...result.items.filter((it) => !seen.has(it.id))];
+      });
+      setNextCursor(result.next_cursor);
+    } catch {
+      if (generation.current === list.generation) setLoadMoreError("Couldn't load older conversations.");
+    } finally {
+      setLoadingMore(false);
+    }
   }
 
   useEffect(() => () => clearTimeout(statusTimer.current), []);
@@ -333,13 +436,20 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  /**
+   * A failure is the row's, not the list's. It used to go through `error`,
+   * which replaces the whole list — so one conversation deleted in another
+   * tab, or one dropped request, took every other row off screen with it
+   * and left nothing to click but the back arrow.
+   */
   async function handleOpen(id: number) {
     setOpeningId(id);
+    setOpenFailedId(null);
     try {
       await loadConversation(id);
       onClose();
-    } catch (err) {
-      setError(errorMessage(err));
+    } catch {
+      setOpenFailedId(id);
     } finally {
       setOpeningId(null);
     }
@@ -357,6 +467,10 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   }
 
   function handleStartNew() {
+    if (onStartNew !== undefined) {
+      onStartNew();
+      return;
+    }
     clearConversation();
     onClose();
   }
@@ -364,7 +478,7 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   const groups = items !== null ? groupByDate(items) : [];
 
   return (
-    <div className={styles.panel} role="region" aria-label="Conversation history">
+    <div id={id} className={styles.panel} role="region" aria-label="Conversation history">
       <div className={styles.head}>
         <button type="button" className={styles.back} onClick={onClose} aria-label="Back to conversation">
           <ArrowLeft size={20} strokeWidth={2} aria-hidden="true" />
@@ -453,14 +567,33 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
                     key={item.id}
                     item={item}
                     bucket={bucket}
+                    shareLink={conversationLink?.(item.id) ?? null}
                     onOpen={() => void handleOpen(item.id)}
                     onDeleted={handleDeleted}
                     disabled={openingId !== null}
+                    openFailed={openFailedId === item.id}
                   />
                 ))}
               </ul>
             </div>
           ))}
+        {error === null && items !== null && nextCursor !== null && (
+          <div className={styles.loadMore}>
+            {loadMoreError !== null && (
+              <p role="alert" className={styles.error}>
+                {loadMoreError}
+              </p>
+            )}
+            <button
+              type="button"
+              className={styles.loadMoreBtn}
+              onClick={() => void handleLoadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading…" : "Load older conversations"}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className={styles.footer}>

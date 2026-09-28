@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
 import { ChatProvider, useChatContext } from "../ask/chat/ChatContext.tsx";
@@ -20,8 +20,8 @@ function sseResponse(frames: string[]): Response {
   return new Response(body, { status: 200 });
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
 
 function urlOf(input: RequestInfo | URL): string {
@@ -45,9 +45,16 @@ function routeFetch(
     runFrames?: string[];
     historyItems?: unknown[];
     conversationDetail?: Record<number, unknown>;
+    /** A status to answer `GET .../{id}` with instead of a detail — 404
+     * for a deleted conversation or a colleague's. */
+    conversationStatus?: Record<number, number>;
+    /** Answers `GET .../{id}` whenever the test says so, for asserting what
+     * is on screen while it is still loading. */
+    conversationGate?: Promise<void>;
   } = {},
 ) {
-  const { runFrames = [], historyItems = [], conversationDetail = {} } = options;
+  const { runFrames = [], historyItems = [], conversationDetail = {}, conversationStatus = {}, conversationGate } =
+    options;
   return vi.fn((input: RequestInfo | URL) => {
     const url = urlOf(input);
     if (url.endsWith("/agent/agents")) {
@@ -55,9 +62,11 @@ function routeFetch(
     }
     if (url.includes("/agent/conversations/")) {
       const id = Number(url.split("/agent/conversations/")[1]);
+      const status = conversationStatus[id];
+      if (status !== undefined) return Promise.resolve(jsonResponse({ detail: "conversation not found" }, status));
       const detail = conversationDetail[id];
       if (detail === undefined) return Promise.reject(new Error(`no fixture for conversation ${id}`));
-      return Promise.resolve(jsonResponse(detail));
+      return (conversationGate ?? Promise.resolve()).then(() => jsonResponse(detail));
     }
     if (url.includes("/agent/conversations")) {
       return Promise.resolve(jsonResponse({ items: historyItems, next_cursor: null }));
@@ -77,11 +86,15 @@ function routeFetch(
  * plain `render()` even while that bug was live, because React only runs
  * its dev-only mount -> cleanup -> remount simulation under StrictMode.
  */
+/** The router's current query string, as the last render saw it. */
+let currentSearch = "";
+
 function renderAskRoute(fetchMock: ReturnType<typeof vi.fn>, initialEntry = "/ask") {
   vi.stubGlobal("fetch", fetchMock);
   const chatRef: { current: UseChatResult | null } = { current: null };
   function Capture() {
     chatRef.current = useChatContext();
+    currentSearch = useLocation().search;
     return null;
   }
   render(
@@ -288,6 +301,136 @@ describe("AskRoute", () => {
     expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
   });
 
+  // --- starting over while a question is still running ---------------------
+
+  /** A run that stays open until the test ends it, so there is a question
+   * "still running" to ask about. */
+  function runningFetch() {
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const encoder = new TextEncoder();
+    const base = routeFetch();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (!urlOf(input).endsWith("/agent/run")) return base(input);
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          controller = c;
+          c.enqueue(encoder.encode(`data: {"type":"start","messageId":"msg-1"}\n\n`));
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    });
+    function finish() {
+      controller?.enqueue(encoder.encode(`data: {"type":"finish"}\n\ndata: [DONE]\n\n`));
+      controller?.close();
+    }
+    return { fetchMock, finish };
+  }
+
+  const STILL_RUNNING = "A question is still running. Stop it and start a new conversation?";
+
+  async function startRunning(chatRef: { current: UseChatResult | null }) {
+    act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales Analyst" }));
+    await waitFor(() => expect(screen.getByText("top items last week")).toBeInTheDocument());
+    expect(chatRef.current!.status).toBe("streaming");
+  }
+
+  it("asks before a new conversation stops a question that is still running", async () => {
+    const { fetchMock } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+
+    // Asked, in the page; nothing thrown away yet, and the safe answer is
+    // the one Enter would give.
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Keep waiting" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Start a new conversation$/ })).toHaveFocus();
+
+    // Escape is "Keep waiting" too.
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Keep waiting" }), { key: "Escape" });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop and start new" }));
+
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
+    expect(screen.queryByText("top items last week")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("asks the same from History's own Start a new conversation", async () => {
+    const { fetchMock } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
+
+    expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep waiting" })).toHaveFocus();
+  });
+
+  it("puts the question away by itself once the run has finished", async () => {
+    const { fetchMock, finish } = runningFetch();
+    const chatRef = renderAskRoute(fetchMock);
+    await startRunning(chatRef);
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    expect(screen.getByRole("alertdialog", { name: STILL_RUNNING })).toBeInTheDocument();
+
+    await act(async () => finish());
+
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    // Nothing was stopped or cleared on its behalf.
+    expect(screen.getByText("top items last week")).toBeInTheDocument();
+    // With the run over, starting again needs no question.
+    fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
+  });
+
+  it("keeps the History button's aria-expanded and aria-controls in step with the panel, and returns focus to it", () => {
+    renderAskRoute(routeFetch());
+    const button = screen.getByRole("button", { name: /^Conversation history$/ });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(button);
+
+    // The same element, still in the document. It used to be unmounted
+    // with the rest of the conversation view, so a reference to it kept
+    // reading "false" while the panel was open.
+    const region = screen.getByRole("region", { name: "Conversation history" });
+    expect(button.isConnected).toBe(true);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(region.id).not.toBe("");
+    expect(button).toHaveAttribute("aria-controls", region.id);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
+
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveFocus();
+  });
+
+  it("keeps a half-typed question through a trip into History and back", async () => {
+    renderAskRoute(routeFetch());
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "fuel spend by dep" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
+
+    expect(screen.getByLabelText("Ask a question")).toHaveValue("fuel spend by dep");
+  });
+
   it("starts a fresh conversation from the thread it is showing", async () => {
     const chatRef = renderAskRoute(
       routeFetch({
@@ -300,6 +443,9 @@ describe("AskRoute", () => {
 
     act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales Analyst" }));
     await waitFor(() => expect(screen.getByText("top items last week")).toBeInTheDocument());
+    // Finished first: while it is still running, starting over asks (see
+    // the "still running" tests below). This one is about the plain case.
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
 
     fireEvent.click(screen.getByRole("button", { name: /^Start a new conversation$/ }));
 
@@ -347,5 +493,125 @@ describe("AskRoute", () => {
     });
     expect(screen.getByText("top items last week")).toBeInTheDocument();
     expect(screen.queryByText("Hi! Welcome to AI Assistant")).not.toBeInTheDocument();
+  });
+
+  // --- opening a linked conversation (`?conversation=`) --------------------
+
+  const LINKED = {
+    id: 9,
+    title: "Top items last week",
+    created_at: "2026-08-20T10:41:00Z",
+    updated_at: "2026-08-20T10:41:05Z",
+    messages: [
+      {
+        id: 1,
+        role: "user",
+        content: "top items last week",
+        agent_id: null,
+        trace_id: null,
+        meta: null,
+        created_at: "2026-08-20T10:41:00Z",
+      },
+      {
+        id: 2,
+        role: "assistant",
+        content: "Chicken Biryani led the week.",
+        agent_id: 3,
+        trace_id: null,
+        meta: null,
+        created_at: "2026-08-20T10:41:05Z",
+      },
+    ],
+  };
+
+  const NOT_OPENED = /That conversation couldn't be opened\. It may have been deleted, or it belongs to someone else\./;
+
+  it("says so when a linked conversation can't be opened, and offers a new one instead", async () => {
+    // A deleted conversation and a colleague's both answer 404 — the server
+    // will not say which, on purpose.
+    renderAskRoute(routeFetch({ conversationStatus: { 9: 404 } }), "/ask?conversation=9");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(NOT_OPENED);
+    // Asking again would get the same 404.
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Hi! Welcome to AI Assistant")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Start a new conversation" }));
+
+    expect(screen.getByText("Hi! Welcome to AI Assistant")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("offers to try again when the link failed for a reason that may pass", async () => {
+    let fail = true;
+    const base = routeFetch({ conversationDetail: { 9: LINKED } });
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      if (fail && urlOf(input).includes("/agent/conversations/9")) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return base(input);
+    });
+    renderAskRoute(fetchMock, "/ask?conversation=9");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(NOT_OPENED);
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows it is opening a linked conversation, with nothing to click that the conversation would overwrite", async () => {
+    let arrive = () => {};
+    const gate = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const fetchMock = routeFetch({ conversationDetail: { 9: LINKED }, conversationGate: gate });
+    renderAskRoute(fetchMock, "/ask?conversation=9");
+
+    expect(screen.getByRole("status")).toHaveTextContent("Opening conversation…");
+    // The quick actions are not on screen to be clicked, and the composer
+    // is shut: a question sent now would be wiped when the thread arrives.
+    expect(screen.queryByRole("button", { name: /create dashboard/i })).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) => urlOf(call[0]).endsWith("/agent/agents"))).toBe(true);
+    });
+    expect(screen.getByLabelText("Ask a question").closest("fieldset")).toBeDisabled();
+
+    await act(async () => arrive());
+
+    await waitFor(() => expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument());
+    expect(screen.queryByText("Opening conversation…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Ask a question").closest("fieldset")).not.toBeDisabled();
+  });
+
+  it("gives History's Share the console's own /ask link, the one this route opens", async () => {
+    const { messages: _messages, ...summary } = LINKED;
+    renderAskRoute(routeFetch({ historyItems: [{ ...summary, message_count: 2, last_assistant_snippet: null }] }));
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      fireEvent.click(await screen.findByRole("button", { name: /copy link to top items last week/i }));
+
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/ask?conversation=9`),
+      );
+    } finally {
+      // @ts-expect-error -- test-only teardown of a property defined above
+      delete navigator.clipboard;
+    }
+  });
+
+  it("opens a linked conversation once, and takes the link out of the URL so a return does not reopen it", async () => {
+    const fetchMock = routeFetch({ conversationDetail: { 9: LINKED } });
+    renderAskRoute(fetchMock, "/ask?conversation=9&tab=x");
+
+    await waitFor(() => expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument());
+    // Once, even under StrictMode's double effects.
+    expect(fetchMock.mock.calls.filter((call) => urlOf(call[0]).endsWith("/agent/conversations/9"))).toHaveLength(1);
+    // Only its own parameter goes.
+    expect(currentSearch).toBe("?tab=x");
   });
 });
