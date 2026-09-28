@@ -32,6 +32,39 @@ at the moment the widget is first shown keeps ~1.1MB out of the entry chunk.
 
 `index.d.ts` is the contract; everything settable is documented there.
 
+## Credential refresh
+
+```ts
+ask.refreshCredential = () => tokenRefresh.forceRefresh(); // resolves the new token, or null
+```
+
+Called after a 401, and when `credentialProvider` returns null. The refused
+request is retried once, reading `credentialProvider` again. A 403 (a missing
+permission) is never retried and never reaches `onUnauthorized`; the widget
+says "You don't have permission to use the assistant" itself.
+
+## Conversation and organisation
+
+```ts
+// Restore the open conversation after a reload.
+ask.addEventListener('conversationchange', (e) => store.save(e.detail.conversationId));
+ask.setAttribute('conversation-id', String(store.load()));
+
+ask.newConversation(); // same as the header's "New conversation"
+ask.clearAgent();      // disarm a slash-armed agent, keep the thread
+ask.resetScope();      // after an organisation switch: drop thread, agents, settings
+```
+
+Changing the `organisation-id` attribute calls `resetScope()` by itself. A
+host that uses `organisationProvider` must call it, since the element cannot
+see a function's answer change.
+
+## Keyboard
+
+Keys typed into the widget's own fields stop at its shadow root, so host
+shortcuts (Ctrl+Z, arrow keys) do not fire while someone is typing a question.
+Escape still reaches the host.
+
 ## Sizing
 
 The element is `display: block` and fills what the host gives it. Ask's
@@ -49,7 +82,11 @@ same families.
 
 ## Releasing
 
-1. `npm run build:element` in `bolt-ai-frontend/`
+1. `npm run build:element` in `bolt-ai-frontend/`. The bundle sends its
+   version as `X-Ask-Element-Version`, which agent-service's CORS
+   `allow_headers` must list. Until it does, the widget's first request fails
+   its preflight and is re-sent without the header, so it works but logs one
+   CORS error per page load.
 2. Bump `version` here — consumers pin it, and this is what replaced the
    hand-bumped `?v=` cache-buster the raw asset needed.
 3. Publish, or `npm run pack:element` for a tarball.

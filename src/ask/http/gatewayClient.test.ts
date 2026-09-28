@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentApiError, GatewayClient } from "./gatewayClient.ts";
-import { GatewayError, UnauthorizedError } from "./errors.ts";
+import {
+  describeHttpError,
+  ForbiddenError,
+  GatewayError,
+  NetworkError,
+  parseRetryAfter,
+  RateLimitedError,
+  UnauthorizedError,
+} from "./errors.ts";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -82,7 +90,11 @@ describe("GatewayClient", () => {
       onUnauthorized,
     });
 
-    await expect(client.agentFetch("/agent/me")).rejects.toThrow(UnauthorizedError);
+    const error = await client.agentFetch("/agent/me").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(UnauthorizedError);
+    // Not "your session ended": a 401 is also agent-service failing to reach
+    // bolt-v2, or a credential mid-refresh, and neither is fixed by signing in.
+    expect((error as UnauthorizedError).message).toBe("Couldn't verify your sign-in.");
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
@@ -96,16 +108,29 @@ describe("GatewayClient", () => {
   // for it is unrecoverable — sign in, first call 403s, straight back to
   // sign-in — which is exactly what happened the first time this console was
   // pointed at a real bolt-v2 token. A 403 must surface as "not permitted"
-  // while the session stays intact.
-  it("keeps the session on a 403 from /agent/* and throws instead", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ error: "forbidden" }, 403));
+  // while the session stays intact — and as its own class, so nothing that
+  // reacts to an `UnauthorizedError` can mistake one for the other.
+  it("keeps the session on a 403 from /agent/* and throws ForbiddenError instead", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "missing permission agent.chat.use/can_create" }, 403),
+    );
     const client = new GatewayClient({
       baseUrl: "http://gateway.test",
       getToken: () => "jwt-without-permission",
       onUnauthorized,
     });
 
-    await expect(client.agentFetch("/agent/me")).rejects.toThrow(UnauthorizedError);
+    const error = await client.agentFetch("/agent/me").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(error).not.toBeInstanceOf(UnauthorizedError);
+    const forbidden = error as ForbiddenError;
+    expect(forbidden.message).toBe(
+      "You don't have permission to use the assistant. Ask an admin for access.",
+    );
+    // The server's wording is for whoever fixes it — kept, not printed.
+    expect(forbidden.detail).toBe("missing permission agent.chat.use/can_create");
+    expect(forbidden.retryable).toBe(false);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
@@ -216,7 +241,7 @@ describe("GatewayClient", () => {
     const structuredDetailError = (await client
       .agentFetch("/agent/admin/promote")
       .catch((e: unknown) => e)) as AgentApiError;
-    expect(structuredDetailError.message).toBe("Request to /agent/admin/promote failed (422).");
+    expect(structuredDetailError.message).toBe("The assistant couldn't accept that request.");
   });
 
   it("does not throw a second error when the non-2xx body is not JSON at all", async () => {
@@ -236,7 +261,8 @@ describe("GatewayClient", () => {
     expect(error).toBeInstanceOf(AgentApiError);
     expect(error.status).toBe(502);
     expect(error.body).toBeUndefined();
-    expect(error.message).toBe("Request to /agent/me failed (502).");
+    expect(error.message).toBe("The assistant is temporarily unavailable.");
+    expect(error.retryable).toBe(true);
   });
 
   // Task: "an expired access token triggers exactly one refresh and the
@@ -286,7 +312,7 @@ describe("GatewayClient", () => {
         refresh,
       });
 
-      await expect(client.agentFetch("/agent/me")).rejects.toThrow(UnauthorizedError);
+      await expect(client.agentFetch("/agent/me")).rejects.toThrow(ForbiddenError);
       expect(refresh).not.toHaveBeenCalled();
       // Nor is the session cleared — see the 403 test above. A new token would
       // not help, but neither would making the operator fetch one.
@@ -311,10 +337,11 @@ describe("GatewayClient", () => {
 
       // Let all three requests reach their 401 and call runRefresh()
       // before the refresh itself resolves — this is what proves they
-      // shared one in-flight promise instead of each firing their own.
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      // shared one in-flight promise instead of each firing their own. A
+      // macrotask, not a counted run of microtasks: how many awaits sit
+      // between a call and its refresh is an implementation detail.
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(refresh).toHaveBeenCalledTimes(1);
 
       fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
@@ -345,6 +372,290 @@ describe("GatewayClient", () => {
       // proves the failed refresh did not get resent to the server.
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+/**
+ * The credential recovery an embedded host needs: bolt-v2's token is
+ * short-lived and refreshes under the widget, so a 401 or a momentary null
+ * is usually a refresh in flight, not a signed-out user.
+ */
+describe("GatewayClient credential recovery", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function streamOk(): Response {
+    return new Response('data: {"type":"start","messageId":"1"}', { status: 200 });
+  }
+
+  it("refreshes once and re-sends /agent/run after a 401 — the refused run never started", async () => {
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce("stale").mockReturnValue("fresh");
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    const onUnauthorized = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(streamOk());
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken, onUnauthorized, refresh });
+
+    const response = await client.agentStream("/agent/run", { method: "POST", body: '{"message":"hi"}' });
+
+    expect(response.ok).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retried = fetchMock.mock.calls[1]![0] as Request;
+    expect(retried.headers.get("Authorization")).toBe("Bearer fresh");
+    expect(await retried.text()).toBe('{"message":"hi"}');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("gives up on /agent/run after one retry that 401s again", async () => {
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    const onUnauthorized = vi.fn();
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 401 })));
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized, refresh });
+
+    await expect(client.agentStream("/agent/run", { method: "POST", body: "{}" })).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a refresh that throws as one that failed", async () => {
+    const refresh = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error("refresh endpoint down"));
+    const onUnauthorized = vi.fn();
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized, refresh });
+
+    await expect(client.agentFetch("/agent/me")).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits and asks again when the credential provider comes back null for a moment", async () => {
+    vi.useFakeTimers();
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce(null).mockReturnValue("late");
+    const onUnauthorized = vi.fn();
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      getToken,
+      onUnauthorized,
+      credentialRetryDelayMs: 1_000,
+    });
+    const seen: boolean[] = [];
+    client.subscribeReconnecting(() => seen.push(client.reconnecting));
+
+    const call = client.agentFetch("/agent/me");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.reconnecting).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(call).resolves.toEqual({ ok: true });
+
+    expect(client.reconnecting).toBe(false);
+    expect(seen).toEqual([true, false]);
+    expect((fetchMock.mock.calls[0]![0] as Request).headers.get("Authorization")).toBe("Bearer late");
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("asks the host's refresh first when there is one, instead of waiting", async () => {
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce(null).mockReturnValue("renewed");
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      getToken,
+      onUnauthorized: () => {},
+      refresh,
+      // Long enough that the test would time out if it were waited out.
+      credentialRetryDelayMs: 60_000,
+    });
+
+    await expect(client.agentFetch("/agent/me")).resolves.toEqual({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("still refuses, once, when the second read is null too", async () => {
+    vi.useFakeTimers();
+    const onUnauthorized = vi.fn();
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      // A provider that throws is a provider with nothing to give.
+      getToken: () => {
+        throw new Error("store not ready");
+      },
+      onUnauthorized,
+      credentialRetryDelayMs: 500,
+    });
+
+    const call = client.agentFetch("/agent/me").catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(500);
+
+    const error = await call;
+    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(client.reconnecting).toBe(false);
+  });
+});
+
+/**
+ * Every error's `.message` is shown as it is — the failed-run card, the
+ * picker's error bar and the answer form print it with nothing around it —
+ * so each of these pins the sentence a reader actually sees, and whether a
+ * Retry could help.
+ */
+describe("GatewayClient error messages", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const client = new GatewayClient({
+    baseUrl: "http://gateway.test",
+    getToken: () => "the-jwt",
+    onUnauthorized: () => {},
+  });
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function failure(response: Response | Error): Promise<GatewayError> {
+    if (response instanceof Error) fetchMock.mockRejectedValue(response);
+    else fetchMock.mockResolvedValue(response);
+    const error = await client.agentFetch("/agent/agents").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GatewayError);
+    return error as GatewayError;
+  }
+
+  it("turns the browser's 'Failed to fetch' into words, keeping the original as the cause", async () => {
+    const raw = new TypeError("Failed to fetch");
+    const error = await failure(raw);
+
+    expect(error).toBeInstanceOf(NetworkError);
+    expect(error.message).toBe(
+      "Couldn't reach the assistant. It may be restarting; try again in a moment.",
+    );
+    expect(error.retryable).toBe(true);
+    expect(error.cause).toBe(raw);
+  });
+
+  it("lets a cancellation through untouched, so a stopped run is not reported as a failure", async () => {
+    fetchMock.mockRejectedValue(new DOMException("The operation was aborted.", "AbortError"));
+
+    const error = await client.agentStream("/agent/run", { method: "POST", body: "{}" }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(DOMException);
+    expect((error as DOMException).name).toBe("AbortError");
+  });
+
+  it("names the wait on a 429, from Retry-After", async () => {
+    const error = await failure(
+      new Response(null, { status: 429, headers: { "Retry-After": "12" } }),
+    );
+
+    expect(error).toBeInstanceOf(RateLimitedError);
+    expect(error.message).toBe("Too many questions at once. Try again in 12 seconds.");
+    expect((error as RateLimitedError).retryAfterSeconds).toBe(12);
+    expect(error.retryable).toBe(true);
+  });
+
+  it("says 'in a minute' on a 429 that gives no Retry-After", async () => {
+    const error = await failure(jsonResponse({ detail: "rate limited" }, 429));
+    expect(error.message).toBe("Too many questions at once. Try again in a minute.");
+  });
+
+  it("points a spent usage limit (402) at an admin, and offers no retry", async () => {
+    const error = await failure(jsonResponse({ detail: "credits exhausted" }, 402));
+    expect(error.message).toBe("The assistant's usage limit has been reached. Ask an admin.");
+    expect(error.retryable).toBe(false);
+  });
+
+  it.each([502, 503, 504])("calls a %i temporary, whatever the proxy's page says", async (status) => {
+    const error = await failure(new Response("<html>Bad Gateway</html>", { status }));
+    expect(error.message).toBe("The assistant is temporarily unavailable.");
+    expect(error.retryable).toBe(true);
+  });
+
+  it("keeps agent-service's own words on a 5xx that carries them", async () => {
+    // A proxy's 502 is an HTML page; one with a JSON `detail` is agent-service
+    // explaining itself — the Models screen shows "OpenRouter is unreachable".
+    const error = await failure(jsonResponse({ detail: "OpenRouter is unreachable" }, 502));
+    expect(error.message).toBe("OpenRouter is unreachable");
+    expect(error.retryable).toBe(true);
+  });
+
+  it("joins FastAPI's validation messages into one readable line", async () => {
+    const error = await failure(
+      jsonResponse(
+        {
+          detail: [
+            { loc: ["body", "message"], msg: "Field required", type: "missing" },
+            { loc: ["body", "session_id"], msg: "Input should be a valid integer.", type: "int_parsing" },
+          ],
+        },
+        422,
+      ),
+    );
+
+    expect(error.message).toBe(
+      "Field required (message); Input should be a valid integer (session_id).",
+    );
+    expect(error.retryable).toBe(false);
+  });
+
+  it("gives a 500 with no usable detail a sentence, not a status code", async () => {
+    const error = await failure(new Response("Internal Server Error", { status: 500 }));
+    expect(error.message).toBe("Something went wrong on the assistant's side. Try again in a moment.");
+    expect(error.retryable).toBe(true);
+  });
+
+  it("says so when a 2xx body is not JSON, instead of leaking a SyntaxError", async () => {
+    const error = await failure(new Response("<html>login</html>", { status: 200 }));
+    expect(error.message).toBe("The assistant sent a reply this screen couldn't read.");
+  });
+
+  it("uses the same words on the streaming path", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+    const error = await client.agentStream("/agent/run", { method: "POST", body: "{}" }).catch((e: unknown) => e);
+    expect((error as GatewayError).message).toBe("The assistant is temporarily unavailable.");
+  });
+
+  it("treats a gateway 403 on graphql as a ForbiddenError too", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ error: "forbidden" }, 403));
+    await expect(client.graphql("query { me { id } }")).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("parseRetryAfter", () => {
+  it("reads both forms RFC 9110 allows", () => {
+    expect(parseRetryAfter("30")).toBe(30);
+    expect(parseRetryAfter(null)).toBeNull();
+    expect(parseRetryAfter("soon")).toBeNull();
+    const inTwoMinutes = new Date(Date.now() + 120_000).toUTCString();
+    expect(parseRetryAfter(inTwoMinutes)).toBeGreaterThan(100);
+  });
+
+  it("rounds a long wait up to minutes", () => {
+    expect(describeHttpError(429, undefined, "540").message).toBe(
+      "Too many questions at once. Try again in 9 minutes.",
+    );
+    expect(describeHttpError(429, undefined, "1").message).toBe(
+      "Too many questions at once. Try again in 1 second.",
+    );
   });
 });
 
@@ -417,5 +728,84 @@ describe("GatewayClient context headers", () => {
     });
     const request = fetchMock.mock.calls[0]![0] as Request;
     expect(request.headers.get("Organisation")).toBe("explicit");
+  });
+});
+
+/**
+ * `X-Ask-Element-Version` — and the fallback that keeps a custom header from
+ * taking the widget down before agent-service's CORS has been taught it.
+ */
+describe("GatewayClient element version header", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function widgetClient() {
+    return new GatewayClient({
+      baseUrl: "http://gw",
+      getToken: () => "t",
+      onUnauthorized: () => {},
+      elementVersion: "1.3.3",
+    });
+  }
+
+  const sent = (call: number) =>
+    (fetchMock.mock.calls[call]![0] as Request).headers.get("X-Ask-Element-Version");
+
+  it("names the widget build on every request", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await client.agentFetch("/agent/agents");
+    await client.agentStream("/agent/run", { method: "POST", body: "{}" });
+
+    expect(sent(0)).toBe("1.3.3");
+    expect(sent(1)).toBe("1.3.3");
+  });
+
+  it("sends nothing from a client with no version — the console", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true }));
+    await new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized: () => {} }).agentFetch(
+      "/agent/agents",
+    );
+    expect(sent(0)).toBeNull();
+  });
+
+  it("drops the header, and re-sends without it, when the first request carrying it gets no answer", async () => {
+    // What a refused CORS preflight looks like from inside the page.
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await expect(client.agentFetch("/agent/agents")).resolves.toEqual({ ok: true });
+    await client.agentFetch("/agent/settings/ask");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sent(0)).toBe("1.3.3");
+    expect(sent(1)).toBeNull();
+    expect(sent(2)).toBeNull();
+  });
+
+  it("keeps it once it has been answered — a later outage is just an outage", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await client.agentFetch("/agent/agents");
+    await expect(client.agentFetch("/agent/agents")).rejects.toBeInstanceOf(NetworkError);
+    await client.agentFetch("/agent/agents");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sent(2)).toBe("1.3.3");
   });
 });

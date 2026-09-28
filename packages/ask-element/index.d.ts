@@ -25,6 +25,12 @@
  */
 export type AskCredentialProvider = () => string | null | Promise<string | null>;
 
+/**
+ * Gets the host a fresh credential after a refusal: resolves with it, or with
+ * `null` when there is none. See `BoltAiAskElement.refreshCredential`.
+ */
+export type AskCredentialRefresher = () => Promise<string | null>;
+
 /** Answers "whose data?", per request. Sent as the `Organisation` header. */
 export type AskOrganisationProvider = () => string | null | undefined;
 
@@ -146,20 +152,33 @@ export interface AskHostContext {
  * | Attribute            | Meaning                                            |
  * | -------------------- | -------------------------------------------------- |
  * | `base-url`           | agent-service's origin. Required.                  |
- * | `setup-agents-href`  | Where to configure agents.                         |
+ * | `setup-agents-href`  | Where to configure agents. Opens in a new tab.     |
  * | `organisation-id`    | One fixed organisation, for a host with no store.  |
  * | `client-type`        | The `X-Client` header. Defaults to `web`.          |
  * | `empty-title`        | Empty-state heading.                               |
  * | `empty-body`         | Empty-state paragraph.                             |
  * | `placeholder`        | Composer placeholder.                              |
+ * | `conversation-id`    | A conversation to open (a positive integer id).    |
  *
  * All are observed, so setting or changing one after mount re-renders. The
  * three copy attributes exist so a host in another domain can change what
  * the widget says without a build of its own — the defaults talk about a
- * restaurant business, which is wrong beside a fleet.
+ * restaurant business, which is wrong beside a fleet. Changing only copy
+ * never refetches anything.
  *
  * `organisationProvider` wins over `organisation-id`: a host with a live
- * store should not have to keep an attribute in sync with it.
+ * store should not have to keep an attribute in sync with it. **Changing
+ * `organisation-id` resets the widget** — see {@link BoltAiAskElement.resetScope}.
+ *
+ * `conversation-id` only ever OPENS: set it (at mount, or later) and that
+ * conversation loads; set it to the id already on screen, or remove it, and
+ * nothing happens. Pair it with the `conversationchange` event to restore the
+ * panel after a reload:
+ *
+ *     ask.addEventListener('conversationchange', (e) =>
+ *       sessionStorage.setItem('askConversation', String(e.detail.conversationId ?? '')));
+ *     const saved = sessionStorage.getItem('askConversation');
+ *     if (saved) ask.setAttribute('conversation-id', saved);
  */
 export declare class BoltAiAskElement extends HTMLElement {
   /**
@@ -186,7 +205,27 @@ export declare class BoltAiAskElement extends HTMLElement {
   organisationProvider: AskOrganisationProvider | null;
 
   /**
-   * Called when agent-service refuses the credential (401/403).
+   * Asks the host for a new credential. Resolve with it, or with `null` when
+   * there is none.
+   *
+   * Called when agent-service answers a request with 401, after which that
+   * request is retried exactly once, and when `credentialProvider` returns
+   * null, before the widget gives up. The retry reads `credentialProvider`
+   * again, so the new credential must be what it returns from then on. A 403
+   * is never retried — a missing permission is not fixed by a newer token.
+   *
+   * bolt-v2: `ask.refreshCredential = () => tokenRefresh.forceRefresh();`
+   *
+   * Left `null` (the default), a 401 is final and goes to `onUnauthorized`.
+   * Read at call time, so it can be assigned at any point.
+   */
+  refreshCredential: AskCredentialRefresher | null;
+
+  /**
+   * Called when agent-service refuses the credential with a 401 that
+   * `refreshCredential` did not recover, or when there is no credential at
+   * all. **Never for a 403** — that is a missing permission, which the widget
+   * reports itself ("You don't have permission to use the assistant").
    *
    * Note what this should usually NOT do: sign the user out of the host app.
    * A refusal here means the AI credential is wrong, which is a different
@@ -254,6 +293,77 @@ export declare class BoltAiAskElement extends HTMLElement {
    * console warning. Only the latest request is remembered.
    */
   selectAgent(slashCommand: string): boolean;
+
+  /**
+   * Starts a fresh conversation: clears the thread and disarms any armed
+   * agent, exactly like the header's "New conversation" button. Nothing is
+   * deleted — the old conversation stays in History. Fires
+   * `conversationchange` with `null` if a conversation was open.
+   */
+  newConversation(): void;
+
+  /**
+   * Disarms the agent a slash command or {@link selectAgent} armed, so the
+   * next question routes itself. The thread is kept. Also cancels a
+   * `selectAgent()` still waiting for the agent list.
+   */
+  clearAgent(): void;
+
+  /**
+   * Throws away everything held for the current organisation — the thread,
+   * the armed agent, the agent list, the tenant's settings — and starts again
+   * as if newly mounted. Call it when the host switches organisation without
+   * a page reload. `organisationProvider` is read per request, so the next
+   * request already goes out as the new organisation, but what was fetched
+   * before the switch stays on screen until this is called.
+   *
+   * Changing the `organisation-id` attribute does this by itself. A
+   * `conversation-id` set before the reset is not reopened (it belonged to
+   * the old organisation); set it after. Fires `conversationchange` with
+   * `null` if a conversation was open.
+   */
+  resetScope(): void;
+
+  addEventListener<K extends keyof BoltAiAskElementEventMap>(
+    type: K,
+    listener: (this: BoltAiAskElement, event: BoltAiAskElementEventMap[K]) => unknown,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ): void;
+  removeEventListener<K extends keyof BoltAiAskElementEventMap>(
+    type: K,
+    listener: (this: BoltAiAskElement, event: BoltAiAskElementEventMap[K]) => unknown,
+    options?: boolean | EventListenerOptions,
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ): void;
+}
+
+/** `detail` of the `conversationchange` event. */
+export interface AskConversationChangeDetail {
+  /** The conversation now on screen, or `null` for an empty thread. */
+  conversationId: number | null;
+}
+
+/**
+ * Events the element fires on itself. Both bubble and are composed.
+ *
+ * `conversationchange` fires when the conversation on screen changes: one
+ * opened from History or `conversation-id`, a fresh thread's first answer
+ * (which is when the server names its id), `newConversation()`,
+ * `resetScope()`, or a `conversation-id` that could not be opened (`null`,
+ * so a host restoring a deleted conversation forgets it). Not on mount — an
+ * empty thread is where every widget starts.
+ */
+export interface BoltAiAskElementEventMap extends HTMLElementEventMap {
+  conversationchange: CustomEvent<AskConversationChangeDetail>;
 }
 
 /**

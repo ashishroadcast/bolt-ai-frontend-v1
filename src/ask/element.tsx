@@ -1,13 +1,16 @@
+import { useEffect, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { Ask } from "./Ask.tsx";
+import { AskScreen } from "./Ask.tsx";
 import { AgentSelectionChannel } from "./chat/agentSelection.ts";
-import type {
-  AskConfig,
-  AskDashboardDraft,
-  AskHostContext,
-  AskWidgetDraft,
-  FormDraftHandoff,
-  WidgetDraftAck,
+import { ChatProvider, useChatContext } from "./chat/ChatContext.tsx";
+import {
+  AskProvider,
+  type AskConfig,
+  type AskDashboardDraft,
+  type AskHostContext,
+  type AskWidgetDraft,
+  type FormDraftHandoff,
+  type WidgetDraftAck,
 } from "./config.tsx";
 
 /**
@@ -51,6 +54,13 @@ import type {
  * `base-url` and `setup-agents-href` are also readable as attributes, since
  * those genuinely are strings and a plain-HTML host should not need script
  * to set them.
+ *
+ * **The conversation is the widget's, but the host can steer it.** It can
+ * open one (`conversation-id`), hear which one is open (the
+ * `conversationchange` event — enough to restore the panel after a reload),
+ * start a fresh one (`newConversation()`), let go of an armed agent
+ * (`clearAgent()`), and throw the whole scope away when it switches
+ * organisation (`resetScope()`, or a changed `organisation-id`).
  */
 
 // Replaced at build time with the bundle's own CSS. See the
@@ -60,11 +70,116 @@ import type {
 const SHADOW_STYLES = "__ASK_SHADOW_STYLES__";
 
 type CredentialProvider = () => string | null | Promise<string | null>;
+type CredentialRefresher = () => Promise<string | null>;
 type OrganisationProvider = () => string | null | undefined;
 type DashboardDraftHandler = (draft: AskDashboardDraft) => void;
 type WidgetDraftHandler = (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
 type EditWidgetHandler = (widgetId: string) => void;
 type HostContextProvider = () => AskHostContext | null;
+
+/**
+ * The key events kept inside the widget while someone is typing in it. All
+ * three, because a host shortcut may listen on any of them.
+ */
+const CONTAINED_KEY_EVENTS = ["keydown", "keyup", "keypress"] as const;
+
+/** A field that takes typing: where Ctrl+Z, arrows and letters belong to
+ * the text, not to whatever page the widget sits on. */
+function isEditable(target: EventTarget | undefined): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+  // `isContentEditable` where the platform computes it; the attribute walk
+  // for where it does not (jsdom), and for an editable ancestor.
+  return (
+    target.isContentEditable ||
+    target.closest('[contenteditable]:not([contenteditable="false"])') !== null
+  );
+}
+
+/** What the element can do to the conversation from outside the React tree. */
+interface ChatHandle {
+  newConversation: () => void;
+  clearAgent: () => void;
+}
+
+/** A conversation the host asked for, through `conversation-id` or a
+ * reconnect. A fresh object per request, so asking for the same id twice is
+ * still two requests. */
+interface OpenRequest {
+  conversationId: number;
+}
+
+interface ElementBridgeProps {
+  /** Hands the element its way into the chat; the returned function takes
+   * it back, and only if it is still the current one. */
+  connect: (handle: ChatHandle) => () => void;
+  /** Every change of the conversation on screen, after the first render. */
+  onConversationChange: (conversationId: number | null) => void;
+  open: OpenRequest | null;
+  /** The request has been taken, so a later render must not repeat it. */
+  onOpenTaken: () => void;
+  onOpenFailed: (conversationId: number) => void;
+}
+
+/**
+ * The element's way into `ChatContext`. Renders nothing.
+ *
+ * The element is a class outside React, and the conversation lives in a hook
+ * inside it, so anything the host does to the conversation — open one, start
+ * a new one, disarm an agent — and anything it is told about it, has to
+ * cross here. Mounted by `render()` beside `AskScreen`, inside the same
+ * `ChatProvider`, rather than inside `Ask.tsx`: this is the element's
+ * business, not the screen's, and a React host has `useChatContext` itself.
+ */
+function ElementBridge({
+  connect,
+  onConversationChange,
+  open,
+  onOpenTaken,
+  onOpenFailed,
+}: ElementBridgeProps): null {
+  const { activeConversationId, clearConversation, setSelectedAgent, loadConversation } =
+    useChatContext();
+  const activeRef = useRef(activeConversationId);
+  activeRef.current = activeConversationId;
+  const reportedRef = useRef(activeConversationId);
+
+  useEffect(
+    () => connect({ newConversation: clearConversation, clearAgent: () => setSelectedAgent(null) }),
+    [connect, clearConversation, setSelectedAgent],
+  );
+
+  // Changes only. The first value is the empty thread every mount starts
+  // with, which is not news; a reset that clears a conversation reports that
+  // itself (`resetScope`).
+  useEffect(() => {
+    if (reportedRef.current === activeConversationId) return;
+    reportedRef.current = activeConversationId;
+    onConversationChange(activeConversationId);
+  }, [activeConversationId, onConversationChange]);
+
+  useEffect(() => {
+    if (open === null) return;
+    onOpenTaken();
+    if (open.conversationId === activeRef.current) return;
+    loadConversation(open.conversationId).catch(() => onOpenFailed(open.conversationId));
+  }, [open, loadConversation, onOpenTaken, onOpenFailed]);
+
+  return null;
+}
+
+/** A positive integer id, or null for anything else (absent, empty, junk). */
+function parseConversationId(value: string | null): number | null {
+  if (value === null || !/^\d+$/.test(value.trim())) return null;
+  const id = Number(value.trim());
+  return Number.isSafeInteger(id) && id > 0 ? id : null;
+}
 
 export class BoltAiAskElement extends HTMLElement {
   /** Observed so a host that sets them late (or changes them) still works. */
@@ -80,6 +195,9 @@ export class BoltAiAskElement extends HTMLElement {
       "empty-title",
       "empty-body",
       "placeholder",
+      // Opens that conversation — on mount, or whenever it changes. See
+      // `conversationchange` for the other direction.
+      "conversation-id",
     ];
   }
 
@@ -90,9 +208,30 @@ export class BoltAiAskElement extends HTMLElement {
    * Set by the host. Read on EVERY request rather than captured, so a token
    * refresh or an organisation switch on the host takes effect on the next
    * call without the element being touched.
+   *
+   * The next CALL — not what is already on screen. After an organisation
+   * switch the old thread, agent list and armed agent are still showing, so
+   * a host that switches through `organisationProvider` also calls
+   * `resetScope()`.
    */
   credentialProvider: CredentialProvider | null = null;
   organisationProvider: OrganisationProvider | null = null;
+  /**
+   * Called when agent-service answers 401, or when `credentialProvider`
+   * returned null, so the host can get a new credential: resolve with it, or
+   * with null if there is none. The refused request is then retried once,
+   * reading `credentialProvider` again — so the new credential must be what
+   * `credentialProvider` returns from then on. bolt-v2 wires its
+   * `tokenRefresh.forceRefresh()` here.
+   *
+   * Read at call time like the two above. Left null, a 401 is final and goes
+   * to `onUnauthorized`.
+   */
+  refreshCredential: CredentialRefresher | null = null;
+  /**
+   * A 401 that `refreshCredential` did not recover, or no credential at all.
+   * Never a 403: that is a missing permission, and the widget says so itself.
+   */
   onUnauthorized: (() => void) | null = null;
 
   /**
@@ -211,6 +350,105 @@ export class BoltAiAskElement extends HTMLElement {
     return this.agentSelection.request(slashCommand);
   }
 
+  /**
+   * Starts a fresh conversation: clears the thread and disarms any armed
+   * agent — exactly the header's "New conversation" button. Nothing is
+   * deleted; the old conversation stays in History.
+   *
+   * Callable before the widget has mounted, where it cancels a
+   * `conversation-id` still waiting to open.
+   */
+  newConversation(): void {
+    this.openRequest = null;
+    this.chat?.newConversation();
+  }
+
+  /**
+   * Disarms the agent a slash command or `selectAgent()` armed, so the next
+   * question routes itself again. The thread is kept. Also forgets a
+   * `selectAgent()` still waiting on the agent list, so it cannot re-arm one
+   * a moment later.
+   */
+  clearAgent(): void {
+    this.agentSelection.cancel();
+    this.chat?.clearAgent();
+  }
+
+  /**
+   * Throws away everything the widget holds for the current organisation —
+   * the thread, the armed agent, the agent list, the tenant's settings — and
+   * starts again as if newly mounted. For a host that switches organisation
+   * without reloading the page: the credential and organisation providers are
+   * read per request, so the NEXT request already goes out as the new
+   * organisation, but what was fetched and said before the switch stays on
+   * screen until this is called.
+   *
+   * Changing the `organisation-id` attribute does this by itself. A host that
+   * uses `organisationProvider` instead has to call it, because a function's
+   * answer changing is not something the element can see.
+   *
+   * A `conversation-id` set before the reset belonged to the old scope and is
+   * not reopened; set it after, if the new scope should open one.
+   */
+  resetScope(): void {
+    this.scope += 1;
+    this.openRequest = null;
+    this.chat = null;
+    this.setConversation(null);
+    this.render();
+  }
+
+  /** Remounts the React tree when bumped — see `resetScope`. */
+  private scope = 0;
+  /** A conversation to open once the tree is up to take it. */
+  private openRequest: OpenRequest | null = null;
+  private chat: ChatHandle | null = null;
+  /** The conversation on screen, as last announced by `conversationchange`. */
+  private conversationIdValue: number | null = null;
+
+  private readonly connectChat = (handle: ChatHandle): (() => void) => {
+    this.chat = handle;
+    return () => {
+      if (this.chat === handle) this.chat = null;
+    };
+  };
+
+  private readonly reportConversation = (conversationId: number | null): void => {
+    this.setConversation(conversationId);
+  };
+
+  private readonly takeOpenRequest = (): void => {
+    this.openRequest = null;
+  };
+
+  private readonly openFailed = (conversationId: number): void => {
+    console.warn(`<bolt-ai-ask> couldn't open conversation ${conversationId}; starting empty instead.`);
+    // Announced even if nothing was open before: the host asked for this id,
+    // most likely from its own storage, and should stop asking for it.
+    this.setConversation(null, true);
+  };
+
+  /**
+   * Fires `conversationchange` — `detail: { conversationId: number | null }`
+   * — when the conversation on screen changes: one opened from History or
+   * `conversation-id`, a fresh thread's first answer naming its new id, a
+   * new conversation (null), a reset (null), or a `conversation-id` that
+   * could not be opened (null). Composed and bubbling, so a host can listen
+   * on the element or above it. What a host stores to restore the panel
+   * after a reload, by setting `conversation-id` back.
+   */
+  private setConversation(conversationId: number | null, force = false): void {
+    if (!force && conversationId === this.conversationIdValue) return;
+    this.conversationIdValue = conversationId;
+    this.dispatchEvent(
+      new CustomEvent("conversationchange", {
+        detail: { conversationId },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+  }
+
   get onClose(): (() => void) | null {
     return this.onCloseValue;
   }
@@ -255,10 +493,31 @@ export class BoltAiAskElement extends HTMLElement {
   private baseUrlValue: string | null = null;
   private setupAgentsHrefValue: string | null = null;
 
+  /**
+   * Stops a key typed into one of the widget's own fields at the shadow root.
+   *
+   * Shadow DOM retargets a key event to the `<bolt-ai-ask>` host on its way
+   * out, so to the page every key typed in the composer looks like a key
+   * pressed on the element — and bolt-v2's dashboard builder answered
+   * Ctrl+Z / Ctrl+Y typed in the composer by undoing the canvas, and its
+   * scheduler moved on arrow keys. Stopping propagation here keeps typing
+   * where it happened. React still sees it: its listener sits on the mount
+   * point, below this one.
+   *
+   * Never `preventDefault` — the field must still receive the key — and never
+   * Escape, which a host legitimately uses to close the panel. Keys pressed
+   * anywhere else in the widget (a button, the thread) still reach the host.
+   */
+  private readonly containTyping = (event: Event): void => {
+    if ((event as KeyboardEvent).key === "Escape") return;
+    if (isEditable(event.composedPath()[0])) event.stopPropagation();
+  };
+
   connectedCallback(): void {
     if (this.root !== null) return;
 
     const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+    for (const type of CONTAINED_KEY_EVENTS) shadow.addEventListener(type, this.containTyping);
 
     // `adoptedStyleSheets` where available: one parsed sheet shared by every
     // instance of the tag, rather than a fresh `<style>` parsed per element.
@@ -282,6 +541,11 @@ export class BoltAiAskElement extends HTMLElement {
     shadow.appendChild(this.mountPoint);
 
     this.root = createRoot(this.mountPoint);
+    // A reconnect (the host moving this node) is a fresh React tree, so the
+    // conversation that was on screen would otherwise be lost. Reopen it.
+    if (this.conversationIdValue !== null) {
+      this.openRequest = { conversationId: this.conversationIdValue };
+    }
     this.render();
     this.warnIfUnconfigured();
   }
@@ -292,14 +556,43 @@ export class BoltAiAskElement extends HTMLElement {
     // removing this node mid-render (Angular does, on route change) is
     // exactly that case.
     const root = this.root;
+    const mountPoint = this.mountPoint;
     this.root = null;
     this.mountPoint = null;
     if (root !== null) {
-      queueMicrotask(() => root.unmount());
+      queueMicrotask(() => {
+        root.unmount();
+        // The shadow root is reused on reconnect, and `connectedCallback`
+        // appends a fresh mount point. Left behind, the old one — empty but
+        // still `height: 100%` — pushed the new tree below the element's
+        // visible area, now that a reconnect is expected to bring the
+        // conversation back.
+        mountPoint?.remove();
+      });
+    }
+    // The shadow root outlives a disconnect (a reconnect reuses it), so the
+    // listeners are removed here and added again in `connectedCallback`.
+    for (const type of CONTAINED_KEY_EVENTS) {
+      this.shadowRoot?.removeEventListener(type, this.containTyping);
     }
   }
 
-  attributeChangedCallback(): void {
+  attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
+    if (oldValue === newValue) return;
+    if (name === "conversation-id") {
+      // Only ever OPENS. Removing the attribute, or a host echoing back the
+      // id it was just told about, changes nothing on screen; starting fresh
+      // is `newConversation()`.
+      const conversationId = parseConversationId(newValue);
+      if (conversationId !== null) this.openRequest = { conversationId };
+    }
+    // A different organisation is a different tenant's agents, settings and
+    // threads. Before, the switch reached the next request but left the old
+    // thread, list and armed agent on screen.
+    if (name === "organisation-id" && this.root !== null) {
+      this.resetScope();
+      return;
+    }
     if (this.root !== null) this.render();
   }
 
@@ -372,6 +665,10 @@ export class BoltAiAskElement extends HTMLElement {
         // attribute is for a plain-HTML host that has one fixed
         // organisation.
         getOrganisationId: () => this.organisationProvider?.() ?? staticOrganisationId,
+        // Always present, answering null when the host set nothing — which
+        // Ask reads exactly as "no refresh", so the host can assign this at
+        // any time without a re-render.
+        refreshCredential: () => this.refreshCredential?.() ?? Promise.resolve(null),
         onUnauthorized: () => this.onUnauthorized?.(),
       },
     };
@@ -384,10 +681,28 @@ export class BoltAiAskElement extends HTMLElement {
     // property setter and `attributeChangedCallback` calls back in here, so
     // the first configuration is what actually mounts Ask.
     if (config === null) return;
-    // A fresh config object per render is fine and intended: `AskProvider`
-    // memoises on its identity, so this is how a changed attribute reaches
-    // the client at all.
-    this.root.render(<Ask config={config} />);
+    // A fresh config object per render is fine and intended: it is how a
+    // changed attribute reaches the components that read it. It does not
+    // reach the HTTP client — `AskProvider` rebuilds that only when
+    // `base-url` or `client-type` changes, so a copy attribute swapped by the
+    // host's routing never refetches the agent list.
+    // `<Ask>`'s own tree, spelled out so `ElementBridge` can sit inside the
+    // `ChatProvider` beside the screen. Keyed on the scope, so `resetScope()`
+    // remounts all of it: a new client, a new agent list, an empty thread.
+    this.root.render(
+      <AskProvider key={this.scope} config={config}>
+        <ChatProvider>
+          <ElementBridge
+            connect={this.connectChat}
+            onConversationChange={this.reportConversation}
+            open={this.openRequest}
+            onOpenTaken={this.takeOpenRequest}
+            onOpenFailed={this.openFailed}
+          />
+          <AskScreen />
+        </ChatProvider>
+      </AskProvider>,
+    );
   }
 
   /**

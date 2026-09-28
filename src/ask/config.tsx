@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useMemo,
+  useRef,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import type { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import type { PhaseSegment } from "./chat/phaseTimeline.ts";
 import { GatewayClient } from "./http/gatewayClient.ts";
@@ -272,10 +279,32 @@ export interface AskAuthProvider {
    */
   getOrganisationId?: () => string | null | undefined;
   /**
-   * Called when agent-service refuses the credential. The host decides what
-   * that means — the console signs out; an app with its own session may
-   * refresh and carry on. Ask does not decide, because only the host knows
-   * where the credential came from.
+   * Asks the host for a new credential, resolving with it — or `null` when
+   * it has none to give.
+   *
+   * Consulted in two places: when agent-service answers a request with 401,
+   * after which that request is retried exactly once; and when
+   * `getCredential` returns null, before Ask gives up on the request. The
+   * retry reads the credential through `getCredential` again, so the new one
+   * must be what `getCredential` returns from then on — this hook's result
+   * says whether there is one, not what to send.
+   *
+   * A retry of `POST /agent/run` is safe: a 401 is answered before the run
+   * starts. A 403 is never retried — a missing permission is not fixed by a
+   * newer token.
+   *
+   * Optional. Omitted, a 401 is final and goes to `onUnauthorized`.
+   */
+  refreshCredential?: () => Promise<string | null>;
+  /**
+   * Called when agent-service refuses the credential with a 401 that
+   * `refreshCredential` did not recover, or when there is no credential at
+   * all. The host decides what that means — the console signs out; an app
+   * with its own session may refresh and carry on. Ask does not decide,
+   * because only the host knows where the credential came from.
+   *
+   * Never called for a 403. That is a missing permission, which the widget
+   * shows as one, and signing anyone out over it would only loop.
    */
   onUnauthorized?: () => void;
 }
@@ -337,13 +366,44 @@ const AskContext = createContext<AskContextValue | null>(null);
 const NO_INSPECTOR: AskInspector = { selection: null, selectPhase: () => {} };
 
 /**
+ * How long to wait before asking the host a second time when its credential
+ * provider hands back null. About the length of a token refresh — the case
+ * this exists for — and short enough that a host that really has no
+ * credential hears so almost at once.
+ */
+const CREDENTIAL_RETRY_DELAY_MS = 1_000;
+
+/**
+ * The widget's own version, defined only by the element build
+ * (`vite.element.config.ts` replaces the identifier with
+ * `packages/ask-element/package.json`'s `version`). Everywhere else — the
+ * console, the tests, a React host bundling `src/ask` itself — the name is
+ * never defined, `typeof` says so without throwing, and no
+ * `X-Ask-Element-Version` header is sent.
+ */
+declare const __ASK_ELEMENT_VERSION__: string | undefined;
+const ELEMENT_VERSION =
+  typeof __ASK_ELEMENT_VERSION__ === "string" ? __ASK_ELEMENT_VERSION__ : undefined;
+
+/**
  * Wraps Ask (or any part of it) with its configuration.
  *
- * Builds the HTTP client here, once per config, rather than at module scope.
- * A module-level singleton would mean two Ask instances on one page sharing
- * one base URL and one credential — fine in the console, wrong in a host that
- * embeds Ask twice, and exactly the kind of hidden global this extraction
- * exists to remove.
+ * Builds the HTTP client here rather than at module scope. A module-level
+ * singleton would mean two Ask instances on one page sharing one base URL and
+ * one credential — fine in the console, wrong in a host that embeds Ask
+ * twice, and exactly the kind of hidden global this extraction exists to
+ * remove.
+ *
+ * **One client per backend, not per config object.** The client is rebuilt
+ * only when `baseUrl` or `clientType` changes — the two things it is actually
+ * made from. It used to be rebuilt whenever the config's identity changed,
+ * and the custom element builds a fresh config on every attribute change, so
+ * bolt-v2 entering or leaving a dashboards screen (which swaps the copy
+ * attributes) threw the client away. Everything keyed on the client — the
+ * agent list, the disclosure settings — fetched again, and the picker flashed
+ * "Finding agents…" over a change of placeholder text. Copy and callbacks
+ * still reach their readers through the context value, which follows the
+ * config; they just no longer take the client with them.
  */
 export function AskProvider({
   config,
@@ -352,21 +412,34 @@ export function AskProvider({
   config: AskConfig;
   children: ReactNode;
 }) {
-  const value = useMemo<AskContextValue>(() => {
-    const { auth } = config;
-    return {
-      config,
-      client: new GatewayClient({
+  // Every callback the client holds reads the CURRENT `auth` through this
+  // ref, so a host that hands over a new auth object — or the element's
+  // fresh config — is honoured on the next request without a new client.
+  const authRef = useRef(config.auth);
+  authRef.current = config.auth;
+
+  const client = useMemo(
+    () =>
+      new GatewayClient({
         baseUrl: config.baseUrl,
-        getToken: () => auth.getCredential(),
-        getOrganisationId: () => auth.getOrganisationId?.() ?? null,
+        getToken: () => authRef.current.getCredential(),
+        getOrganisationId: () => authRef.current.getOrganisationId?.() ?? null,
         clientType: config.clientType,
+        refresh: async () => {
+          const refreshCredential = authRef.current.refreshCredential;
+          if (refreshCredential === undefined) return false;
+          return (await refreshCredential()) !== null;
+        },
+        credentialRetryDelayMs: CREDENTIAL_RETRY_DELAY_MS,
+        elementVersion: ELEMENT_VERSION,
         // A no-op default rather than a required callback: a host that has
         // nothing to do about a refusal should not have to say so.
-        onUnauthorized: () => auth.onUnauthorized?.(),
+        onUnauthorized: () => authRef.current.onUnauthorized?.(),
       }),
-    };
-  }, [config]);
+    [config.baseUrl, config.clientType],
+  );
+
+  const value = useMemo<AskContextValue>(() => ({ config, client }), [config, client]);
 
   return <AskContext.Provider value={value}>{children}</AskContext.Provider>;
 }
@@ -392,6 +465,16 @@ export function useAskConfig(): AskConfig {
  */
 export function useAskClient(): GatewayClient {
   return useAskContext().client;
+}
+
+/**
+ * Whether a request is waiting for the host to hand back a credential — the
+ * second or so after a credential provider returned null. The agent picker
+ * says "Reconnecting to your account…" for it rather than looking stuck.
+ */
+export function useAskReconnecting(): boolean {
+  const client = useAskClient();
+  return useSyncExternalStore(client.subscribeReconnecting, () => client.reconnecting);
 }
 
 /**

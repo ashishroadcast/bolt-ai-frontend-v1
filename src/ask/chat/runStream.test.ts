@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GatewayError, UnauthorizedError } from "../http/errors.ts";
+import { ForbiddenError, GatewayError, UnauthorizedError } from "../http/errors.ts";
 import { AgentApiError } from "../http/gatewayClient.ts";
 import { isMissingConversationError, isUnknownAgentError, postAgentRun } from "./runStream.ts";
 import { GatewayClient } from "../http/gatewayClient.ts";
@@ -129,7 +129,7 @@ describe("postAgentRun", () => {
 
     expect(error).toBeInstanceOf(AgentApiError);
     const apiError = error as AgentApiError;
-    expect(apiError.message).toBe("Asking failed (504).");
+    expect(apiError.message).toBe("The assistant is temporarily unavailable.");
     expect(apiError.body).toBeUndefined();
   });
 
@@ -176,14 +176,15 @@ describe("postAgentRun", () => {
     expect(unauthorized).toHaveBeenCalled();
   });
 
-  it("signs out on a 403 without retrying", async () => {
+  it("refuses a 403 without retrying and without signing out", async () => {
     // A permission the caller lacks is not granted by presenting the same
     // credential again. This was never retried even under tokens.
     fetchMock.mockResolvedValue(jsonErrorResponse({ detail: "forbidden" }, 403));
 
-    await expect(postAgentRun(client, { message: "hello" })).rejects.toBeInstanceOf(UnauthorizedError);
+    await expect(postAgentRun(client, { message: "hello" })).rejects.toBeInstanceOf(ForbiddenError);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(unauthorized).not.toHaveBeenCalled();
   });
 
 });

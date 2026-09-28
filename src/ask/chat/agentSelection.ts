@@ -55,6 +55,13 @@ export class AgentSelectionChannel {
     return this.pending;
   }
 
+  /** Forgets a request still waiting on the list — the element's
+   * `clearAgent()`, which must not be undone a moment later by a
+   * `selectAgent()` that had not landed yet. */
+  cancel(): void {
+    this.pending = null;
+  }
+
   /**
    * Attaches the thing that can actually arm an agent, and applies a waiting
    * request through it. Returns the detach function (an effect cleanup).

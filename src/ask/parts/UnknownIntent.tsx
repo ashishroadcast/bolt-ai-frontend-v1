@@ -14,13 +14,17 @@ interface UnknownIntentProps {
  * yet). Renders as an honest, still-on-paper sheet instead of crashing the
  * thread or silently dropping the answer — only this one attachment
  * couldn't be shown; the answer's own text still rendered.
+ *
+ * Worded for wherever Ask is mounted. It said "This console doesn't yet
+ * render…", which inside bolt-v2's panel names a console the reader has
+ * never seen. The intent name stays in the sub-label, for whoever has to
+ * work out which build is behind.
  */
 export function UnknownIntent({ intent }: UnknownIntentProps): ReactElement {
   return (
     <Sheet title="Unsupported response" subLabel={intent} icon={CircleHelp}>
       <p className={styles.message}>
-        This console doesn't yet render a &ldquo;{intent}&rdquo; result. The rest of the answer is
-        unaffected.
+        This part of the answer can&rsquo;t be shown here yet. The rest of the answer is unaffected.
       </p>
     </Sheet>
   );

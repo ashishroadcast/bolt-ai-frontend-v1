@@ -49,7 +49,14 @@ export {
   stringDetailMessage,
   type GatewayClientOptions,
 } from "./http/gatewayClient.ts";
-export { GatewayError, UnauthorizedError } from "./http/errors.ts";
+export {
+  describeHttpError,
+  ForbiddenError,
+  GatewayError,
+  NetworkError,
+  RateLimitedError,
+  UnauthorizedError,
+} from "./http/errors.ts";
 
 // Types a host may need to talk about what Ask reports. `PhaseSegment` in
 // particular is what `AskConfig.inspector` hands back, so a host that shows
