@@ -480,7 +480,24 @@ describe("toUIPart — data-dashboard-draft", () => {
   });
 
   it("renders as an empty draft rather than throwing when the part is unusable", () => {
-    expect(toUIPart("data-dashboard-draft", {}).data).toEqual({ draftId: "", name: "", widgets: [] });
+    expect(toUIPart("data-dashboard-draft", {}).data).toEqual({
+      draftId: "",
+      name: "Untitled view",
+      widgets: [],
+    });
+  });
+
+  it("keeps otherwise-valid widgets when the model forgot the view's name", () => {
+    const data = toUIPart("data-dashboard-draft", {
+      draftId: "d",
+      widgets: [{ metricKey: "eta.trips_completed", visualization: "kpi" }],
+    }).data as Record<string, unknown>;
+
+    expect(data).toEqual({
+      draftId: "d",
+      name: "Untitled view",
+      widgets: [{ metricKey: "eta.trips_completed", visualization: "kpi" }],
+    });
   });
 });
 

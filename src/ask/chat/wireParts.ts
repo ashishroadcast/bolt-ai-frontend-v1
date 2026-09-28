@@ -500,15 +500,22 @@ function adaptDraftWidget(raw: unknown): Record<string, unknown> | null {
  * out rather than taking the whole draft with it — same judgement as
  * `adaptFormDraft`, because a View missing one widget is still one the reader
  * can open and finish.
+ *
+ * A missing/blank `name` gets a placeholder rather than emptying `widgets`
+ * too. It used to: any run whose model forgot the view's name (the name and
+ * the widgets are independent fields on the wire — nothing stops one arriving
+ * without the other) came back with `widgets: []`, which reads as "no
+ * widgets the assistant could read" and hides "Open in builder" even though
+ * every widget parsed fine. The card can offer a widget list with no name;
+ * it cannot offer one with no widgets.
  */
 function adaptDashboardDraft(data: Record<string, unknown>): Record<string, unknown> {
   const widgets = (Array.isArray(data.widgets) ? data.widgets : [])
     .map(adaptDraftWidget)
     .filter((widget): widget is Record<string, unknown> => widget !== null);
-  if (!nonEmptyString(data.name)) return { draftId: "", name: "", widgets: [] };
   return {
     draftId: typeof data.draftId === "string" ? data.draftId : "",
-    name: data.name,
+    name: nonEmptyString(data.name) ? data.name : "Untitled view",
     ...(typeof data.description === "string" && data.description !== ""
       ? { description: data.description }
       : {}),
