@@ -37,6 +37,11 @@ export type AnswerBlock =
   | { kind: "list"; ordered: boolean; items: InlineSpan[][] };
 
 const BULLET = /^\s*[-*•]\s+(.*)$/;
+// `## Heading` and `---` are the two markdown habits models keep even when
+// asked for plain text. Both used to render literally: a heading as
+// "## What is a Geofence?", a rule as a line of hyphens.
+const HEADING = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+const RULE = /^\s{0,3}([-*_])(\s*\1){2,}\s*$/;
 const ORDERED = /^\s*\d{1,3}[.)]\s+(.*)$/;
 const BLANK = /^\s*$/;
 const BOLD = /\*\*(.+?)\*\*/g;
@@ -101,6 +106,24 @@ export function parseAnswer(raw: string): AnswerBlock[] {
   for (const line of raw.replace(/\r\n?/g, "\n").split("\n")) {
     if (BLANK.test(line)) {
       flush();
+      continue;
+    }
+
+    // Before the bullet test: `* * *` is a rule, not a bullet reading "* *".
+    // A rule only separates, so it closes the open block and draws nothing.
+    if (RULE.test(line)) {
+      flush();
+      continue;
+    }
+
+    // A heading is its own one-line block in bold, without its `#` marks:
+    // no heading element, because the answer sits inside a chat bubble whose
+    // own title is the only heading it should have.
+    const heading = HEADING.exec(line);
+    if (heading !== null) {
+      flush();
+      const spans = parseInline(heading[1]!).map((span) => ({ ...span, bold: true }));
+      blocks.push({ kind: "paragraph", lines: [spans] });
       continue;
     }
 

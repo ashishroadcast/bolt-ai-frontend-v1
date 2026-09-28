@@ -180,7 +180,7 @@ function AgentCard({ row, busy, error, onToggleActive, onAsk }: AgentCardProps) 
 
       {shared && (
         <p className={styles.sharedNote}>
-          Shared by a parent organisation. You can ask it; only its owner can change it.
+          Shared with this organisation. You can ask it; only the organisation that set it up can change it.
         </p>
       )}
 

@@ -24,6 +24,21 @@ describe("parseAnswer", () => {
     expect(textOf(blocks[1]!).join(" ")).not.toContain("- ");
   });
 
+  it("renders a markdown heading as its own bold line, without the # marks", () => {
+    const blocks = parseAnswer("## What is a Geofence?\nA geofence is a virtual boundary.");
+
+    expect(blocks.map((block) => block.kind)).toEqual(["paragraph", "paragraph"]);
+    expect(textOf(blocks[0]!)).toEqual(["What is a Geofence?"]);
+    expect(blocks[0]!.kind === "paragraph" && blocks[0]!.lines[0]!.every((s) => s.bold)).toBe(true);
+    expect(textOf(blocks[1]!)).toEqual(["A geofence is a virtual boundary."]);
+  });
+
+  it("treats a --- rule as a separator, never as text or a bullet", () => {
+    const blocks = parseAnswer("First part.\n---\n* * *\nSecond part.");
+
+    expect(blocks.map(textOf)).toEqual([["First part."], ["Second part."]]);
+  });
+
   it("splits on a blank line into separate paragraphs", () => {
     const blocks = parseAnswer("Bandra led the month.\n\nThat is a third of the total.");
 

@@ -19,9 +19,9 @@ export interface AgentSummary {
   name: string;
   description: string | null;
   is_active: boolean;
-  /** False for an agent a parent organisation shares with this one: it can
-   * be run here but only its owner can configure it. Absent from an older
-   * server, and then treated as owned. */
+  /** False for an agent another organisation set up and shares with this
+   * one: it can be run here but only its owner can configure it. Absent from
+   * an older server, and then treated as owned. */
   owned?: boolean;
 }
 
