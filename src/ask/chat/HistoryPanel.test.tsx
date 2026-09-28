@@ -53,7 +53,7 @@ describe("HistoryPanel", () => {
     delete navigator.clipboard;
   });
 
-  it("lists a past conversation's snippet, falling back to a formatted date for a null title", async () => {
+  it("heads an untitled conversation 'Untitled conversation', never its date, and keeps the date on its own line", async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         jsonResponse({
@@ -73,15 +73,83 @@ describe("HistoryPanel", () => {
     );
     renderPanel(fetchMock);
 
+    // An agent-service that sends no `preview` still gets the answer as
+    // the row's one line of content.
     await waitFor(() => {
       expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
     });
-    // The heading text is locale/timezone-formatted from created_at (no
-    // title to show), so this asserts it's real, non-empty text rather
-    // than pinning an exact formatted string.
-    const item = screen.getByRole("button", { name: /open conversation/i });
-    expect(item.textContent?.trim()).not.toBe("");
-    expect(item.textContent).not.toContain("null");
+    expect(screen.getByRole("button", { name: "Open conversation: Untitled conversation" })).toBeInTheDocument();
+    const stamp = document.querySelector("time");
+    expect(stamp).toHaveAttribute("dateTime", "2026-08-20T10:41:00Z");
+    expect(stamp?.textContent?.trim()).not.toBe("");
+  });
+
+  it("treats a timestamp or a generated default as no title at all", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            { ...ONE_ITEM[0], id: 1, title: "2026-08-20T10:41:00Z" },
+            { ...ONE_ITEM[0], id: 2, title: "20 Aug, 10:41 am" },
+            { ...ONE_ITEM[0], id: 3, title: "New conversation" },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Open conversation: Untitled conversation" })).toHaveLength(3);
+    });
+  });
+
+  it("previews the latest question, not the answer, when agent-service sends one", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              ...ONE_ITEM[0],
+              title: "Top items last week",
+              preview: "and the week before?",
+              message_count: 4,
+            },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await waitFor(() => expect(screen.getByText("and the week before?")).toBeInTheDocument());
+    expect(screen.getByText("Top items last week")).toBeInTheDocument();
+    expect(screen.queryByText("Chicken Biryani led the week.")).not.toBeInTheDocument();
+  });
+
+  it("does not repeat a one-question conversation's question under its own title", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [
+            {
+              ...ONE_ITEM[0],
+              // Trimmed to 80 by agent-service; the preview is the whole
+              // question, so it starts with the title rather than equalling it.
+              title: "Which stores had the largest drop in weekend orders compared with the previous…",
+              preview:
+                "Which stores had the largest drop in weekend orders compared with the previous month, and why?",
+            },
+          ],
+          next_cursor: null,
+        }),
+      ),
+    );
+    renderPanel(fetchMock);
+
+    await screen.findByText(/^Which stores had the largest drop/);
+    expect(screen.getAllByText(/^Which stores had the largest drop/)).toHaveLength(1);
+    expect(screen.queryByText("Chicken Biryani led the week.")).not.toBeInTheDocument();
   });
 
   it("renders a pipe-delimited answer as something readable, not as a wall of pipes", async () => {

@@ -7,6 +7,7 @@ import { useChatContext } from "./ChatContext.tsx";
 import {
   deleteConversation,
   listConversations,
+  readableTitle,
   type ConversationSource,
   type ConversationSummary,
 } from "./historyApi.ts";
@@ -23,14 +24,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 // already gone.
 const STATUS_MS = 2500;
 
-function formatWhen(iso: string): string {
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(iso));
-}
+const UNTITLED = "Untitled conversation";
 
 /** A short time-of-day stamp for a row's own card — Figma shows "10:42 AM"
  * beside today's entries and a bare date ("Sep 4") beside older ones,
@@ -76,6 +70,31 @@ function groupByDate(items: ConversationSummary[]): Array<[string, ConversationS
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
+}
+
+/** Whether `preview` only restates `heading` — a one-question conversation's
+ * latest question is its first one, which the title already shows (up to
+ * the 80 characters agent-service trims it to). */
+function repeatsHeading(preview: string, heading: string): boolean {
+  const flat = (text: string) =>
+    text.replace(/\s+/g, " ").trim().replace(/(?:…|\.\.\.)$/, "").trim().toLowerCase();
+  const head = flat(heading);
+  return head !== "" && flat(preview).startsWith(head);
+}
+
+/**
+ * The row's one line of preview: the latest QUESTION, because that is what
+ * someone scanning their history recognises — they remember what they
+ * asked, not how the answer happened to open.
+ *
+ * `null` when that question is the heading again. The answer is shown only
+ * by an agent-service too old to send `preview` at all, where it is the one
+ * line of content the row has.
+ */
+function rowPreview(item: ConversationSummary, heading: string): string | null {
+  if (item.preview === undefined) return answerPreview(item.last_assistant_snippet);
+  const question = answerPreview(item.preview);
+  return question !== null && !repeatsHeading(question, heading) ? question : null;
 }
 
 /**
@@ -132,12 +151,11 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const channel = channelLabel(item.external_ref);
-  // A channel run's `title` is null for the same reason every other
-  // conversation's is, so it would otherwise fall back to a bare date and
-  // a list of them would read as identical rows. Naming the channel is the
-  // one thing that distinguishes them from each other at a glance.
-  const heading = item.title ?? (channel === null ? formatWhen(item.created_at) : `${channel} · ${formatWhen(item.created_at)}`);
-  const preview = answerPreview(item.last_assistant_snippet);
+  // Never a date. The date has its own line below, and a heading that
+  // repeats it made every row read the same. An untitled channel run is
+  // named for its channel, which is what tells it apart from a typed one.
+  const heading = readableTitle(item.title) ?? channel ?? UNTITLED;
+  const preview = rowPreview(item, heading);
 
   async function handleConfirmDelete() {
     setDeleting(true);
@@ -168,13 +186,14 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
           <MessageCircle size={16} strokeWidth={2} />
         </span>
         <span className={styles.itemBody}>
-          <span className={styles.itemTitleRow}>
-            <span className={styles.itemHeading}>{heading}</span>
-            <span className={styles.itemStamp}>{formatStamp(item.created_at, bucket)}</span>
-          </span>
+          <span className={styles.itemHeading}>{heading}</span>
           {preview !== null && <span className={styles.itemSnippet}>{preview}</span>}
-          <span className={styles.itemCount}>
-            {item.message_count} message{item.message_count === 1 ? "" : "s"}
+          <span className={styles.itemMeta}>
+            <time dateTime={item.created_at}>{formatStamp(item.created_at, bucket)}</time>
+            <span aria-hidden="true">·</span>
+            <span>
+              {item.message_count} message{item.message_count === 1 ? "" : "s"}
+            </span>
           </span>
         </span>
       </button>
@@ -234,8 +253,8 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
 
 /**
  * Past conversations, grouped by when they happened: a searchable list,
- * each row showing its own heading, a readable one-line preview of the
- * answer and how many messages it holds; clicking one reopens it via
+ * each row showing the question that started it, the latest question
+ * asked in it, and when and how long it was; clicking one reopens it via
  * `ChatContext.loadConversation` and dismisses the panel.
  *
  * **A full-panel view, not a drawer.** It used to be a `position: fixed`
@@ -249,17 +268,15 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
  * **The preview is cleaned up, not merely truncated** — see
  * `answerPreview.ts`. An analytics answer's own text is routinely a
  * pipe-delimited table, and a row of it read as an unbroken wall of pipes
- * and dashes.
+ * and dashes; an older agent-service still sends only that answer.
  *
- * **Heading falls back to a formatted date, and this is a real gap.**
- * `ConversationSummary` carries `title` (always `null` — nothing in
- * `agent-service` generates one) and the last *assistant* snippet, but
- * never the question that started the conversation, so the title a reader
- * actually wants is not in this endpoint's response at all. Fetching each
- * conversation's detail to recover it would be one request per visible row
- * on every keystroke of the search box. So this shows when the
- * conversation happened rather than inventing a question from data it does
- * not have — the fix belongs in `ConversationSummaryOut`.
+ * **The heading is never a date.** It used to fall back to one, because
+ * `title` was always `null`, and every row then read as its own timestamp
+ * over a line of answer — nothing to recognise a conversation by. The
+ * title is now the first question (agent-service derives it); when a row
+ * has none that `readableTitle` trusts, it says "Untitled conversation"
+ * rather than printing the date a second time. When it happened sits on
+ * its own muted line, with the message count.
  */
 export interface HistoryPanelProps {
   /** Returns to the conversation screen. Called on Escape, on the back

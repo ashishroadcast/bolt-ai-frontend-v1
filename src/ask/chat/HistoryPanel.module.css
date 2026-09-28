@@ -193,28 +193,21 @@
   flex: 1 1 auto;
 }
 
-.itemTitleRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
+/* The question that started the conversation. Two lines rather than one:
+   it is up to 80 characters, and in a 400px panel one line cut most
+   questions off before the part that tells two of them apart. */
 .itemHeading {
   font-family: var(--font-body);
   font-weight: 500;
   font-size: 14px;
+  line-height: 1.35;
   color: var(--fg);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.itemStamp {
-  flex: none;
-  font-family: var(--font-body);
-  font-size: 11px;
-  color: #94a3b8;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 .itemSnippet {
@@ -226,9 +219,14 @@
   white-space: nowrap;
 }
 
-/* How much conversation is behind this row — the one thing that
-   distinguishes a one-shot question from a thread worth reopening. */
-.itemCount {
+/* When, and how much conversation is behind this row — the count is what
+   distinguishes a one-shot question from a thread worth reopening. Its own
+   muted line, never the heading: a date is not something anyone
+   recognises a conversation by. */
+.itemMeta {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   font-family: var(--font-body);
   font-size: 10.5px;
   color: var(--fg-faint);
