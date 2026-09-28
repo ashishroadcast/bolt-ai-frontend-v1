@@ -1,7 +1,8 @@
 import { History, MessageSquarePlus, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AgentIcon } from "./AgentIcon.tsx";
 import styles from "./Ask.module.css";
+import screenStyles from "./AskScreen.module.css";
 import { AgentPicker } from "./chat/AgentPicker.tsx";
 import { AgentSelectionBridge } from "./chat/agentSelection.ts";
 import { AskAgentsProvider } from "./chat/useAskAgents.ts";
@@ -11,7 +12,9 @@ import { EmptyState } from "./EmptyState.tsx";
 import { HistoryPanel } from "./chat/HistoryPanel.tsx";
 import { Thread } from "./chat/Thread.tsx";
 import { SCROLL_REGION_ATTR } from "./chat/useStickToBottom.ts";
+import type { ChatMessage } from "./chat/types.ts";
 import { AskProvider, useAskConfig, type AskConfig } from "./config.tsx";
+import { GatewayError } from "./http/errors.ts";
 
 /**
  * Ask, whole: agent picker, thread, composer, history drawer.
@@ -43,9 +46,15 @@ import { AskProvider, useAskConfig, type AskConfig } from "./config.tsx";
 export interface AskProps {
   config: AskConfig;
   /**
-   * Open this conversation on mount. The console passes the `?conversation=`
-   * query parameter it used to read itself; a host with no such concept
-   * passes nothing and Ask starts empty.
+   * Open this conversation. The console passes the `?conversation=` query
+   * parameter it used to read itself; a host with no such concept passes
+   * nothing and Ask starts empty.
+   *
+   * Opened once per value: a host that keeps passing the same id while
+   * someone asks follow-ups, or starts a new conversation, is not reopening
+   * it. A different id is a new request and is opened; so is the same id
+   * again after the prop was cleared in between, which is how the console
+   * hands one over (see `AskRoute.tsx`).
    */
   initialConversationId?: number;
   /**
@@ -60,6 +69,30 @@ const DEFAULT_EMPTY = {
   title: "Hi! Welcome to AI Assistant",
   body: "Your intelligent companion for reports & analytics",
 };
+
+/**
+ * Where opening `initialConversationId` has got to. `null` once it has
+ * opened, or when nothing was asked for.
+ *
+ * A failure remembers the thread it failed over (`shownOver`), and the
+ * notice stays only while that is still the thread on screen: once the
+ * person asks something, opens another conversation or starts a new one,
+ * the notice is about something they have already moved past.
+ */
+type LinkOpen =
+  | { id: number; state: "loading" }
+  | { id: number; state: "failed"; canRetry: boolean; shownOver: ChatMessage[] };
+
+/**
+ * Worth a "Try again" — a dropped connection or a server error. Not a 404,
+ * which is a deleted conversation or someone else's (the server answers
+ * both identically, on purpose), nor a refused credential: asking again
+ * gets the same answer.
+ */
+function canRetry(err: unknown): boolean {
+  const status = err instanceof GatewayError ? err.status : undefined;
+  return status === undefined || ![401, 403, 404].includes(status);
+}
 
 export function Ask({ config, initialConversationId, emptyState }: AskProps) {
   return (
@@ -97,14 +130,88 @@ export function AskScreen({
   const title = emptyState?.title ?? copy?.emptyTitle ?? DEFAULT_EMPTY.title;
   const body = emptyState?.body ?? copy?.emptyBody ?? DEFAULT_EMPTY.body;
 
-  // Once, on mount, for the id the host opened us with. A ref rather than a
-  // dependency list because re-running it would re-fetch the same
-  // conversation every time the host re-renders — and would fight the user
-  // if they had since started a new one.
-  const openedRef = useRef(false);
-  if (!openedRef.current && initialConversationId !== undefined) {
-    openedRef.current = true;
-    void loadConversation(initialConversationId);
+  // Loading from the first render, not from the effect's first run: an
+  // effect runs after paint, and for that one frame the empty state and
+  // its quick actions would be on screen and clickable.
+  const [linkOpen, setLinkOpen] = useState<LinkOpen | null>(() =>
+    initialConversationId === undefined ? null : { id: initialConversationId, state: "loading" },
+  );
+  // The id last opened from the prop, so a host re-rendering with the same
+  // one — or StrictMode running this effect twice — does not re-fetch it
+  // over whatever the person has done since. Cleared with the prop, so the
+  // same id handed over again later is a new request.
+  const openedIdRef = useRef<number | undefined>(undefined);
+  // Only the latest request may settle the state; an earlier one landing
+  // late must not overwrite it.
+  const linkRequestRef = useRef(0);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const openLinked = useCallback(
+    (id: number) => {
+      const request = ++linkRequestRef.current;
+      setLinkOpen({ id, state: "loading" });
+      loadConversation(id).then(
+        () => {
+          if (linkRequestRef.current === request) setLinkOpen(null);
+        },
+        (err: unknown) => {
+          // It used to be `void loadConversation(...)` with no catch: a
+          // deleted conversation, a colleague's link (conversations are per
+          // user) or a dropped request all left the ordinary empty state
+          // and no word about what had happened to the link.
+          if (linkRequestRef.current !== request) return;
+          setLinkOpen({ id, state: "failed", canRetry: canRetry(err), shownOver: messagesRef.current });
+        },
+      );
+    },
+    [loadConversation],
+  );
+
+  useEffect(() => {
+    if (initialConversationId === undefined) {
+      openedIdRef.current = undefined;
+      return;
+    }
+    if (openedIdRef.current === initialConversationId) return;
+    openedIdRef.current = initialConversationId;
+    openLinked(initialConversationId);
+  }, [initialConversationId, openLinked]);
+
+  const linkLoading = linkOpen?.state === "loading";
+  const linkFailed = linkOpen?.state === "failed" && linkOpen.shownOver === messages ? linkOpen : null;
+
+  function startOverFromLink() {
+    setLinkOpen(null);
+    clearConversation();
+  }
+
+  let linkNotice: ReactNode = null;
+  if (linkLoading) {
+    linkNotice = (
+      <p role="status" className={screenStyles.opening}>
+        Opening conversation…
+      </p>
+    );
+  } else if (linkFailed !== null) {
+    linkNotice = (
+      <div className={isEmpty ? `${screenStyles.notice} ${screenStyles.noticeAlone}` : screenStyles.notice}>
+        <p role="alert" className={screenStyles.noticeText}>
+          That conversation couldn't be opened. It may have been deleted, or it belongs to someone else.
+        </p>
+        <div className={screenStyles.noticeActions}>
+          <button type="button" className={screenStyles.primaryBtn} onClick={startOverFromLink}>
+            <MessageSquarePlus size={15} strokeWidth={2} aria-hidden="true" />
+            <span>Start a new conversation</span>
+          </button>
+          {linkFailed.canRetry && (
+            <button type="button" className={screenStyles.secondaryBtn} onClick={() => openLinked(linkFailed.id)}>
+              Try again
+            </button>
+          )}
+        </div>
+      </div>
+    );
   }
 
   // Stable so HistoryPanel's own Escape listener isn't torn down and
@@ -190,10 +297,16 @@ export function AskScreen({
       </div>
 
       <div className={styles.scroll} {...{ [SCROLL_REGION_ATTR]: "" }}>
+        {linkNotice}
         {isEmpty ? (
-          <div className={styles.empty}>
-            <EmptyState title={title} body={body} />
-          </div>
+          // Not while a linked conversation is loading or has failed: a
+          // quick action clicked then started a run that the conversation
+          // arriving a moment later wiped off the screen.
+          linkNotice === null && (
+            <div className={styles.empty}>
+              <EmptyState title={title} body={body} />
+            </div>
+          )
         ) : (
           <Thread />
         )}
@@ -201,7 +314,13 @@ export function AskScreen({
 
       <div className={styles.composerBar}>
         <div className={styles.composerInner}>
-          <Composer />
+          {/* Disabled while a linked conversation loads, for the reason the
+              empty state is hidden then: a question sent in that gap is
+              overwritten when the conversation arrives. Always rendered,
+              so toggling it never remounts the composer and its draft. */}
+          <fieldset role="presentation" className={screenStyles.composerGate} disabled={linkLoading}>
+            <Composer />
+          </fieldset>
         </div>
       </div>
     </div>

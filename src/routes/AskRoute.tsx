@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AskInspectorProvider, AskScreen } from "../ask/index.ts";
 import { useInspector } from "../shell/InspectorContext.tsx";
@@ -22,7 +23,7 @@ import { useInspector } from "../shell/InspectorContext.tsx";
  *   and this route is the only place both it and Ask are in scope.
  */
 export function AskRoute() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const inspector = useInspector();
 
   // The `?conversation=<id>` permalink History's Share button produces.
@@ -32,6 +33,27 @@ export function AskRoute() {
   const raw = searchParams.get("conversation");
   const parsed = raw === null ? Number.NaN : Number(raw);
   const initialConversationId = Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+
+  // Handed over once, then taken out of the URL. The thread lives above the
+  // router (see `ChatProvider`), so it outlasts this route — but the query
+  // string stayed in the history entry, and every return to it (Back, or a
+  // remount of this route) opened the linked conversation again over
+  // whatever had happened since, a run in progress included.
+  //
+  // After AskScreen has read it: a child's effects run before its
+  // parent's, so AskScreen's own effect has already started the open by the
+  // time this clears the prop it came from.
+  useEffect(() => {
+    if (raw === null) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("conversation");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [raw, setSearchParams]);
 
   return (
     <AskInspectorProvider
