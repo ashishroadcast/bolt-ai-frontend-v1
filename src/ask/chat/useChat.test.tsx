@@ -387,4 +387,14 @@ describe("useChat", () => {
     expect(result.current.activeRun).toBeNull();
     expect(fetchMock.mock.calls.length).toBe(callsBeforeClear);
   });
+
+  it("clearConversation disarms a slash-command agent, so the next question routes itself", () => {
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    act(() => result.current.setSelectedAgent("Dashboard-Builder"));
+    expect(result.current.selectedAgent).toBe("Dashboard-Builder");
+
+    act(() => result.current.clearConversation());
+
+    expect(result.current.selectedAgent).toBeNull();
+  });
 });

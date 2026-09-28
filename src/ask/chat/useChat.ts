@@ -424,6 +424,10 @@ export function useChat(): UseChatResult {
     setActiveConversationId(null);
     setMessages([]);
     setActiveRun(null);
+    // A slash command arms an agent for "the rest of this conversation", so a
+    // new one starts unarmed and routes itself. Keeping it sent the next plain
+    // question to the last builder used.
+    setSelectedAgent(null);
   }, []);
 
   return {
