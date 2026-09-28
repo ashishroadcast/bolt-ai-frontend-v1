@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   countChars,
+  prefixWithin,
   parseAnswer,
   takeChars,
   type AnswerBlock,
@@ -508,5 +509,66 @@ describe("revealing the new blocks", () => {
     );
 
     expect(takeChars(blocks, countChars(blocks))).toEqual(blocks);
+  });
+});
+
+// --- revealing whole characters ---------------------------------------------
+//
+// The reveal counts UTF-16 code units, and used to cut at exactly that many:
+// an emoji with a skin tone arrived as a thumb and a loose colour swatch, and
+// a Hindi conjunct as a consonant with a dangling virama, for a frame at a
+// time. A cut now only ever lands between two whole characters.
+
+describe("prefixWithin", () => {
+  it("holds an emoji back until all of it fits, rather than showing half", () => {
+    const thumb = "👍🏽"; // four code units, one character
+
+    expect(prefixWithin(`${thumb}ok`, 1)).toBe("");
+    expect(prefixWithin(`${thumb}ok`, 3)).toBe("");
+    expect(prefixWithin(`${thumb}ok`, 4)).toBe(thumb);
+  });
+
+  it("keeps a joined emoji whole", () => {
+    const family = "👨‍👩‍👧";
+
+    expect(prefixWithin(family, family.length - 1)).toBe("");
+    expect(prefixWithin(family, family.length)).toBe(family);
+  });
+
+  it("never splits a Hindi conjunct from its vowel sign", () => {
+    // क्षे is four code points and one character on screen.
+    expect(prefixWithin("क्षेत्र", 2)).toBe("");
+    expect(prefixWithin("क्षेत्र", 4)).toBe("क्षे");
+  });
+
+  it("returns plain text cut exactly where it was asked", () => {
+    expect(prefixWithin("Bandra", 3)).toBe("Ban");
+    expect(prefixWithin("Bandra", 0)).toBe("");
+    expect(prefixWithin("Bandra", 99)).toBe("Bandra");
+  });
+
+  it("cuts a revealed answer only between whole characters", () => {
+    const blocks = parseAnswer("Top: 👍🏽 Bandra");
+    const partial = takeChars(blocks, "Top: ".length + 2);
+
+    expect(textOf(partial[0]!)).toEqual(["Top: "]);
+  });
+
+  it("falls back to whole code points where Intl.Segmenter is missing", async () => {
+    const original = Intl.Segmenter;
+    const setSegmenter = (value: unknown) =>
+      Object.defineProperty(Intl, "Segmenter", { value, configurable: true, writable: true });
+    vi.resetModules();
+    // Removed, as an engine without it would have it.
+    setSegmenter(undefined);
+    try {
+      const { prefixWithin: fallback } = await import("./answerMarkup.ts");
+      // The surrogate pair of 👍 stays together even without graphemes.
+      expect(fallback("👍🏽", 3)).toBe("👍");
+      expect(fallback("👍🏽", 1)).toBe("");
+    } finally {
+      setSegmenter(original);
+      vi.resetModules();
+    }
   });
 });

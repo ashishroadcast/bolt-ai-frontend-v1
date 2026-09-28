@@ -736,9 +736,48 @@ interface Budget {
   left: number;
 }
 
+/**
+ * Graphemes — what a reader counts as one character — where the platform
+ * can say where they end. `null` falls back to code points below.
+ */
+const GRAPHEMES: Intl.Segmenter | null =
+  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+
+/**
+ * The longest prefix of `text` within `limit` UTF-16 units that ends on a
+ * character boundary.
+ *
+ * The budget itself stays in code units, because that is what the reveal
+ * counts in (`typewriter.ts` counts `text.length`). What changes is where a
+ * cut may land: slicing a code-unit count straight through a string split
+ * 👍🏽 into a thumb and a stray skin-tone swatch, and split a Hindi conjunct
+ * like "क्ष" into a consonant and a dangling virama — each for a frame, sixty
+ * times a second. A cut now waits until the whole character fits. Without
+ * `Intl.Segmenter` it at least never splits a surrogate pair.
+ */
+export function prefixWithin(text: string, limit: number): string {
+  if (limit >= text.length) return text;
+  if (limit <= 0) return "";
+  let end = 0;
+  if (GRAPHEMES !== null) {
+    for (const { segment } of GRAPHEMES.segment(text)) {
+      if (end + segment.length > limit) break;
+      end += segment.length;
+    }
+  } else {
+    for (const point of text) {
+      if (end + point.length > limit) break;
+      end += point.length;
+    }
+  }
+  return text.slice(0, end);
+}
+
 /** The part of `text` the budget reaches. */
 function takeText(text: string, budget: Budget): string {
-  const taken = text.slice(0, Math.max(0, budget.left));
+  const taken = prefixWithin(text, budget.left);
   // A cut short of the end spends the rest: nothing after a half-shown run
   // may appear before it has finished.
   budget.left = taken.length < text.length ? 0 : budget.left - taken.length;

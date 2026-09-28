@@ -89,6 +89,9 @@ function List({ block, caret }: { block: ListBlock; caret: boolean }): ReactElem
         key={itemIndex}
         className={styles.item}
         data-marker={block.ordered ? `${block.start + itemIndex}.` : undefined}
+        // Per item, not per answer: an Urdu store name in an English list
+        // is one right-to-left line, and only that line should flip.
+        dir="auto"
       >
         {/* One wrapper, so the item's two-column grid (marker, text) has
             exactly two items whatever the text holds — a nested list
@@ -181,7 +184,7 @@ function Block({ block, caret }: { block: AnswerBlock; caret: boolean }): ReactE
   switch (block.kind) {
     case "paragraph":
       return (
-        <p className={block.heading === true ? styles.heading : styles.paragraph}>
+        <p className={block.heading === true ? styles.heading : styles.paragraph} dir="auto">
           <Lines lines={block.lines} caret={caret} />
         </p>
       );
@@ -299,6 +302,10 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
           <p
             key={index}
             className={isLead ? styles.lead : isClosing ? styles.closing : styles.paragraph}
+            // Each paragraph finds its own direction from its first strong
+            // character, so an answer in Arabic or Urdu aligns to the right
+            // without the page having to know what language it is in.
+            dir="auto"
           >
             {/* One wrapper, so the closing line's two-column grid (arrow,
                 text) has exactly two items. Without it every <strong> or

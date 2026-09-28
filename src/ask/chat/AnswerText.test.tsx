@@ -147,6 +147,21 @@ describe("rendering tables, code and quotes", () => {
     expect(container.querySelector("blockquote")!.textContent).toBe("Excludes refunds.");
   });
 
+  it("lets each paragraph and list item find its own direction, for RTL answers", () => {
+    const { container } = render(<AnswerText text={"بندرا في المقدمة\n\n- باندرا\n- BKC"} />);
+
+    expect(container.querySelector("p")!.getAttribute("dir")).toBe("auto");
+    for (const item of container.querySelectorAll("li")) {
+      expect(item.getAttribute("dir")).toBe("auto");
+    }
+  });
+
+  it("never shows half an emoji while revealing", () => {
+    const { container } = render(<AnswerText text={"Top 👍🏽 pick"} visibleChars={"Top ".length + 2} />);
+
+    expect(container.textContent).toBe("Top ");
+  });
+
   it("keeps a single caret while a table is still arriving", () => {
     const text = "| Store | Sales |\n|---|---|\n| Bandra | 10 |";
     const { container } = render(<AnswerText text={text} visibleChars={"StoreSales".length + 3} />);

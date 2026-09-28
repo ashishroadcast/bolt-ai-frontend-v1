@@ -58,7 +58,9 @@
 .lead::after {
   content: "";
   position: absolute;
-  left: 0;
+  /* The start edge, so a right-to-left finding keeps its rule under its
+     first word rather than its last. */
+  inset-inline-start: 0;
   bottom: 0;
   width: 28px;
   height: 2px;
