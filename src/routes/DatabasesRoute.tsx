@@ -5,11 +5,14 @@ import { Sheet } from "../ask/parts/Sheet.tsx";
 import {
   createDatasource,
   deleteDatasource,
+  getDatasourceCatalog,
   listDatasources,
   listDatasourceTables,
   scanDatasource,
   testDatasourceConnection,
   testUnsavedDatasourceConnection,
+  updateDatasourceTables,
+  type DatasourceCatalog,
   type DataSource,
   type DataSourceType,
   type IsolationMode,
@@ -197,6 +200,81 @@ function summarizeTables(tables: SchemaTableInfo[]): string {
   return `${plural(tableCount, "table")} · ${plural(colCount, "col")} · ${plural(valueColCount, "value col")}`;
 }
 
+/** Only the SQL types scan tables, so only they have tables to choose. */
+function scansTables(row: DataSource): boolean {
+  return row.type === "postgres" || row.type === "mysql";
+}
+
+/**
+ * Python's `fnmatchcase`, which is what the server's scan matches
+ * `table_patterns` with: `*`, `?`, `[...]` and `[!...]`, case-sensitive.
+ */
+function globToRegExp(glob: string): RegExp {
+  let source = "";
+  for (let i = 0; i < glob.length; i += 1) {
+    const ch = glob[i]!;
+    if (ch === "*") source += ".*";
+    else if (ch === "?") source += ".";
+    else if (ch === "[") {
+      const end = glob.indexOf("]", i + 2);
+      if (end === -1) source += "\\[";
+      else {
+        const body = glob.slice(i + 1, end);
+        source += `[${body.startsWith("!") ? `^${body.slice(1)}` : body}]`;
+        i = end;
+      }
+    } else source += ch.replace(/[.+^${}()|\\/\]]/g, "\\$&");
+  }
+  return new RegExp(`^${source}$`);
+}
+
+function isGlob(pattern: string): boolean {
+  return /[*?[]/.test(pattern);
+}
+
+/**
+ * "Choose tables" — opened from a SQL row. Reads the live catalog, because a
+ * datasource over the scan bounds can never be scanned to find out what it
+ * holds, and writes the ticked tables as `table_patterns`.
+ */
+interface PickerState {
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+  catalog: DatasourceCatalog | null;
+  selected: Set<string>;
+  search: string;
+  saving: boolean;
+  saveError: string | null;
+  saved: boolean;
+}
+
+const BLANK_PICKER: PickerState = {
+  open: false,
+  loading: false,
+  error: null,
+  catalog: null,
+  selected: new Set(),
+  search: "",
+  saving: false,
+  saveError: null,
+  saved: false,
+};
+
+/** What the row currently scans, pre-ticked. `null` patterns mean every
+ * table, which is only ticked when it would actually fit the bounds. */
+function initialSelection(catalog: DatasourceCatalog, patterns: string[] | null): Set<string> {
+  if (patterns === null) {
+    const columns = catalog.tables.reduce((sum, t) => sum + t.columns, 0);
+    const fits = catalog.tables.length <= catalog.max_tables && columns <= catalog.max_columns;
+    return new Set(fits ? catalog.tables.map((t) => t.table) : []);
+  }
+  const regexps = patterns.map(globToRegExp);
+  return new Set(
+    catalog.tables.filter((t) => regexps.some((re) => re.test(t.table))).map((t) => t.table),
+  );
+}
+
 /*
  * Connecting a database is the highest-consequence action in this console
  * (task brief) — the DSN is a live credential, so the form's own state
@@ -239,6 +317,7 @@ export function DatabasesRoute() {
   );
   const [connectionTestError, setConnectionTestError] = useState<string | null>(null);
   const [tableDetails, setTableDetails] = useState<Record<number, TableDetailState>>({});
+  const [pickers, setPickers] = useState<Record<number, PickerState>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -463,6 +542,54 @@ export function DatabasesRoute() {
       patchTableDetail(id, { loading: false, tables });
     } catch (err) {
       patchTableDetail(id, { loading: false, error: errorMessage(err) });
+    }
+  }
+
+  function picker(id: number): PickerState {
+    return pickers[id] ?? BLANK_PICKER;
+  }
+
+  function patchPicker(id: number, patch: Partial<PickerState>) {
+    setPickers((prev) => ({ ...prev, [id]: { ...(prev[id] ?? BLANK_PICKER), ...patch } }));
+  }
+
+  /* Fetched fresh on every open: tables come and go, and a stale list would
+     let someone tick a table that no longer exists. */
+  async function handleTogglePicker(row: DataSource) {
+    if (picker(row.id).open) {
+      patchPicker(row.id, { open: false });
+      return;
+    }
+    patchPicker(row.id, { ...BLANK_PICKER, open: true, loading: true });
+    try {
+      const catalog = await getDatasourceCatalog(row.id);
+      patchPicker(row.id, {
+        loading: false,
+        catalog,
+        selected: initialSelection(catalog, row.table_patterns),
+      });
+    } catch (err) {
+      patchPicker(row.id, { loading: false, error: errorMessage(err) });
+    }
+  }
+
+  function setTicked(id: number, tables: string[], ticked: boolean) {
+    const next = new Set(picker(id).selected);
+    for (const table of tables) {
+      if (ticked) next.add(table);
+      else next.delete(table);
+    }
+    patchPicker(id, { selected: next, saved: false });
+  }
+
+  async function handleSaveTables(id: number, tablePatterns: string[] | null) {
+    patchPicker(id, { saving: true, saveError: null, saved: false });
+    try {
+      const updated = await updateDatasourceTables(id, tablePatterns);
+      setDatasources((prev) => (prev ?? []).map((row) => (row.id === id ? updated : row)));
+      patchPicker(id, { saving: false, saved: true });
+    } catch (err) {
+      patchPicker(id, { saving: false, saveError: errorMessage(err) });
     }
   }
 
@@ -788,10 +915,24 @@ export function DatabasesRoute() {
                 const state = rowState(row.id);
                 const scanDisabled = state.scanning || row.status === "indexing";
                 const detail = tableDetail(row.id);
+                const pick = picker(row.id);
+                const overBounds =
+                  row.status === "error" && (row.last_scan_error ?? "").includes("scan limit");
                 return (
                   <Fragment key={row.id}>
                   <tr>
-                    <td>{row.name}</td>
+                    <td>
+                      <span>{row.name}</span>
+                      {scansTables(row) && (
+                        <span className={styles.scopeNote}>
+                          {row.table_patterns === null
+                            ? "Scans every table"
+                            : `Scans ${row.table_patterns.length} chosen ${
+                                row.table_patterns.length === 1 ? "table" : "tables"
+                              }`}
+                        </span>
+                      )}
+                    </td>
                     <td>{DATASOURCE_TYPE_LABEL[row.type]}</td>
                     <td>{ISOLATION_LABEL[row.isolation_mode]}</td>
                     <td>
@@ -828,6 +969,16 @@ export function DatabasesRoute() {
                         >
                           {state.scanning || row.status === "indexing" ? "Scanning…" : "Scan"}
                         </button>
+                        {scansTables(row) && (
+                          <button
+                            type="button"
+                            className={styles.actionBtn}
+                            aria-expanded={pick.open}
+                            onClick={() => handleTogglePicker(row)}
+                          >
+                            {pick.open ? "Close tables" : "Choose tables"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           className={`${styles.actionBtn} ${styles.danger}`}
@@ -853,6 +1004,18 @@ export function DatabasesRoute() {
                       {state.scanError === null && row.status === "error" && row.last_scan_error !== null && (
                         <p className={`${styles.rowNote} ${styles.critical}`}>
                           Scan failed — {row.last_scan_error}
+                          {overBounds && !pick.open && (
+                            <>
+                              {" "}
+                              <button
+                                type="button"
+                                className={styles.tablesLink}
+                                onClick={() => handleTogglePicker(row)}
+                              >
+                                Choose which tables to scan
+                              </button>
+                            </>
+                          )}
                         </p>
                       )}
                       {state.removeError !== null && (
@@ -931,12 +1094,130 @@ export function DatabasesRoute() {
                       </td>
                     </tr>
                   )}
+                  {pick.open && (
+                    <tr>
+                      <td colSpan={7} className={styles.tablesDetail}>
+                        <TablePicker
+                          row={row}
+                          pick={pick}
+                          onSearch={(search) => patchPicker(row.id, { search })}
+                          onTick={(tables, ticked) => setTicked(row.id, tables, ticked)}
+                          onSave={(patterns) => handleSaveTables(row.id, patterns)}
+                        />
+                      </td>
+                    </tr>
+                  )}
                   </Fragment>
                 );
               })}
             </tbody>
           </table>
         </Sheet>
+      )}
+    </div>
+  );
+}
+
+interface TablePickerProps {
+  row: DataSource;
+  pick: PickerState;
+  onSearch: (search: string) => void;
+  onTick: (tables: string[], ticked: boolean) => void;
+  onSave: (tablePatterns: string[] | null) => void;
+}
+
+/**
+ * The live table list with a running total against the scan bounds. Saving
+ * writes the ticked names as `table_patterns`; it never scans by itself.
+ * Saving is refused while the ticked set is over the bounds — the scan
+ * would only refuse it again, after the operator had walked away.
+ */
+function TablePicker({ row, pick, onSearch, onTick, onSave }: TablePickerProps) {
+  if (pick.loading) {
+    return <p className={styles.tablesDetailNote}>Reading tables from the database…</p>;
+  }
+  if (pick.error !== null) {
+    return <p className={`${styles.tablesDetailNote} ${styles.critical}`}>{pick.error}</p>;
+  }
+  const catalog = pick.catalog;
+  if (catalog === null) return null;
+
+  const ticked = catalog.tables.filter((t) => pick.selected.has(t.table));
+  const tickedColumns = ticked.reduce((sum, t) => sum + t.columns, 0);
+  const over = ticked.length > catalog.max_tables || tickedColumns > catalog.max_columns;
+  const allColumns = catalog.tables.reduce((sum, t) => sum + t.columns, 0);
+  const allFit = catalog.tables.length <= catalog.max_tables && allColumns <= catalog.max_columns;
+  const needle = pick.search.trim().toLowerCase();
+  const shown = catalog.tables.filter((t) => needle === "" || t.table.toLowerCase().includes(needle));
+  const globs = (row.table_patterns ?? []).filter(isGlob);
+
+  return (
+    <div className={styles.picker}>
+      <div className={styles.tablesSummaryRow}>
+        <span className={`${styles.pickerMeter} ${over ? styles.critical : ""}`} role="status">
+          {ticked.length} of {catalog.max_tables} tables · {tickedColumns} of{" "}
+          {catalog.max_columns} columns
+          {over ? " — over the scan limit" : ""}
+        </span>
+        <input
+          type="search"
+          className={styles.tablesSearch}
+          placeholder={`Filter ${catalog.tables.length} tables…`}
+          aria-label="Filter tables"
+          value={pick.search}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+      </div>
+      <p className={styles.tablesDetailNote}>
+        Tick the tables agents should be able to query. A scan reads their structure and sample
+        values, so leave out tables holding credentials or personal data.
+        {globs.length > 0 && ` Saving replaces the patterns ${globs.join(", ")} with the tables ticked.`}
+      </p>
+      <div className={styles.pickerTools}>
+        <button type="button" className={styles.tablesLink} onClick={() => onTick(shown.map((t) => t.table), true)}>
+          Tick {needle === "" ? "all" : "shown"}
+        </button>
+        <button type="button" className={styles.tablesLink} onClick={() => onTick(shown.map((t) => t.table), false)}>
+          Untick {needle === "" ? "all" : "shown"}
+        </button>
+      </div>
+      <div className={styles.pickerList}>
+        {shown.map((t) => (
+          <label key={t.table} className={styles.pickerItem}>
+            <input
+              type="checkbox"
+              checked={pick.selected.has(t.table)}
+              onChange={(event) => onTick([t.table], event.target.checked)}
+            />
+            <span className={styles.pickerName}>{t.table}</span>
+            <span className={styles.pickerCols}>{t.columns}</span>
+          </label>
+        ))}
+      </div>
+      <div className={styles.rowActions}>
+        <button
+          type="button"
+          className={styles.actionBtn}
+          disabled={pick.saving || ticked.length === 0 || over}
+          onClick={() => onSave(ticked.map((t) => t.table))}
+        >
+          {pick.saving ? "Saving…" : `Save ${ticked.length} ${ticked.length === 1 ? "table" : "tables"}`}
+        </button>
+        <button
+          type="button"
+          className={styles.actionBtn}
+          disabled={pick.saving || !allFit || row.table_patterns === null}
+          title={allFit ? undefined : "The whole database is over the scan limit"}
+          onClick={() => onSave(null)}
+        >
+          Scan every table
+        </button>
+      </div>
+      {pick.saveError !== null && (
+        <p className={`${styles.rowNote} ${styles.critical}`}>{pick.saveError}</p>
+      )}
+      {pick.saved && (
+        <p className={`${styles.rowNote} ${styles.good}`}>Saved. Run Scan to index these tables.</p>
       )}
     </div>
   );

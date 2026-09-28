@@ -19,6 +19,7 @@ function corpus(overrides: Partial<DataSource> = {}): DataSource {
     isolation_mode: "connection",
     tenant_column: null,
     key_patterns: null,
+    table_patterns: null,
     redis_cluster: false,
     redis_address_map: null,
     allowed_key_ids: null,

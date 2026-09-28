@@ -30,6 +30,9 @@ export interface DataSource {
   // DataSource.key_patterns's own "populated only for its own type"
   // convention, same as tenant_column above).
   key_patterns: string[] | null;
+  // Glob table patterns (e.g. "trip_*") narrowing what a scan indexes — SQL
+  // types only. Null means every table the connection can see.
+  table_patterns: string[] | null;
   // True for a redis-cluster datasource (redis.asyncio.cluster.RedisCluster)
   // rather than a standalone one. Meaningless (and always false) for every
   // other type.
@@ -173,6 +176,37 @@ export interface SchemaTableInfo {
  * scanned, not an error (matches `GET .../tables`'s own contract). */
 export function listDatasourceTables(id: number): Promise<SchemaTableInfo[]> {
   return gatewayClient.agentFetch<SchemaTableInfo[]>(`/agent/datasources/${id}/tables`);
+}
+
+/**
+ * Which tables a scan indexes — `PATCH /agent/datasources/{id}`. `null`
+ * goes back to every table. Takes effect on the next Scan, never by itself.
+ */
+export function updateDatasourceTables(
+  id: number,
+  tablePatterns: string[] | null,
+): Promise<DataSource> {
+  return gatewayClient.agentFetch<DataSource>(`/agent/datasources/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ table_patterns: tablePatterns }),
+  });
+}
+
+export interface CatalogTable {
+  table: string;
+  columns: number;
+}
+
+/** Every table the connection can see, live — unlike `listDatasourceTables`,
+ * which lists what a scan stored — plus the scan bounds a selection must fit. */
+export interface DatasourceCatalog {
+  tables: CatalogTable[];
+  max_tables: number;
+  max_columns: number;
+}
+
+export function getDatasourceCatalog(id: number): Promise<DatasourceCatalog> {
+  return gatewayClient.agentFetch<DatasourceCatalog>(`/agent/datasources/${id}/catalog`);
 }
 
 export function deleteDatasource(id: number): Promise<void> {

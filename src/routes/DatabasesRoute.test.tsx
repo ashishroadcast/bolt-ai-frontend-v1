@@ -18,6 +18,7 @@ function datasource(overrides: Partial<DataSource> = {}): DataSource {
     isolation_mode: "connection",
     tenant_column: null,
     key_patterns: null,
+    table_patterns: null,
     redis_cluster: false,
     redis_address_map: null,
     allowed_key_ids: null,
@@ -460,5 +461,111 @@ describe("DatabasesRoute", () => {
     const row = (await screen.findByText("Warehouse")).closest("tr")!;
 
     await within(row).findByText(/could not reach host: \[Errno 61\] Connection refused/i);
+  });
+
+  // --- choose tables ------------------------------------------------------------
+  // A database over the scan bounds can never be scanned to find out what it
+  // holds, so the picker reads the live catalog and writes table_patterns.
+
+  const CATALOG = {
+    tables: [
+      { table: "devices", columns: 29 },
+      { table: "sessions", columns: 22 },
+      { table: "trip_halt_points", columns: 20 },
+      { table: "trips", columns: 49 },
+    ],
+    max_tables: 100,
+    max_columns: 1000,
+  };
+
+  function pickerFetch(rows: DataSource[], catalog: unknown = CATALOG) {
+    const patches: unknown[] = [];
+    const fetchMock = routeFetch({
+      "GET /agent/datasources": () => jsonResponse(rows),
+      "GET /agent/datasources/1/catalog": () => jsonResponse(catalog),
+      "PATCH /agent/datasources/1": async (request) => {
+        const body = (await request.json()) as { table_patterns: string[] | null };
+        patches.push(body);
+        return jsonResponse({ ...rows[0], table_patterns: body.table_patterns });
+      },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return patches;
+  }
+
+  it("saves the ticked tables as the datasource's table patterns", async () => {
+    const patches = pickerFetch([datasource()]);
+    renderDatabasesRoute();
+    const row = (await screen.findByText("Warehouse")).closest("tr")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "Choose tables" }));
+    await screen.findByText("devices");
+    // Every table is ticked to start with: none were chosen, and all four fit.
+    expect(screen.getByRole("status")).toHaveTextContent("4 of 100 tables · 120 of 1000 columns");
+
+    fireEvent.click(screen.getByRole("button", { name: "Untick all" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^devices/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^trips/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save 2 tables" }));
+
+    await screen.findByText(/Saved. Run Scan/);
+    expect(patches).toEqual([{ table_patterns: ["devices", "trips"] }]);
+    expect(within(row).getByText("Scans 2 chosen tables")).toBeInTheDocument();
+  });
+
+  it("pre-ticks what the current patterns match, globs included", async () => {
+    pickerFetch([datasource({ table_patterns: ["trip*"] })]);
+    renderDatabasesRoute();
+    const row = (await screen.findByText("Warehouse")).closest("tr")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "Choose tables" }));
+    await screen.findByText("devices");
+
+    expect(screen.getByRole("checkbox", { name: /^trips/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^trip_halt_points/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /^devices/ })).not.toBeChecked();
+    expect(screen.getByText(/replaces the patterns trip\*/)).toBeInTheDocument();
+  });
+
+  it("will not save a selection the scan would refuse", async () => {
+    pickerFetch([datasource()], { ...CATALOG, max_tables: 1 });
+    renderDatabasesRoute();
+    const row = (await screen.findByText("Warehouse")).closest("tr")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "Choose tables" }));
+    await screen.findByText("devices");
+    // Four tables over a one-table bound: nothing is pre-ticked...
+    expect(screen.getByRole("status")).toHaveTextContent("0 of 1 tables");
+    // ...and ticking two puts it over, which disables Save.
+    fireEvent.click(screen.getByRole("checkbox", { name: /^devices/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /^trips/ }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("over the scan limit");
+    expect(screen.getByRole("button", { name: "Save 2 tables" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Scan every table" })).toBeDisabled();
+  });
+
+  it("offers the picker straight from a scan refused for size", async () => {
+    pickerFetch([
+      datasource({
+        status: "error",
+        last_scan_error:
+          "datasource has 255 tables and 3691 columns, over the 100-table / 1000-column scan limit",
+      }),
+    ]);
+    renderDatabasesRoute();
+    const row = (await screen.findByText("Warehouse")).closest("tr")!;
+
+    fireEvent.click(within(row).getByRole("button", { name: "Choose which tables to scan" }));
+
+    expect(await screen.findByText("devices")).toBeInTheDocument();
+  });
+
+  it("offers no table picker for a Redis datasource", async () => {
+    pickerFetch([datasource({ type: "redis", key_patterns: ["device:*"] })]);
+    renderDatabasesRoute();
+    const row = (await screen.findByText("Warehouse")).closest("tr")!;
+
+    expect(within(row).queryByRole("button", { name: "Choose tables" })).not.toBeInTheDocument();
   });
 });

@@ -531,3 +531,78 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── Choose tables ──────────────────────────────────────────────────────── */
+
+.scopeNote {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-micro);
+  color: var(--fg-faint);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pickerMeter {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+}
+
+.pickerMeter.critical {
+  color: var(--critical);
+}
+
+.pickerTools {
+  display: flex;
+  gap: 14px;
+}
+
+.pickerTools .tablesLink {
+  margin-left: 0;
+}
+
+.pickerList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2px 16px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-control);
+}
+
+.pickerItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--fg);
+}
+
+.pickerCols {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+}
