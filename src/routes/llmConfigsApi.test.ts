@@ -35,7 +35,7 @@ describe("llmConfigsApi", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
+    setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

@@ -1,6 +1,7 @@
 import { GATEWAY_URL } from "./api/config.ts";
 import type { AskConfig } from "./ask/index.ts";
-import { getApiKey, getOrganisationId, setSession } from "./auth/session.ts";
+import { getFreshCredential, onCredentialRefused, refreshCredential } from "./auth/credential.ts";
+import { getOrganisationId, getSession } from "./auth/session.ts";
 
 /**
  * The console's answers to what the Ask package asks of every host.
@@ -21,12 +22,15 @@ export const consoleAskConfig: AskConfig = {
     // Read per request, never captured: the operator can switch organisation
     // from the top bar mid-conversation, and a value taken once at mount
     // would keep addressing the previous one.
-    getCredential: getApiKey,
+    getCredential: getFreshCredential,
     getOrganisationId,
-    // The console's answer to a refused credential is to sign out. A host
-    // with its own session might instead refresh and carry on, which is why
-    // the package does not decide this.
-    onUnauthorized: () => setSession(null),
+    // A signed-in user's token is renewed and the request retried; an API
+    // key cannot be, so a refused one is final.
+    refreshCredential: async () =>
+      (await refreshCredential()) ? (getSession()?.credential ?? null) : null,
+    // What is left after renewal fails is a sign-out, with the reason kept
+    // so the sign-in screen can say why it is back.
+    onUnauthorized: onCredentialRefused,
   },
   // A plain href, not a react-router `<Link>`: the package must not depend
   // on the console's router, or it could not run in Angular's.

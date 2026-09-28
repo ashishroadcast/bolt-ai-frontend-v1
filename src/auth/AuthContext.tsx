@@ -1,6 +1,20 @@
 import { createContext, useCallback, useContext, useSyncExternalStore, type ReactNode } from "react";
 import { GATEWAY_URL } from "../api/config.ts";
 import { GatewayError } from "../ask/http/errors.ts";
+import { connectWithBolt } from "./boltConnect.ts";
+import {
+  findOrganisations,
+  logoutDevice,
+  otpLogin,
+  passwordLogin,
+  sendMobileCode,
+  type ActiveDevice,
+  type BoltV2Organisation,
+  type LoginResult,
+} from "./boltv2.ts";
+import { getFreshCredential } from "./credential.ts";
+import { platformUniqueId } from "./device.ts";
+import { tokenExpiresAt } from "./jwt.ts";
 import {
   getSession,
   setOrganisation,
@@ -10,13 +24,8 @@ import {
 } from "./session.ts";
 
 /**
- * One organisation the caller may act as, as agent-service reports it.
- *
- * Comes from `GET /agent/organisations`, not from bolt-v2. The console used to
- * ask bolt-v2's `myOrganisations` with the signed-in user's own token; it has
- * no bolt-v2 token any more, and agent-service has already resolved the same
- * subtree in order to scope the request, so the question moved to where the
- * answer already was.
+ * One organisation the caller may act as, as agent-service reports it
+ * (`GET /agent/organisations`) — the top-bar picker's rows.
  */
 export interface ActingOrganisation {
   id: string;
@@ -35,35 +44,65 @@ interface OrganisationRow {
   current: boolean;
 }
 
+export type { ActiveDevice, BoltV2Organisation };
+
+/**
+ * How a sign-in attempt ended when it did not throw: signed in, or stopped
+ * at bolt-v2's device limit with the devices to choose from. The pre-auth
+ * token is what `signOutDevice` spends; it is null when bolt-v2 sent none
+ * (its code sign-in does not), and then only a password sign-in can make
+ * room.
+ */
+export type SignInOutcome =
+  | { kind: "signed-in" }
+  | { kind: "device-limit"; devices: ActiveDevice[]; preAuthToken: string | null };
+
 export interface AuthContextValue {
   session: Session | null;
   /**
-   * Start a session from an API key.
-   *
-   * The console's only sign-in path. It used to have three — bolt-v2 password
-   * login, POS's `login` mutation, and pasting a bolt-v2 access token — and
-   * all three existed to obtain a bearer token agent-service would verify
-   * against a shared JWT secret. agent-service issues and verifies its own
-   * keys now (`app.auth.api_keys`), so none of those can produce a working
-   * credential and none of them remain.
-   *
-   * Throws GatewayError carrying operator-facing text on failure.
+   * Step one of signing in with a Bolt account: the organisations this email
+   * or mobile number can sign in to. Throws `GatewayError` with a sentence
+   * for the screen when bolt-v2 knows no such account.
+   */
+  findAccount: (identifier: string) => Promise<BoltV2Organisation[]>;
+  /** Email or mobile number, and password, into one organisation. */
+  signInWithPassword: (input: {
+    identifier: string;
+    password: string;
+    organisation: BoltV2Organisation;
+  }) => Promise<SignInOutcome>;
+  /** Texts a six-digit code for `signInWithCode`. Mobile numbers only —
+   * bolt-v2 has no emailed code. */
+  sendCode: (input: { mobileNumber: string; organisation: BoltV2Organisation }) => Promise<void>;
+  signInWithCode: (input: {
+    mobileNumber: string;
+    code: string;
+    organisation: BoltV2Organisation;
+  }) => Promise<SignInOutcome>;
+  /** Ends one of the account's other sessions to get under bolt-v2's
+   * device limit. The caller then signs in again. */
+  signOutDevice: (deviceId: string, preAuthToken: string) => Promise<void>;
+  /**
+   * "Continue with Bolt": borrows the sign-in of the Bolt web app in this
+   * browser (`./boltConnect.ts`). Must be called from a click. Throws
+   * `GatewayError` when the popup is blocked, closed or declined.
+   */
+  signInWithBolt: (signal?: AbortSignal) => Promise<void>;
+  /**
+   * Start a session from an API key — for a service account, not a person.
+   * Throws `GatewayError` carrying operator-facing text on failure.
    */
   signInWithApiKey: (apiKey: string) => Promise<void>;
   /**
-   * Every organisation this key may act as — the top-bar picker's source.
-   *
-   * Returns `[]` when there is no session. Throws GatewayError on failure.
+   * Every organisation this session may act as — the top-bar picker's
+   * source. Returns `[]` when there is no session. Throws `GatewayError`.
    */
   loadActingOrganisations: () => Promise<ActingOrganisation[]>;
   /**
    * Switches the organisation every subsequent `/agent/*` call acts as, by
-   * changing the `Organisation` header the client sends.
-   *
-   * Purely local, and deliberately so: nothing is re-authenticated and the
-   * key is untouched. agent-service re-validates the header against the key's
-   * own subtree on every request and refuses anything outside it, so choosing
-   * wrongly here fails closed rather than widening anything.
+   * changing the `Organisation` header. Purely local: agent-service
+   * re-validates the header on every request and refuses anything outside
+   * the caller's own subtree, so choosing wrongly fails closed.
    */
   actAsOrganisation: (organisationId: string) => void;
   signOut: () => void;
@@ -72,14 +111,9 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
- * A "Root › Child › Leaf" label, walking parents.
- *
- * `seen` guards against a cycle in the parent chain. That should be impossible
- * in a tree, but this walks data from another service and an infinite loop
- * here would hang the picker rather than show a wrong label. A parent outside
- * the caller's own subtree simply stops the walk, so the label is partial
- * rather than absent — which is the common case for a non-root key, whose
- * subtree does not include its own ancestors.
+ * A "Root › Child › Leaf" label, walking parents. `seen` guards against a
+ * cycle in data from another service; a parent outside the caller's subtree
+ * simply stops the walk.
  */
 function pathOf(id: string, byId: Map<string, OrganisationRow>): string {
   const names: string[] = [];
@@ -93,104 +127,204 @@ function pathOf(id: string, byId: Map<string, OrganisationRow>): string {
   return names.join(" › ");
 }
 
+interface Principal {
+  user_id: string;
+  username: string;
+  email: string;
+  tenant_id: string;
+  permissions?: { name: string; can_read: boolean }[];
+}
+
+/**
+ * Ask agent-service who a credential belongs to, before the console accepts
+ * it.
+ *
+ * Deliberately not trusted from the sign-in answer or decoded locally: only
+ * agent-service can say whether it will accept the credential, and a 200
+ * from `/agent/me` proves it will before anyone is navigated into a console
+ * that would otherwise 401 on every call.
+ *
+ * A plain `fetch`, not `gatewayClient`: that client signs requests with the
+ * STORED credential and ends the session on a 401. The credential under test
+ * is neither stored yet nor related to any current session, so a rejection
+ * here must be reported, never acted on.
+ */
+async function whoIs(credential: string, kind: Session["kind"]): Promise<Principal> {
+  let response: Response;
+  try {
+    response = await fetch(`${GATEWAY_URL}/agent/me`, {
+      headers: { Authorization: `Bearer ${credential}` },
+    });
+  } catch {
+    throw new GatewayError("Couldn't reach Bolty's server. Check your connection and try again.", {
+      retryable: true,
+    });
+  }
+
+  if (response.status === 401) {
+    // agent-service answers every auth failure with one status and one body,
+    // on purpose (app/auth/dependency.py). Its log names the exact reason.
+    throw new GatewayError(
+      kind === "apiKey"
+        ? "Bolty's server rejected this key. It may be mistyped or revoked — its log names the exact reason."
+        : "Bolt signed you in, but Bolty's server couldn't confirm the session. Try again in a moment; if it keeps happening, your account may not be set up for Bolty yet.",
+    );
+  }
+  if (!response.ok) {
+    throw new GatewayError(`Bolty's server is having trouble right now (${response.status}). Try again in a moment.`, {
+      status: response.status,
+      retryable: true,
+    });
+  }
+  return (await response.json()) as Principal;
+}
+
+function readable(principal: Principal): string[] {
+  // Only the names the caller can READ — the question every reader asks
+  // ("should I bother fetching this?"), narrowed once here.
+  return (principal.permissions ?? []).filter((p) => p.can_read).map((p) => p.name);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const session = useSyncExternalStore(subscribeSession, getSession);
 
-  /**
-   * Verify a key by ASKING THE BACKEND, then build the session from what it
-   * answers.
-   *
-   * Deliberately not trusted from the input. A `boltai_`-prefixed string is
-   * not a session — only agent-service can say whether the key exists, has
-   * been revoked, and which organisation it speaks for. A 200 from
-   * `/agent/me` proves the key works before the operator is navigated into a
-   * console that would otherwise 401 on every call.
-   *
-   * A plain `fetch`, not `gatewayClient`: that client signs requests with the
-   * STORED credential and clears the session on 401. The key under test is
-   * neither stored yet nor related to any current session, so a rejection
-   * here must be reported, never acted on.
-   */
+  /** A bolt-v2 token → a verified user session. */
+  const startUserSession = useCallback(
+    async (input: {
+      token: string;
+      refreshToken: string | null;
+      organisation: BoltV2Organisation | null;
+      via: NonNullable<Session["via"]>;
+    }) => {
+      const principal = await whoIs(input.token, "user");
+      setSession({
+        kind: "user",
+        credential: input.token,
+        refreshToken: input.refreshToken,
+        expiresAt: tokenExpiresAt(input.token),
+        via: input.via,
+        user: {
+          id: principal.user_id,
+          email: principal.email,
+          name: principal.username || principal.email,
+        },
+        organisationId: principal.tenant_id,
+        signedInOrganisation:
+          input.organisation !== null && input.organisation.id === principal.tenant_id
+            ? input.organisation
+            : undefined,
+        permissions: readable(principal),
+      });
+    },
+    [],
+  );
+
+  const settle = useCallback(
+    async (
+      result: LoginResult,
+      organisation: BoltV2Organisation,
+      via: "password" | "code",
+    ): Promise<SignInOutcome> => {
+      if (result.kind === "device-limit") return result;
+      await startUserSession({
+        token: result.token,
+        refreshToken: result.refreshToken,
+        organisation,
+        via,
+      });
+      return { kind: "signed-in" };
+    },
+    [startUserSession],
+  );
+
+  const findAccount = useCallback(async (identifier: string) => {
+    const trimmed = identifier.trim();
+    if (trimmed === "") throw new GatewayError("Enter your email or mobile number first.");
+    // bolt-v2 matches email exactly and stores it lower-case, so "A@b.com"
+    // must be sent as "a@b.com" or it is "not found" — its own app does the
+    // same.
+    const value = trimmed.includes("@") ? trimmed.toLowerCase() : trimmed;
+    return findOrganisations(value);
+  }, []);
+
+  const signInWithPassword = useCallback<AuthContextValue["signInWithPassword"]>(
+    async ({ identifier, password, organisation }) => {
+      if (password === "") throw new GatewayError("Enter your password.");
+      const trimmed = identifier.trim();
+      // `PasswordLogin`'s `email` argument also matches a mobile number, so
+      // one call covers both.
+      const result = await passwordLogin({
+        email: trimmed.includes("@") ? trimmed.toLowerCase() : trimmed,
+        password,
+        organisationId: organisation.id,
+      });
+      return settle(result, organisation, "password");
+    },
+    [settle],
+  );
+
+  const sendCode = useCallback<AuthContextValue["sendCode"]>(async ({ mobileNumber, organisation }) => {
+    await sendMobileCode({ mobileNumber, organisationId: organisation.id });
+  }, []);
+
+  const signInWithCode = useCallback<AuthContextValue["signInWithCode"]>(
+    async ({ mobileNumber, code, organisation }) => {
+      const otp = code.replace(/\D/g, "");
+      if (otp.length !== 6) throw new GatewayError("Enter all six digits of the code.");
+      const result = await otpLogin({ mobileNumber, otp, organisationId: organisation.id });
+      return settle(result, organisation, "code");
+    },
+    [settle],
+  );
+
+  const signOutDevice = useCallback(async (deviceId: string, preAuthToken: string) => {
+    await logoutDevice(deviceId, preAuthToken);
+  }, []);
+
+  const signInWithBolt = useCallback(
+    async (signal?: AbortSignal) => {
+      const { token } = await connectWithBolt(signal);
+      await startUserSession({ token, refreshToken: null, organisation: null, via: "bolt" });
+    },
+    [startUserSession],
+  );
+
   const signInWithApiKey = useCallback(async (rawKey: string) => {
     // Tolerate a paste that brought "Bearer " along from a devtools header
-    // view, or stray whitespace from a terminal — the two places an operator
-    // is most likely to have copied a key from.
+    // view, or stray whitespace from a terminal.
     const apiKey = rawKey.trim().replace(/^Bearer\s+/i, "");
-    if (apiKey === "") {
-      throw new GatewayError("Paste an API key first.");
-    }
+    if (apiKey === "") throw new GatewayError("Paste an API key first.");
 
-    let response: Response;
-    try {
-      response = await fetch(`${GATEWAY_URL}/agent/me`, {
-        headers: { "X-Api-Key": apiKey },
-      });
-    } catch {
-      throw new GatewayError(
-        "Couldn't reach agent-service. Check that it is running and try again.",
-      );
-    }
-
-    if (response.status === 401) {
-      // agent-service answers every auth failure with one status and one body,
-      // on purpose (app/auth/dependency.py) — an unknown key and a revoked one
-      // are deliberately indistinguishable from out here. It DOES name the
-      // reason in its own log, which is where an operator should look next, so
-      // say that rather than guessing between causes the response cannot
-      // support.
-      throw new GatewayError(
-        "agent-service rejected this key. It may be mistyped or revoked — its log names the exact reason.",
-      );
-    }
-    if (!response.ok) {
-      throw new GatewayError(`agent-service returned ${response.status}.`);
-    }
-
-    const principal = (await response.json()) as {
-      user_id: string;
-      username: string;
-      email: string;
-      tenant_id: string;
-      permissions?: { name: string; can_read: boolean }[];
-    };
-
+    const principal = await whoIs(apiKey, "apiKey");
     setSession({
-      apiKey,
-      // The key's label and id, not a person's name — a key has nobody behind
-      // it, and the top bar showing "bolt-v2 production" is honest where a
+      kind: "apiKey",
+      credential: apiKey,
+      // The key's label, not a person's name — a key has nobody behind it,
+      // and the top bar showing "bolt-v2 production" is honest where a
       // fabricated name would not be.
-      user: {
-        id: principal.user_id,
-        email: principal.email,
-        name: principal.username,
-      },
-      // The organisation the key resolved to, so the first request carries the
-      // same one `/agent/me` just reported rather than no header at all.
+      user: { id: principal.user_id, email: principal.email, name: principal.username },
       organisationId: principal.tenant_id,
-      // Only the names the caller can READ. That is the question every reader
-      // asks ("should I bother fetching this?"), so the narrowing happens once
-      // here rather than at each call site.
-      permissions: (principal.permissions ?? []).filter((p) => p.can_read).map((p) => p.name),
+      permissions: readable(principal),
     });
   }, []);
 
   const loadActingOrganisations = useCallback(async (): Promise<ActingOrganisation[]> => {
-    // Read through the store rather than the `session` closure: the picker can
-    // open moments after a sign-out and a stale credential here would spend a
-    // round trip getting a 401 back.
-    const apiKey = getSession()?.apiKey;
-    if (apiKey === undefined || apiKey === "") return [];
+    const credential = await getFreshCredential();
+    if (credential === null) return [];
 
     let response: Response;
     try {
+      // No `Organisation` header, deliberately: agent-service scopes the list
+      // to the ACTING organisation's subtree, and sending the current choice
+      // would leave no way back up to the organisation signed in to.
       response = await fetch(`${GATEWAY_URL}/agent/organisations`, {
-        headers: { "X-Api-Key": apiKey },
+        headers: { Authorization: `Bearer ${credential}` },
       });
     } catch {
-      throw new GatewayError("Couldn't reach agent-service.");
+      throw new GatewayError("Couldn't reach Bolty's server.");
     }
     if (!response.ok) {
-      throw new GatewayError(`agent-service returned ${response.status}.`);
+      throw new GatewayError(`Bolty's server returned ${response.status}.`);
     }
 
     const rows = (await response.json()) as OrganisationRow[];
@@ -211,16 +345,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
-    // Nothing to revoke server-side: a key outlives a browser tab by design,
-    // and signing out of this console must never disable a credential other
-    // callers may be using. Clearing local state (which also clears whatever
-    // was persisted — see session.ts) IS "signed out" here. Revoking a key is
-    // a deliberate, separate act (`scripts/issue_api_key.py revoke`).
+    const current = getSession();
+    // A signed-in user's bolt-v2 session is ended on the server too, so it
+    // stops counting against the account's device limit and its refresh
+    // token is dead. Best effort: leaving must never wait on, or fail
+    // because of, a network call. Not for "Continue with Bolt" — that token
+    // is the Bolt tab's own session, and ending it would sign that tab out.
+    // Nothing to revoke for an API key: it outlives a browser tab by design
+    // (revoking one is `scripts/issue_api_key.py revoke`).
+    if (current?.kind === "user" && current.via !== "bolt") {
+      void logoutDevice(platformUniqueId(), current.credential).catch(() => {});
+    }
     setSession(null);
   }, []);
 
   const value: AuthContextValue = {
     session,
+    findAccount,
+    signInWithPassword,
+    sendCode,
+    signInWithCode,
+    signOutDevice,
+    signInWithBolt,
     signInWithApiKey,
     loadActingOrganisations,
     actAsOrganisation,

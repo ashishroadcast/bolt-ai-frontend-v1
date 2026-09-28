@@ -64,7 +64,7 @@ describe("OrganisationPicker", () => {
       configurable: true,
       value: { ...window.location, reload },
     });
-    setSession({ apiKey: "boltai_test", user, organisationId: "root" });
+    setSession({ kind: "apiKey", credential: "boltai_test", user, organisationId: "root" });
   });
 
   afterEach(() => {
@@ -104,7 +104,7 @@ describe("OrganisationPicker", () => {
     expect(await screen.findByText("Root › Depot")).toBeInTheDocument();
   });
 
-  it("sends the API key, not a bearer token, to agent-service", async () => {
+  it("sends the session's credential as a bearer, and no Organisation header", async () => {
     fetchMock.mockResolvedValueOnce(organisationsResponse([{ id: "root", name: "Root" }]));
 
     renderPicker();
@@ -116,7 +116,10 @@ describe("OrganisationPicker", () => {
       { headers: Record<string, string> },
     ];
     expect(url).toContain("/agent/organisations");
-    expect(init.headers["X-Api-Key"]).toBe("boltai_test");
+    expect(init.headers.Authorization).toBe("Bearer boltai_test");
+    // The list is the subtree of the organisation SIGNED IN to; naming the
+    // current choice would narrow it and leave no way back up.
+    expect(init.headers.Organisation).toBeUndefined();
   });
 
   it("reuses the loaded list instead of refetching on every open", async () => {
@@ -149,7 +152,7 @@ describe("OrganisationPicker", () => {
     expect(getSession()?.organisationId).toBe("child");
     // The credential is untouched — switching is local, and agent-service
     // re-validates the header against the key's own subtree anyway.
-    expect(getSession()?.apiKey).toBe("boltai_test");
+    expect(getSession()?.credential).toBe("boltai_test");
     expect(reload).toHaveBeenCalled();
   });
 

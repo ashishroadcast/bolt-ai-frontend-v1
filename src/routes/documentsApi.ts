@@ -2,7 +2,7 @@ import { GatewayError, UnauthorizedError } from "../ask/http/errors.ts";
 import { GATEWAY_URL } from "../api/config.ts";
 import { gatewayClient } from "../api/client.ts";
 import { AgentApiError, stringDetailMessage } from "../ask/http/gatewayClient.ts";
-import { getApiKey, setSession } from "../auth/session.ts";
+import { getFreshCredential, onCredentialRefused } from "../auth/credential.ts";
 
 /**
  * Wire types for `GET/POST /agent/documents`, `POST .../reingest`,
@@ -399,8 +399,8 @@ export function listDocumentChunks(
  * cannot tell "no header was set" from "the body doesn't need one" — and
  * this task's concurrency boundary forbids editing gatewayClient.ts to
  * teach it that distinction. This function reproduces exactly the same
- * auth contract `agentFetch` already enforces (the same `getApiKey`/
- * `setSession` primitives `../api/client.ts` wires that class to) and
+ * auth contract `agentFetch` already enforces (the same `getFreshCredential`/
+ * `onCredentialRefused` primitives `../api/client.ts` wires that class to) and
  * reuses `AgentApiError`/`stringDetailMessage` for the error path, rather
  * than a second, independent notion of either. Flagged to Saurabh in this
  * task's report as a gap for whoever next touches gatewayClient.ts: a
@@ -409,9 +409,9 @@ export function listDocumentChunks(
  * the shared client.
  */
 export async function uploadDocument(datasourceId: number, file: File): Promise<DocumentRecord> {
-  const token = getApiKey();
+  const token = await getFreshCredential();
   if (token === null) {
-    setSession(null);
+    onCredentialRefused();
     throw new UnauthorizedError(401);
   }
 
@@ -426,7 +426,7 @@ export async function uploadDocument(datasourceId: number, file: File): Promise<
   });
 
   if (response.status === 401 || response.status === 403) {
-    setSession(null);
+    if (response.status === 401) onCredentialRefused();
     throw new UnauthorizedError(response.status);
   }
   if (!response.ok) {

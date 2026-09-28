@@ -27,52 +27,25 @@ export const GATEWAY_URL: string = absolute(
 );
 
 /**
- * Where sign-in goes, when that is not where `/agent/*` goes.
+ * bolt-v2's GraphQL endpoint — where sign-in asks bolt-v2 who someone is
+ * (`EmailOrMobileBasedOrganisations`), signs them in (`PasswordLogin`,
+ * `OtpLogin`) and renews their token (`RefreshToken`), straight from the
+ * browser, exactly as bolt-v2's own web app does (`src/auth/boltv2.ts`).
  *
- * The two split because the AI tier is not provisioned: `agent_service`
- * does not run in production, so the agent half only works locally, while
- * a real operator identity — and the real `tenant_id` that scopes every
- * warehouse query — can only be issued by production auth. Pointing
- * VITE_AUTH_URL at the production gateway and leaving VITE_GATEWAY_URL
- * local gets a genuine token against a local agent.
- *
- * Defaults to GATEWAY_URL, so the ordinary all-local and all-deployed
- * cases need no second variable. Note the token is still validated
- * independently by the local gateway AND by agent-service
- * (app/auth/dependency.py), so both must share the issuing secret.
+ * Production by default, deliberately. agent-service verifies a signed-in
+ * user's token by asking bolt-v2 (its `BOLTV2_AUTH_URL`), and the deployed
+ * one asks production — a token from any other bolt-v2 would be refused on
+ * the first request. Point this elsewhere only together with an
+ * agent-service that verifies against the same bolt-v2.
  */
-const RAW_AUTH_URL = import.meta.env.VITE_AUTH_URL || GATEWAY_URL;
+export const BOLTV2_GRAPHQL_URL: string =
+  import.meta.env.VITE_BOLTV2_GRAPHQL_URL || "https://be-prod.track360.net.in/graphql";
 
 /**
- * Absolute, always. A relative value is legitimate — pointing at the dev
- * server's own proxy path is how sign-in reaches a remote gateway without
- * a preflight — but `new Request()` needs an origin, so a bare "/path"
- * throws outside a browser context (jsdom under Vitest, most obviously).
- * Resolving here keeps that detail out of every call site.
+ * bolt-v2's web app, for the two things sign-in hands off to it: "Continue
+ * with Bolt" (an account already signed in there) and resetting a forgotten
+ * password. Must be the web app that signs in against `BOLTV2_GRAPHQL_URL`.
  */
-export const AUTH_URL: string = absolute(RAW_AUTH_URL);
-
-/**
- * bolt-v2's own auth-service GraphQL endpoint — where `AuthContext.
- * signInWithPassword` posts `EmailOrMobileBasedOrganisations`/
- * `PasswordLogin` directly, from the browser, rather than through
- * anything this console's own backend proxies.
- *
- * A THIRD, independent URL rather than a third fallback onto `AUTH_URL`:
- * `AUTH_URL` is POS's own gateway (`SIGN_IN_MUTATION`'s `login`), a
- * different service with a different schema — bolt-v2's `PasswordLogin`/
- * `EmailOrMobileBasedOrganisations` live only here, verified live against
- * both `be-dev.track360.net.in` and `be-prod.track360.net.in` returning
- * bolt-v2's own resolver errors verbatim ("user not found"). Defaults to
- * the dev backend: this console is developed and tested locally, and a
- * bare default pointed at prod would make "hit real production auth" the
- * silent, un-opted-into behaviour of every `npm run dev` — a real deploy
- * sets VITE_BOLTV2_AUTH_URL explicitly (see .env.example).
- *
- * No `absolute()` here: unlike `AUTH_URL`/`GATEWAY_URL`, this is never a
- * same-origin dev-proxy path — bolt-v2's auth-service is a distinct,
- * cross-origin host either way, so a relative value would only ever be a
- * misconfiguration, not a legitimate local-proxy setup worth resolving.
- */
-export const BOLTV2_AUTH_URL: string =
-  import.meta.env.VITE_BOLTV2_AUTH_URL || "https://be-dev.track360.net.in/graphql";
+export const BOLTV2_APP_URL: string = (
+  import.meta.env.VITE_BOLTV2_APP_URL || "https://bolt-v2.roadcast.net"
+).replace(/\/+$/, "");

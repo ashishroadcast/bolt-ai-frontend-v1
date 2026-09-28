@@ -133,7 +133,7 @@ function renderDocumentsRoute() {
 
 describe("DocumentsRoute", () => {
   beforeEach(() => {
-    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
+    setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {
@@ -573,7 +573,7 @@ describe("DocumentsRoute", () => {
 
 describe("choosing between several knowledge libraries", () => {
   beforeEach(() => {
-    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
+    setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

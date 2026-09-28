@@ -23,7 +23,7 @@ describe("App — legacy /prompts and /test-suites URLs", () => {
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse([])),
     );
-    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
+    setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {
@@ -77,7 +77,7 @@ describe("App — legacy /prompts and /test-suites URLs", () => {
 describe("App — /mcp-servers", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse([])));
-    setSession({ apiKey: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
+    setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
   afterEach(() => {

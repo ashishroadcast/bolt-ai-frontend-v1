@@ -283,8 +283,8 @@ export interface AskAuthProvider {
    *
    * agent-service accepts it as either `X-Api-Key` or `Authorization: Bearer`;
    * Ask sends the latter, which is what its HTTP client already does for
-   * every other caller. What the string IS — an API key today — is the host's
-   * business, not Ask's.
+   * every other caller. What the string IS — a signed-in user's bolt-v2 token
+   * or a service account's API key — is the host's business, not Ask's.
    */
   getCredential: () => string | null | Promise<string | null>;
   /**

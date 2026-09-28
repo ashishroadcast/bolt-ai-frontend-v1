@@ -1,12 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getSession, getApiKey, setSession, subscribeSession } from "./session.ts";
+import {
+  endSession,
+  getCredential,
+  getSession,
+  peekSignOutReason,
+  setSession,
+  subscribeSession,
+  type Session,
+} from "./session.ts";
 
 const user = { id: "1", email: "a@b.com", name: "A B" };
-// v2: the stored shape lost `token`/`refreshToken`/`expiresAt` for an
-// `apiKey`, so a v1 value would fail `isSession` on every boot. A new key
-// lands an operator with an old session on sign-in once instead of leaving
-// a silently-ignored blob in storage forever.
-const STORAGE_KEY = "agent-console.session.v2";
+// v3: the stored shape gained `kind` and renamed `apiKey` to `credential`, so
+// a v2 value would fail `isSession` on every boot. A new key lands an operator
+// with an old session on sign-in once instead of leaving a silently-ignored
+// blob in storage forever.
+const STORAGE_KEY = "agent-console.session.v3";
+
+const keySession: Session = { kind: "apiKey", credential: "boltai_tok", user };
+const userSession: Session = {
+  kind: "user",
+  credential: "jwt-1",
+  refreshToken: "refresh-1",
+  expiresAt: 1_900_000_000_000,
+  via: "password",
+  user,
+  organisationId: "org-1",
+};
 
 beforeEach(() => {
   setSession(null);
@@ -15,96 +34,179 @@ beforeEach(() => {
 describe("session store", () => {
   it("starts signed out", () => {
     expect(getSession()).toBeNull();
-    expect(getApiKey()).toBeNull();
+    expect(getCredential()).toBeNull();
   });
 
   it("holds what setSession is given", () => {
-    setSession({ apiKey: "tok", user});
-    expect(getSession()).toEqual({ apiKey: "tok", user });
-    expect(getApiKey()).toBe("tok");
+    setSession(keySession);
+    expect(getSession()).toEqual(keySession);
+    expect(getCredential()).toBe("boltai_tok");
   });
 
   it("notifies subscribers on every change, including sign-out", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeSession(listener);
 
-    setSession({ apiKey: "tok", user});
+    setSession(keySession);
     setSession(null);
 
     expect(listener).toHaveBeenCalledTimes(2);
     unsubscribe();
-    setSession({ apiKey: "tok2", user});
+    setSession(userSession);
     expect(listener).toHaveBeenCalledTimes(2);
   });
+});
 
-  // This used to silently turn an expired session into "not signed in" —
-  // exactly the bug this task fixes. getApiKey() now hands the token out
-  // regardless of expiry; staleness is handled by refreshing (client.ts's
-  // getFreshToken, checked against getSession().expiresAt) or by reacting
-  // to the 401 a stale token eventually draws, never by pretending the
-  // session doesn't exist.
-  it("keeps handing out the token past expiresAt instead of silently signing out", () => {
-    setSession({ apiKey: "tok", user});
-    expect(getApiKey()).toBe("tok");
-    expect(getSession()).not.toBeNull();
+describe("where each kind of session is kept", () => {
+  // A user session is shared by every tab, because bolt-v2 rotates the
+  // refresh token and two private copies would retire each other's.
+  it("keeps a user session in localStorage, shared by every tab", () => {
+    setSession(userSession);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)!)).toEqual(userSession);
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  it("keeps handing out the token before expiresAt", () => {
-    setSession({ apiKey: "tok", user});
-    expect(getApiKey()).toBe("tok");
+  // An API key is long-lived and tenant-wide: closing the tab should not
+  // leave it on disk for the next person at the machine.
+  it("keeps an API key in sessionStorage, this tab's alone", () => {
+    setSession(keySession);
+    expect(JSON.parse(sessionStorage.getItem(STORAGE_KEY)!)).toEqual(keySession);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("switching kind leaves nothing of the other behind", () => {
+    setSession(userSession);
+    setSession(keySession);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    setSession(userSession);
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it("sign-out (setSession(null)) leaves nothing behind in either store", () => {
+    setSession(userSession);
+    setSession(null);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe("another tab changing the shared session", () => {
+  function fromAnotherTab(value: Session | null) {
+    if (value === null) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: STORAGE_KEY, storageArea: localStorage }),
+    );
+  }
+
+  it("adopts a token another tab renewed, keeping this tab's organisation", () => {
+    setSession({ ...userSession, organisationId: "this-tabs-org" });
+    fromAnotherTab({ ...userSession, credential: "jwt-2", refreshToken: "refresh-2", organisationId: "other" });
+
+    expect(getSession()?.credential).toBe("jwt-2");
+    expect(getSession()?.refreshToken).toBe("refresh-2");
+    // Which organisation this tab reads is its own: only the tab that
+    // switched reloads onto the new one's data.
+    expect(getSession()?.organisationId).toBe("this-tabs-org");
+  });
+
+  it("signs out when another tab signs out", () => {
+    setSession(userSession);
+    fromAnotherTab(null);
+    expect(getSession()).toBeNull();
+  });
+
+  it("leaves an API-key tab alone", () => {
+    setSession(keySession);
+    fromAnotherTab(userSession);
+    expect(getSession()).toEqual(keySession);
+  });
+});
+
+describe("why a session ended", () => {
+  it("remembers a server-ended session's reason until the next sign-in", () => {
+    setSession(userSession);
+    endSession("expired");
+
+    expect(getSession()).toBeNull();
+    // Peeking twice sees it twice: no side effect for a double render to trip.
+    expect(peekSignOutReason()).toBe("expired");
+    expect(peekSignOutReason()).toBe("expired");
+
+    setSession(userSession);
+    expect(peekSignOutReason()).toBeNull();
+  });
+
+  it("gives no reason for signing out by choice", () => {
+    setSession(userSession);
+    setSession(null);
+    expect(peekSignOutReason()).toBeNull();
+  });
+
+  it("does nothing without a session to end", () => {
+    endSession("rejected");
+    expect(peekSignOutReason()).toBeNull();
   });
 });
 
 describe("session persistence across a reload", () => {
   // Simulates a reload by writing through the real setSession()/persist()
   // path, then re-importing the module fresh (a new module instance has a
-  // new `current` variable, exactly like a page reload does) and reading
-  // its state back — this fails if persistence is ever deleted or the
-  // restore-on-load wiring is removed, not just if some helper stops
-  // being called.
-  it("restores a signed-in session when the module is re-initialised against populated storage", async () => {
-    setSession({ apiKey: "tok", user});
+  // new `current` variable, exactly like a page reload does).
+  it("restores a user session from the shared store", async () => {
+    setSession(userSession);
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
 
-    expect(reloaded.getSession()).toEqual({ apiKey: "tok", user });
-    expect(reloaded.getApiKey()).toBe("tok");
+    expect(reloaded.getSession()).toEqual(userSession);
+  });
+
+  it("restores this tab's API key ahead of another tab's user session", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(userSession));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(keySession));
+
+    vi.resetModules();
+    const reloaded = await import("./session.ts");
+
+    expect(reloaded.getSession()).toEqual(keySession);
   });
 
   it("boots signed out when storage holds unparseable JSON, rather than throwing", async () => {
-    sessionStorage.setItem(STORAGE_KEY, "{not json");
+    localStorage.setItem(STORAGE_KEY, "{not json");
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
 
     expect(reloaded.getSession()).toBeNull();
-    expect(reloaded.getApiKey()).toBeNull();
   });
 
-  // Regression: caught live in a real browser, not by any prior unit
-  // test. auth's real `User.id` is a JSON *number* (ent's int id,
-  // untouched by AuthContext.tsx's signIn — `id: user.id` passes
-  // whatever type the server actually sent), even though this file's own
-  // `SessionUser.id` is declared `string`. A validator that trusted the
-  // declared type over the real one rejected every persisted session on
-  // the very next reload, which is precisely the "logs out on reload"
-  // complaint this task exists to fix.
+  // Regression: bolt's real `User.id` can arrive as a JSON number even though
+  // `SessionUser.id` is declared `string`; a validator that trusted the
+  // declared type signed every operator out on the next reload.
   it("restores a persisted session whose user.id is a JSON number, not a string", async () => {
-    sessionStorage.setItem(
+    localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ apiKey: "tok", user: { id: 1, email: "a@b.com", name: "A" } }),
+      JSON.stringify({ ...userSession, user: { id: 1, email: "a@b.com", name: "A" } }),
     );
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
 
-    expect(reloaded.getSession()).not.toBeNull();
-    expect(reloaded.getApiKey()).toBe("tok");
+    expect(reloaded.getCredential()).toBe("jwt-1");
   });
 
-  it("boots signed out when storage holds well-formed JSON in the wrong shape", async () => {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: "bar" }));
+  it("boots signed out on a v2 value, which has no kind", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ apiKey: "tok", user }));
+
+    vi.resetModules();
+    const reloaded = await import("./session.ts");
+
+    expect(reloaded.getSession()).toBeNull();
+  });
+
+  it("boots signed out when a typed field has the wrong type", async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...userSession, expiresAt: "soon" }));
 
     vi.resetModules();
     const reloaded = await import("./session.ts");
@@ -124,13 +226,5 @@ describe("session persistence across a reload", () => {
     } finally {
       Storage.prototype.getItem = originalGetItem;
     }
-  });
-
-  it("sign-out (setSession(null)) leaves nothing behind in storage", () => {
-    setSession({ apiKey: "tok", user});
-    expect(sessionStorage.getItem(STORAGE_KEY)).not.toBeNull();
-
-    setSession(null);
-    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 });

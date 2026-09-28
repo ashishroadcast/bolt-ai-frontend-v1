@@ -116,7 +116,11 @@ export function OrganisationPicker() {
 
   const current =
     organisations?.find((organisation) => organisation.id === session.organisationId) ?? null;
-  const label = current?.name ?? "Organisation";
+  // Before the list has loaded, a user session already knows the name of the
+  // organisation it signed in to — better than a generic word in the bar.
+  const signedIn =
+    session.signedInOrganisation?.id === session.organisationId ? session.signedInOrganisation : undefined;
+  const label = current?.name ?? signedIn?.name ?? "Organisation";
 
   const needle = filter.trim().toLowerCase();
   const shown =
