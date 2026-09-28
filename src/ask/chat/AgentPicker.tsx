@@ -102,14 +102,24 @@ export function AgentPicker() {
           {/* A plain anchor to a host-supplied href, not a router link. The
               package cannot import the console's router without becoming
               unusable in Angular's — and a host with nowhere to send anyone
-              gets the sentence without the link rather than a dead one. */}
-          No agents are set up yet.{" "}
-          {setupAgentsHref === undefined ? null : (
+              gets a sentence without the link rather than a dead one (it
+              used to get "No agents are set up yet. before asking…").
+
+              A new tab, because inside bolt-v2 this href is the admin
+              console: following it in place replaced the tab the operator
+              was working in. In the console itself it is a full page load
+              either way, and a new tab at least keeps the conversation. */}
+          {setupAgentsHref === undefined || setupAgentsHref === "" ? (
+            "No agents are set up yet. Ask an admin to set one up."
+          ) : (
             <>
-              <a href={setupAgentsHref}>Set one up</a>{" "}
+              No agents are set up yet.{" "}
+              <a href={setupAgentsHref} target="_blank" rel="noopener noreferrer">
+                Set one up
+              </a>{" "}
+              before asking a question.
             </>
           )}
-          before asking a question.
         </span>
       </div>
     );

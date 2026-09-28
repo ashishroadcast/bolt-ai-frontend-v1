@@ -110,3 +110,31 @@ describe("AgentPicker armed chip", () => {
     expect(screen.getByText("Sales Analyst")).toBeInTheDocument();
   });
 });
+
+describe("AgentPicker with no agents", () => {
+  it("opens the setup link in a new tab, so an embedding host keeps its own", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json([])));
+    mount();
+
+    const link = await screen.findByRole("link", { name: "Set one up" });
+    expect(link).toHaveAttribute("href", "/agents");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("says a whole sentence, with no link, when the host gave nowhere to send anyone", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json([])));
+    render(
+      <TestAskProvider config={{ setupAgentsHref: undefined }}>
+        <ChatProvider>
+          <AskAgentsProvider>
+            <AgentPicker />
+          </AskAgentsProvider>
+        </ChatProvider>
+      </TestAskProvider>,
+    );
+
+    expect(await screen.findByText("No agents are set up yet. Ask an admin to set one up.")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+});
