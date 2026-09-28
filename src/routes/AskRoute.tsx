@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useCallback, useEffect } from "react";
+import { useHref, useSearchParams } from "react-router-dom";
 import { AskInspectorProvider, AskScreen } from "../ask/index.ts";
 import { useInspector } from "../shell/InspectorContext.tsx";
 
@@ -55,11 +55,22 @@ export function AskRoute() {
     );
   }, [raw, setSearchParams]);
 
+  // What History's Share copies: a link back to this route, which is what
+  // reads `?conversation=` above. Supplied here because only the console
+  // has such a route — Ask offers no Share in a host that passes none.
+  // Through the router's own href, so a basename, if one is ever set, is
+  // part of the link.
+  const askHref = useHref("/ask");
+  const conversationLink = useCallback(
+    (conversationId: number) => `${window.location.origin}${askHref}?conversation=${conversationId}`,
+    [askHref],
+  );
+
   return (
     <AskInspectorProvider
       inspector={{ selection: inspector.selection, selectPhase: inspector.selectPhase }}
     >
-      <AskScreen initialConversationId={initialConversationId} />
+      <AskScreen initialConversationId={initialConversationId} conversationLink={conversationLink} />
     </AskInspectorProvider>
   );
 }

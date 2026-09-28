@@ -452,6 +452,25 @@ describe("AskRoute", () => {
     expect(screen.getByLabelText("Ask a question").closest("fieldset")).not.toBeDisabled();
   });
 
+  it("gives History's Share the console's own /ask link, the one this route opens", async () => {
+    const { messages: _messages, ...summary } = LINKED;
+    renderAskRoute(routeFetch({ historyItems: [{ ...summary, message_count: 2, last_assistant_snippet: null }] }));
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    try {
+      fireEvent.click(await screen.findByRole("button", { name: /copy link to top items last week/i }));
+
+      await waitFor(() =>
+        expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/ask?conversation=9`),
+      );
+    } finally {
+      // @ts-expect-error -- test-only teardown of a property defined above
+      delete navigator.clipboard;
+    }
+  });
+
   it("opens a linked conversation once, and takes the link out of the URL so a return does not reopen it", async () => {
     const fetchMock = routeFetch({ conversationDetail: { 9: LINKED } });
     renderAskRoute(fetchMock, "/ask?conversation=9&tab=x");

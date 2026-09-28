@@ -22,11 +22,12 @@ function renderPanel(
   fetchMock: ReturnType<typeof vi.fn>,
   onClose: () => void = () => {},
   onMinimize?: () => void,
+  conversationLink?: (conversationId: number) => string,
 ) {
   vi.stubGlobal("fetch", fetchMock);
   return render(<TestAskProvider>
       <ChatProvider>
-      <HistoryPanel onClose={onClose} onMinimize={onMinimize} />
+      <HistoryPanel onClose={onClose} onMinimize={onMinimize} conversationLink={conversationLink} />
     </ChatProvider>
     </TestAskProvider>,
   );
@@ -430,9 +431,9 @@ describe("HistoryPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("copies a working link to the conversation when Share is clicked", async () => {
+  it("copies the host's link to the conversation when Share is clicked", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: ONE_ITEM, next_cursor: null })));
-    renderPanel(fetchMock);
+    renderPanel(fetchMock, undefined, undefined, (id) => `https://console.test/ask?conversation=${id}`);
     await screen.findByText("Weekend discount spike");
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -440,9 +441,21 @@ describe("HistoryPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /copy link to weekend discount spike/i }));
 
-    // A real permalink AskRoute.tsx actually understands (?conversation=)
-    // — not a decorative string that happens to look like one.
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/ask?conversation=4")));
+    // Exactly what the host built, byte for byte — the host is the one
+    // that knows a URL which opens it.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("https://console.test/ask?conversation=4"));
+  });
+
+  it("offers no Share when the host gave no link to share", async () => {
+    // The embedded widget's case: it used to copy `<host origin>/ask?...`,
+    // a page bolt-v2 does not have.
+    const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: ONE_ITEM, next_cursor: null })));
+    renderPanel(fetchMock);
+    await screen.findByText("Weekend discount spike");
+
+    expect(screen.queryByRole("button", { name: /copy link to/i })).not.toBeInTheDocument();
+    // Delete is still there; only Share went.
+    expect(screen.getByRole("button", { name: /delete weekend discount spike/i })).toBeInTheDocument();
   });
 
   it("deletes only after a second, explicit confirmation click", async () => {

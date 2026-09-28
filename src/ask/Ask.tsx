@@ -63,6 +63,15 @@ export interface AskProps {
    * may want to say something narrower.
    */
   emptyState?: { title: string; body: string };
+  /**
+   * A URL that opens a conversation in this host, for History's Share to
+   * copy. Omitted, History offers no Share — the right default, since a
+   * link is only as good as the host's ability to open it, and Ask cannot
+   * know that. The console passes one (its `/ask?conversation=` route);
+   * the `<bolt-ai-ask>` element passes none, because bolt-v2 has no such
+   * page and the link it used to copy there went nowhere.
+   */
+  conversationLink?: (conversationId: number) => string;
 }
 
 const DEFAULT_EMPTY = {
@@ -94,11 +103,11 @@ function canRetry(err: unknown): boolean {
   return status === undefined || ![401, 403, 404].includes(status);
 }
 
-export function Ask({ config, initialConversationId, emptyState }: AskProps) {
+export function Ask({ config, ...screen }: AskProps) {
   return (
     <AskProvider config={config}>
       <ChatProvider>
-        <AskScreen initialConversationId={initialConversationId} emptyState={emptyState} />
+        <AskScreen {...screen} />
       </ChatProvider>
     </AskProvider>
   );
@@ -116,6 +125,7 @@ export function Ask({ config, initialConversationId, emptyState }: AskProps) {
 export function AskScreen({
   initialConversationId,
   emptyState,
+  conversationLink,
 }: Omit<AskProps, "config">) {
   const { messages, activeRun, loadConversation, clearConversation } = useChatContext();
   const { copy, onClose } = useAskConfig();
@@ -235,7 +245,7 @@ export function AskScreen({
     return (
       <div className={styles.screen}>
         <div className={styles.accentLine} />
-        <HistoryPanel onClose={closeHistory} onMinimize={onClose} />
+        <HistoryPanel onClose={closeHistory} onMinimize={onClose} conversationLink={conversationLink} />
       </div>
     );
   }

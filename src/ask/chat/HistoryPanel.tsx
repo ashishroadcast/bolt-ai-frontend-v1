@@ -117,22 +117,12 @@ function channelLabel(externalRef: string | null | undefined): string | null {
   return "Channel";
 }
 
-/**
- * A working, honest permalink — not a decorative string. `AskRoute.tsx`
- * reads `?conversation=` on mount and calls `loadConversation` with it, so
- * pasting this link (once signed in) actually reopens this conversation
- * rather than landing on the plain Ask screen. There is no sharing
- * backend in this system (task brief) — this is deliberately *not* that:
- * it copies a link to a screen this same console already knows how to
- * open, nothing more.
- */
-function shareLink(id: number): string {
-  return `${window.location.origin}/ask?conversation=${id}`;
-}
-
 interface HistoryItemProps {
   item: ConversationSummary;
   bucket: string;
+  /** What Share copies, or `null` for no Share at all — see
+   * `HistoryPanelProps.conversationLink`. */
+  shareLink: string | null;
   onOpen: () => void;
   onDeleted: (id: number) => void;
   disabled: boolean;
@@ -148,7 +138,7 @@ interface HistoryItemProps {
  * load-bearing actions this console already has and Figma's static frame
  * simply didn't need to depict.
  */
-function HistoryItem({ item, bucket, onOpen, onDeleted, disabled, openFailed }: HistoryItemProps) {
+function HistoryItem({ item, bucket, shareLink, onOpen, onDeleted, disabled, openFailed }: HistoryItemProps) {
   const client = useAskClient();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -201,49 +191,56 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled, openFailed }: 
         </span>
       </button>
 
-      <div className={styles.rowActions}>
-        <CopyButton text={shareLink(item.id)} icon={Link2} idleLabel="Share" ariaLabel={`Copy link to ${heading}`} />
+      {/* Left out when there is nothing to put in it — a channel run in a
+          host that gave no link has neither Share nor Delete — rather than
+          padding the card with an empty strip. */}
+      {(shareLink !== null || channel === null) && (
+        <div className={styles.rowActions}>
+          {shareLink !== null && (
+            <CopyButton text={shareLink} icon={Link2} idleLabel="Share" ariaLabel={`Copy link to ${heading}`} />
+          )}
 
-        {/* No Delete on a channel run. `delete_conversation` keeps the
-            strict (tenant, user) scope that reading widens, so this button
-            could only ever 404 here — and it is refused on purpose: a
-            complaint transcript is what a refund decision rested on, and
-            this endpoint takes its code-execution artifacts with it.
-            Rendering a control whose only outcome is an error is worse
-            than not offering it. */}
-        {channel !== null ? null : confirming ? (
-          <span className={styles.confirmRow}>
-            <span className={styles.confirmText}>Delete this conversation?</span>
+          {/* No Delete on a channel run. `delete_conversation` keeps the
+              strict (tenant, user) scope that reading widens, so this button
+              could only ever 404 here — and it is refused on purpose: a
+              complaint transcript is what a refund decision rested on, and
+              this endpoint takes its code-execution artifacts with it.
+              Rendering a control whose only outcome is an error is worse
+              than not offering it. */}
+          {channel !== null ? null : confirming ? (
+            <span className={styles.confirmRow}>
+              <span className={styles.confirmText}>Delete this conversation?</span>
+              <button
+                type="button"
+                className={styles.confirmBtn}
+                onClick={() => void handleConfirmDelete()}
+                disabled={deleting}
+                aria-label="Confirm delete"
+              >
+                {deleting ? "Deleting…" : "Confirm"}
+              </button>
+              <button
+                type="button"
+                className={styles.cancelBtn}
+                onClick={() => setConfirming(false)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
             <button
               type="button"
-              className={styles.confirmBtn}
-              onClick={() => void handleConfirmDelete()}
-              disabled={deleting}
-              aria-label="Confirm delete"
+              className={styles.rowAction}
+              onClick={() => setConfirming(true)}
+              aria-label={`Delete ${heading}`}
             >
-              {deleting ? "Deleting…" : "Confirm"}
+              <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
+              <span>Delete</span>
             </button>
-            <button
-              type="button"
-              className={styles.cancelBtn}
-              onClick={() => setConfirming(false)}
-              disabled={deleting}
-            >
-              Cancel
-            </button>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className={styles.rowAction}
-            onClick={() => setConfirming(true)}
-            aria-label={`Delete ${heading}`}
-          >
-            <Trash2 size={13} strokeWidth={2} aria-hidden="true" />
-            <span>Delete</span>
-          </button>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {deleteError !== null && (
         <p role="alert" className={styles.rowError}>
@@ -301,9 +298,21 @@ export interface HistoryPanelProps {
    * arrow, and once a conversation has actually opened. */
   onClose: () => void;
   onMinimize?: () => void;
+  /**
+   * A link that reopens a conversation, for Share to copy. Omitted, rows
+   * offer no Share.
+   *
+   * The host's to build, because only the host knows a URL that opens one.
+   * This used to build `<origin>/ask?conversation=<id>` itself — right in
+   * the console, whose Ask route reads that parameter, and a dead link
+   * everywhere else: embedded in bolt-v2 it pointed at a page the host
+   * app does not have. There is no sharing backend (task brief); this only
+   * ever copies a link to a screen the host already knows how to open.
+   */
+  conversationLink?: (conversationId: number) => string;
 }
 
-export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
+export function HistoryPanel({ onClose, onMinimize, conversationLink }: HistoryPanelProps) {
   const client = useAskClient();
   const { loadConversation, activeConversationId, clearConversation } = useChatContext();
   const [searchInput, setSearchInput] = useState("");
@@ -543,6 +552,7 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
                     key={item.id}
                     item={item}
                     bucket={bucket}
+                    shareLink={conversationLink?.(item.id) ?? null}
                     onOpen={() => void handleOpen(item.id)}
                     onDeleted={handleDeleted}
                     disabled={openingId !== null}
