@@ -226,10 +226,51 @@ function Block({ block, caret }: { block: AnswerBlock; caret: boolean }): ReactE
  */
 const LEAD_MAX_CHARS = 120;
 
-function isHeadline(block: { kind: "paragraph"; lines: InlineSpan[][] }): boolean {
+/**
+ * Openings that are not a finding however short they are: an apology, or
+ * the topic guard's refusal ("I can only help with questions about our
+ * menu…", `agent-service`'s `_DEFAULT_REFUSAL`). Set as the headline, a
+ * refusal arrived in display bold with the accent rule under it — dressed
+ * as the answer to a question it had just declined.
+ */
+const NOT_A_FINDING =
+  /^(?:sorry\b|i'm sorry|i am sorry|i apologi[sz]e|unfortunately\b|i (?:can only|cannot|can't|am unable|'m unable|am not able|'m not able|do not have|don't have)\b)/i;
+
+function isHeadline(block: AnswerBlock | undefined): boolean {
+  // A `## Heading` labels what follows it; it is not what was found.
+  if (block?.kind !== "paragraph" || block.heading === true) return false;
   if (block.lines.length !== 1) return false;
-  const length = block.lines[0]!.reduce((total, span) => total + span.text.length, 0);
-  return length > 0 && length <= LEAD_MAX_CHARS;
+  const text = block.lines[0]!.map((span) => span.text).join("").trim();
+  if (text.length === 0 || text.length > LEAD_MAX_CHARS) return false;
+  // A question back to the reader ("Which store do you mean?") is the
+  // agent asking, not answering.
+  if (text.endsWith("?")) return false;
+  return !NOT_A_FINDING.test(text.replace(/\u2019/g, "'"));
+}
+
+/**
+ * Which top-level blocks are the finding and the closing line — decided
+ * from the WHOLE answer, never from the part the reveal has reached.
+ *
+ * It used to be decided per frame from the revealed slice, so the voice of
+ * a block changed under the reader as it arrived: a 130-character opening
+ * was set as the 18px headline for its first 120 characters and snapped to
+ * body text at the 121st, and a two-line opening was a headline until its
+ * second line began. Deciding once from the full parse means a block is
+ * drawn in the voice it will finish in from its first character.
+ */
+function voicesOf(blocks: AnswerBlock[]): { lead: boolean; closing: number } {
+  const lead = isHeadline(blocks[0]);
+  const last = blocks.length - 1;
+  const tail = blocks[last];
+  const closing =
+    last > 0 &&
+    tail?.kind === "paragraph" &&
+    tail.heading !== true &&
+    blocks.some((block) => block.kind === "list")
+      ? last
+      : -1;
+  return { lead, closing };
 }
 
 export interface AnswerTextProps {
@@ -264,6 +305,7 @@ export interface AnswerTextProps {
 export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElement | null {
   const blocks = useMemo(() => parseAnswer(text), [text]);
   const total = useMemo(() => countChars(blocks), [blocks]);
+  const voices = useMemo(() => voicesOf(blocks), [blocks]);
 
   const isRevealing = visibleChars !== undefined && visibleChars < total;
   const shown = isRevealing ? takeChars(blocks, visibleChars) : blocks;
@@ -294,9 +336,11 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
         // display bold, which is what a styling rule doing the opposite of
         // containing a content failure looks like. Observed exactly once
         // and it was the ugliest thing this console has rendered.
-        const isLead = index === 0 && isHeadline(block);
-        const isClosing =
-          !isLead && index === shown.length - 1 && shown.some((b) => b.kind === "list");
+        //
+        // Both from the whole answer (`voicesOf`): `shown` is a prefix of
+        // `blocks`, so an index into one is the same block in the other.
+        const isLead = index === 0 && voices.lead;
+        const isClosing = index === voices.closing;
         return (
           // eslint-disable-next-line react/no-array-index-key
           <p

@@ -227,3 +227,63 @@ describe("telling the finding apart from the reading of it", () => {
     expect(paragraphs[1]!.className).not.toBe(paragraphs[0]!.className);
   });
 });
+
+// --- a voice decided once, not per frame -------------------------------------
+//
+// The lead and closing were decided from the part of the answer the reveal
+// had reached, so a block changed voice under the reader: a long opening was
+// the 18px headline for 120 characters and snapped to body text at the 121st.
+
+describe("keeping each block in one voice while it is revealed", () => {
+  const classOfFirst = (text: string, visibleChars?: number) =>
+    render(<AnswerText text={text} visibleChars={visibleChars} />).container.querySelector("p")!
+      .className;
+  const LEAD = classOfFirst("**POS** led.");
+
+  it("never sets a long opening as the headline, even before its 121st character", () => {
+    const long = `Bandra led the month, ${"with a margin that kept widening every single week ".repeat(3)}and closed well ahead.`;
+    expect(long.length).toBeGreaterThan(120);
+
+    expect(classOfFirst(long, 40)).not.toBe(LEAD);
+    expect(classOfFirst(long)).not.toBe(LEAD);
+  });
+
+  it("never sets a two-line opening as the headline while only its first line is showing", () => {
+    const twoLines = "Bandra led.\nBKC was second.";
+
+    expect(classOfFirst(twoLines, 6)).not.toBe(LEAD);
+    expect(classOfFirst(twoLines)).toBe(classOfFirst(twoLines, 6));
+  });
+
+  it("keeps a short finding the headline from its first character", () => {
+    expect(classOfFirst("**POS** led with **₹21,36,43,836.26**", 2)).toBe(LEAD);
+  });
+
+  it("never makes a ## heading the finding", () => {
+    const { container } = render(<AnswerText text={"## Geofences\nA geofence is a boundary."} />);
+
+    const [heading, body] = [...container.querySelectorAll("p")];
+    expect(heading!.className).not.toBe(LEAD);
+    expect(body!.className).not.toBe(LEAD);
+  });
+
+  it("never dresses a refusal or a question back as the finding", () => {
+    expect(
+      classOfFirst(
+        "I can only help with questions about our menu and outlets. Could you rephrase your question around that?",
+      ),
+    ).not.toBe(LEAD);
+    expect(classOfFirst("Sorry, I couldn’t reach the sales database.")).not.toBe(LEAD);
+    expect(classOfFirst("Which store do you mean — Bandra or BKC?")).not.toBe(LEAD);
+  });
+
+  it("styles the closing line as the closing line as soon as the reveal reaches it", () => {
+    const text = "**POS** led.\n\n- In-store dominates.\n- Delivery is small.\n\nWorth checking by store.";
+    const { container } = render(<AnswerText text={text} visibleChars={text.length - 20} />);
+    const done = render(<AnswerText text={text} />).container;
+
+    const revealing = [...container.querySelectorAll("p")];
+    const finished = [...done.querySelectorAll("p")];
+    expect(revealing[revealing.length - 1]!.className).toBe(finished[finished.length - 1]!.className);
+  });
+});

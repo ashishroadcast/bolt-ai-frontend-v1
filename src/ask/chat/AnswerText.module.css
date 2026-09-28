@@ -69,8 +69,12 @@
 }
 
 /* The figure in the finding, in the accent. Only inside the lead: an
-   answer that tinted every bold run would be a page of green. */
-.lead strong {
+   answer that tinted every bold run would be a page of green.
+
+   `.prose` in front on purpose. `.prose strong` below sets every other bold
+   run back to the body ink, and at equal specificity the later rule won —
+   so the accent this rule exists for never once reached the screen. */
+.prose .lead strong {
   color: var(--signal);
   font-weight: 800;
 }
