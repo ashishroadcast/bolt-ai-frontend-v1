@@ -59,6 +59,12 @@
   font-weight: 600;
 }
 
+/* "Try again" beside a failed load — the shared pill, so it reads as the
+   same kind of control as Copy and Rerun rather than a new one. */
+.retry {
+  composes: pill from "./controls.module.css";
+}
+
 /* Narrow column — see Composer.module.css for why this is `@container`. */
 @container ask (max-width: 34rem) {
   /*

@@ -15,7 +15,10 @@ import styles from "./AgentPicker.module.css";
  * "without letting user manually select." So this bar no longer offers a
  * choice; it only ever has something to *say*:
  *
- * - still loading, or failed to load (`useAgents`, same as before)
+ * - still loading, or failed to load (`useAgents`). A failure offers "Try
+ *   again" when a retry could help — never for a missing permission — and
+ *   `useAgents` also retries by itself with backoff, so one bad moment no
+ *   longer leaves the panel dead until a reload.
  * - nothing configured for this tenant at all
  * - a slash command has explicitly armed one name for the rest of this
  *   conversation (`Composer.tsx`'s `choose()`, via `ChatContext.
@@ -28,7 +31,7 @@ import styles from "./AgentPicker.module.css";
  */
 export function AgentPicker() {
   const { setupAgentsHref } = useAskConfig();
-  const { agents, loading, error } = useAgents();
+  const { agents, loading, error, canRetry, retrying, retry } = useAgents();
   const { selectedAgent } = useChatContext();
   const reconnecting = useAskReconnecting();
 
@@ -58,7 +61,15 @@ export function AgentPicker() {
         <span className={styles.iconTile} aria-hidden="true">
           <Bot size={14} strokeWidth={2} />
         </span>
-        <span className={styles.warning}>Couldn't load agents — {error}</span>
+        {/* The message alone: every one the client produces is already a
+            sentence ("Couldn't reach the assistant. It may be restarting…"),
+            and a "Couldn't load agents —" in front of it made two. */}
+        <span className={styles.warning}>{error}</span>
+        {canRetry && (
+          <button type="button" className={styles.retry} onClick={retry} disabled={retrying}>
+            {retrying ? "Trying again…" : "Try again"}
+          </button>
+        )}
       </div>
     );
   }
