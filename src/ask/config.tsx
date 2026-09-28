@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import type { PhaseSegment } from "./chat/phaseTimeline.ts";
 import { GatewayClient } from "./http/gatewayClient.ts";
@@ -272,10 +272,32 @@ export interface AskAuthProvider {
    */
   getOrganisationId?: () => string | null | undefined;
   /**
-   * Called when agent-service refuses the credential. The host decides what
-   * that means — the console signs out; an app with its own session may
-   * refresh and carry on. Ask does not decide, because only the host knows
-   * where the credential came from.
+   * Asks the host for a new credential, resolving with it — or `null` when
+   * it has none to give.
+   *
+   * Consulted in two places: when agent-service answers a request with 401,
+   * after which that request is retried exactly once; and when
+   * `getCredential` returns null, before Ask gives up on the request. The
+   * retry reads the credential through `getCredential` again, so the new one
+   * must be what `getCredential` returns from then on — this hook's result
+   * says whether there is one, not what to send.
+   *
+   * A retry of `POST /agent/run` is safe: a 401 is answered before the run
+   * starts. A 403 is never retried — a missing permission is not fixed by a
+   * newer token.
+   *
+   * Optional. Omitted, a 401 is final and goes to `onUnauthorized`.
+   */
+  refreshCredential?: () => Promise<string | null>;
+  /**
+   * Called when agent-service refuses the credential with a 401 that
+   * `refreshCredential` did not recover, or when there is no credential at
+   * all. The host decides what that means — the console signs out; an app
+   * with its own session may refresh and carry on. Ask does not decide,
+   * because only the host knows where the credential came from.
+   *
+   * Never called for a 403. That is a missing permission, which the widget
+   * shows as one, and signing anyone out over it would only loop.
    */
   onUnauthorized?: () => void;
 }
@@ -337,6 +359,14 @@ const AskContext = createContext<AskContextValue | null>(null);
 const NO_INSPECTOR: AskInspector = { selection: null, selectPhase: () => {} };
 
 /**
+ * How long to wait before asking the host a second time when its credential
+ * provider hands back null. About the length of a token refresh — the case
+ * this exists for — and short enough that a host that really has no
+ * credential hears so almost at once.
+ */
+const CREDENTIAL_RETRY_DELAY_MS = 1_000;
+
+/**
  * Wraps Ask (or any part of it) with its configuration.
  *
  * Builds the HTTP client here, once per config, rather than at module scope.
@@ -361,6 +391,11 @@ export function AskProvider({
         getToken: () => auth.getCredential(),
         getOrganisationId: () => auth.getOrganisationId?.() ?? null,
         clientType: config.clientType,
+        refresh: async () => {
+          if (auth.refreshCredential === undefined) return false;
+          return (await auth.refreshCredential()) !== null;
+        },
+        credentialRetryDelayMs: CREDENTIAL_RETRY_DELAY_MS,
         // A no-op default rather than a required callback: a host that has
         // nothing to do about a refusal should not have to say so.
         onUnauthorized: () => auth.onUnauthorized?.(),
@@ -392,6 +427,16 @@ export function useAskConfig(): AskConfig {
  */
 export function useAskClient(): GatewayClient {
   return useAskContext().client;
+}
+
+/**
+ * Whether a request is waiting for the host to hand back a credential — the
+ * second or so after a credential provider returned null. The agent picker
+ * says "Reconnecting to your account…" for it rather than looking stuck.
+ */
+export function useAskReconnecting(): boolean {
+  const client = useAskClient();
+  return useSyncExternalStore(client.subscribeReconnecting, () => client.reconnecting);
 }
 
 /**

@@ -25,6 +25,12 @@
  */
 export type AskCredentialProvider = () => string | null | Promise<string | null>;
 
+/**
+ * Gets the host a fresh credential after a refusal: resolves with it, or with
+ * `null` when there is none. See `BoltAiAskElement.refreshCredential`.
+ */
+export type AskCredentialRefresher = () => Promise<string | null>;
+
 /** Answers "whose data?", per request. Sent as the `Organisation` header. */
 export type AskOrganisationProvider = () => string | null | undefined;
 
@@ -186,7 +192,27 @@ export declare class BoltAiAskElement extends HTMLElement {
   organisationProvider: AskOrganisationProvider | null;
 
   /**
-   * Called when agent-service refuses the credential (401/403).
+   * Asks the host for a new credential. Resolve with it, or with `null` when
+   * there is none.
+   *
+   * Called when agent-service answers a request with 401, after which that
+   * request is retried exactly once, and when `credentialProvider` returns
+   * null, before the widget gives up. The retry reads `credentialProvider`
+   * again, so the new credential must be what it returns from then on. A 403
+   * is never retried — a missing permission is not fixed by a newer token.
+   *
+   * bolt-v2: `ask.refreshCredential = () => tokenRefresh.forceRefresh();`
+   *
+   * Left `null` (the default), a 401 is final and goes to `onUnauthorized`.
+   * Read at call time, so it can be assigned at any point.
+   */
+  refreshCredential: AskCredentialRefresher | null;
+
+  /**
+   * Called when agent-service refuses the credential with a 401 that
+   * `refreshCredential` did not recover, or when there is no credential at
+   * all. **Never for a 403** — that is a missing permission, which the widget
+   * reports itself ("You don't have permission to use the assistant").
    *
    * Note what this should usually NOT do: sign the user out of the host app.
    * A refusal here means the AI credential is wrong, which is a different

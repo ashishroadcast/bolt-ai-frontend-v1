@@ -93,3 +93,17 @@ describe("<bolt-ai-ask> dashboards surface", () => {
     expect(element.selectAgent("nope")).toBe(false);
   });
 });
+
+describe("<bolt-ai-ask> credential refresh", () => {
+  it("hands Ask a refresh that answers null until the host sets one, then calls the host's", async () => {
+    const element = create();
+    element.baseUrl = "http://ask.test";
+    // Read at call time, so assigning it after the config was built still counts.
+    const auth = configOf(element).auth;
+    await expect(auth.refreshCredential!()).resolves.toBeNull();
+
+    element.refreshCredential = vi.fn(async () => "renewed");
+    await expect(auth.refreshCredential!()).resolves.toBe("renewed");
+    expect(element.refreshCredential).toHaveBeenCalledOnce();
+  });
+});

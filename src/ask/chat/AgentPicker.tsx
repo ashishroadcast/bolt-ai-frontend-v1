@@ -1,5 +1,5 @@
 import { Bot } from "lucide-react";
-import { useAskConfig } from "../config.tsx";
+import { useAskConfig, useAskReconnecting } from "../config.tsx";
 import { useAgents } from "./useAskAgents.ts";
 import { useChatContext } from "./ChatContext.tsx";
 import styles from "./AgentPicker.module.css";
@@ -30,6 +30,19 @@ export function AgentPicker() {
   const { setupAgentsHref } = useAskConfig();
   const { agents, loading, error } = useAgents();
   const { selectedAgent } = useChatContext();
+  const reconnecting = useAskReconnecting();
+
+  // The host's credential provider came back empty and Ask is giving it a
+  // second to recover — usually a token refresh in flight. Said here because
+  // this bar is where a stalled first load would otherwise sit on "Finding
+  // agents…" with no explanation.
+  if (reconnecting) {
+    return (
+      <div className={styles.bar} role="status">
+        <span className={styles.loading}>Reconnecting to your account…</span>
+      </div>
+    );
+  }
 
   if (loading) {
     return (

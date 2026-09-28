@@ -60,6 +60,7 @@ import type {
 const SHADOW_STYLES = "__ASK_SHADOW_STYLES__";
 
 type CredentialProvider = () => string | null | Promise<string | null>;
+type CredentialRefresher = () => Promise<string | null>;
 type OrganisationProvider = () => string | null | undefined;
 type DashboardDraftHandler = (draft: AskDashboardDraft) => void;
 type WidgetDraftHandler = (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
@@ -93,6 +94,22 @@ export class BoltAiAskElement extends HTMLElement {
    */
   credentialProvider: CredentialProvider | null = null;
   organisationProvider: OrganisationProvider | null = null;
+  /**
+   * Called when agent-service answers 401, or when `credentialProvider`
+   * returned null, so the host can get a new credential: resolve with it, or
+   * with null if there is none. The refused request is then retried once,
+   * reading `credentialProvider` again — so the new credential must be what
+   * `credentialProvider` returns from then on. bolt-v2 wires its
+   * `tokenRefresh.forceRefresh()` here.
+   *
+   * Read at call time like the two above. Left null, a 401 is final and goes
+   * to `onUnauthorized`.
+   */
+  refreshCredential: CredentialRefresher | null = null;
+  /**
+   * A 401 that `refreshCredential` did not recover, or no credential at all.
+   * Never a 403: that is a missing permission, and the widget says so itself.
+   */
   onUnauthorized: (() => void) | null = null;
 
   /**
@@ -372,6 +389,10 @@ export class BoltAiAskElement extends HTMLElement {
         // attribute is for a plain-HTML host that has one fixed
         // organisation.
         getOrganisationId: () => this.organisationProvider?.() ?? staticOrganisationId,
+        // Always present, answering null when the host set nothing — which
+        // Ask reads exactly as "no refresh", so the host can assign this at
+        // any time without a re-render.
+        refreshCredential: () => this.refreshCredential?.() ?? Promise.resolve(null),
         onUnauthorized: () => this.onUnauthorized?.(),
       },
     };

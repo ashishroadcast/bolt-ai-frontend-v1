@@ -76,6 +76,18 @@ export interface GatewayClientOptions {
    * sends it too rather than being the one client that does not.
    */
   clientType?: string;
+  /**
+   * How long to wait before asking `getToken` a second time when it returns
+   * null. Omitted — the console — a null is final at once: there, no key
+   * means signed out, and waiting would only delay the sign-in screen.
+   *
+   * Set by `AskProvider`, because a host's provider can return null for a
+   * moment without the session being over: bolt-v2's does while its own token
+   * refresh is in flight, and failing that request told someone who was
+   * signed in that they were not. If `refresh` is configured it is tried
+   * first, and the pause only happens when it does not produce a credential.
+   */
+  credentialRetryDelayMs?: number;
 }
 
 export interface GraphQLRequestOptions {
@@ -115,7 +127,10 @@ export class GatewayClient {
   private readonly refresh?: () => Promise<boolean>;
   private readonly getOrganisationId?: () => string | null;
   private readonly clientType: string;
+  private readonly credentialRetryDelayMs?: number;
   private refreshInFlight: Promise<boolean> | null = null;
+  private waitingForCredential = 0;
+  private readonly reconnectingListeners = new Set<() => void>();
 
   constructor(options: GatewayClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
@@ -124,6 +139,33 @@ export class GatewayClient {
     this.refresh = options.refresh;
     this.getOrganisationId = options.getOrganisationId;
     this.clientType = options.clientType ?? "web";
+    this.credentialRetryDelayMs = options.credentialRetryDelayMs;
+  }
+
+  /**
+   * True while at least one request is waiting for the host to hand back a
+   * credential (see `credentialRetryDelayMs`), so the UI can say "Reconnecting
+   * to your account…" instead of looking stuck for that second.
+   */
+  get reconnecting(): boolean {
+    return this.waitingForCredential > 0;
+  }
+
+  /** `useSyncExternalStore`'s subscribe for `reconnecting`. An arrow, so it
+   * can be handed over unbound. */
+  readonly subscribeReconnecting = (listener: () => void): (() => void) => {
+    this.reconnectingListeners.add(listener);
+    return () => {
+      this.reconnectingListeners.delete(listener);
+    };
+  };
+
+  private markWaiting(delta: 1 | -1): void {
+    const was = this.reconnecting;
+    this.waitingForCredential += delta;
+    if (was !== this.reconnecting) {
+      for (const listener of this.reconnectingListeners) listener();
+    }
   }
 
   /**
@@ -177,11 +219,26 @@ export class GatewayClient {
   /**
    * The credential for one request, or the refusal for having none.
    *
-   * A provider that throws is treated as one that returned null: the
-   * exception is the host's, and "no credential" is what it means here.
+   * A null gets one more chance when `credentialRetryDelayMs` is set: the
+   * host's `refresh` if it has one, else a short pause, then one more read.
+   * Only then is it a refusal. A provider that throws is treated as one that
+   * returned null: the exception is the host's, and "no credential" is what
+   * it means here.
    */
   private async requireToken(): Promise<string> {
-    const token = await this.readToken();
+    let token = await this.readToken();
+    if (token === null && this.credentialRetryDelayMs !== undefined) {
+      const delayMs = this.credentialRetryDelayMs;
+      this.markWaiting(1);
+      try {
+        if (!(await this.runRefresh())) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+        token = await this.readToken();
+      } finally {
+        this.markWaiting(-1);
+      }
+    }
     if (token === null) {
       this.onUnauthorized();
       throw new UnauthorizedError(401);
@@ -336,13 +393,26 @@ export class GatewayClient {
    * Only the SUCCESS path is returned raw. Every refusal is classified here,
    * into the same typed errors `agentFetch` throws — a non-2xx carries a
    * small buffered JSON body, never the stream, so reading it is safe.
+   *
+   * `init.body` must be re-sendable (a string, as `/agent/run`'s is): a 401
+   * is retried once, below.
    */
-  async agentStream(path: string, init: RequestInit = {}): Promise<Response> {
+  async agentStream(path: string, init: RequestInit = {}, isRetry = false): Promise<Response> {
     const response = await this.sendAgent("agentStream", path, init);
 
-    // No retry. Unlike `agentFetch`, re-sending this request would start a
-    // second agent RUN — the expensive, side-effecting kind — and the
-    // credential this class is given does not refresh anyway.
+    // One refresh-and-retry on a 401, the same rule as `agentFetch`. This
+    // used to be "never", because re-sending `/agent/run` could start a second
+    // agent RUN — but a 401 is answered by the auth dependency before the
+    // route body runs, so the refused request started nothing and the retry
+    // is the first run, not a second. Only a 401: anything past auth may
+    // already have done work.
+    if (response.status === 401 && !isRetry) {
+      const refreshed = await this.runRefresh();
+      if (refreshed) {
+        return this.agentStream(path, init, true);
+      }
+    }
+
     if (!response.ok) throw await this.refusal(response, true);
     return response;
   }

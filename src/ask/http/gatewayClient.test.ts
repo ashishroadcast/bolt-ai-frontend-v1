@@ -376,6 +376,141 @@ describe("GatewayClient", () => {
 });
 
 /**
+ * The credential recovery an embedded host needs: bolt-v2's token is
+ * short-lived and refreshes under the widget, so a 401 or a momentary null
+ * is usually a refresh in flight, not a signed-out user.
+ */
+describe("GatewayClient credential recovery", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function streamOk(): Response {
+    return new Response('data: {"type":"start","messageId":"1"}', { status: 200 });
+  }
+
+  it("refreshes once and re-sends /agent/run after a 401 — the refused run never started", async () => {
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce("stale").mockReturnValue("fresh");
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    const onUnauthorized = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(streamOk());
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken, onUnauthorized, refresh });
+
+    const response = await client.agentStream("/agent/run", { method: "POST", body: '{"message":"hi"}' });
+
+    expect(response.ok).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retried = fetchMock.mock.calls[1]![0] as Request;
+    expect(retried.headers.get("Authorization")).toBe("Bearer fresh");
+    expect(await retried.text()).toBe('{"message":"hi"}');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("gives up on /agent/run after one retry that 401s again", async () => {
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    const onUnauthorized = vi.fn();
+    fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 401 })));
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized, refresh });
+
+    await expect(client.agentStream("/agent/run", { method: "POST", body: "{}" })).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a refresh that throws as one that failed", async () => {
+    const refresh = vi.fn<() => Promise<boolean>>().mockRejectedValue(new Error("refresh endpoint down"));
+    const onUnauthorized = vi.fn();
+    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+    const client = new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized, refresh });
+
+    await expect(client.agentFetch("/agent/me")).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits and asks again when the credential provider comes back null for a moment", async () => {
+    vi.useFakeTimers();
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce(null).mockReturnValue("late");
+    const onUnauthorized = vi.fn();
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      getToken,
+      onUnauthorized,
+      credentialRetryDelayMs: 1_000,
+    });
+    const seen: boolean[] = [];
+    client.subscribeReconnecting(() => seen.push(client.reconnecting));
+
+    const call = client.agentFetch("/agent/me");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(client.reconnecting).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(call).resolves.toEqual({ ok: true });
+
+    expect(client.reconnecting).toBe(false);
+    expect(seen).toEqual([true, false]);
+    expect((fetchMock.mock.calls[0]![0] as Request).headers.get("Authorization")).toBe("Bearer late");
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it("asks the host's refresh first when there is one, instead of waiting", async () => {
+    const getToken = vi.fn<() => string | null>().mockReturnValueOnce(null).mockReturnValue("renewed");
+    const refresh = vi.fn<() => Promise<boolean>>().mockResolvedValue(true);
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      getToken,
+      onUnauthorized: () => {},
+      refresh,
+      // Long enough that the test would time out if it were waited out.
+      credentialRetryDelayMs: 60_000,
+    });
+
+    await expect(client.agentFetch("/agent/me")).resolves.toEqual({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("still refuses, once, when the second read is null too", async () => {
+    vi.useFakeTimers();
+    const onUnauthorized = vi.fn();
+    const client = new GatewayClient({
+      baseUrl: "http://gw",
+      // A provider that throws is a provider with nothing to give.
+      getToken: () => {
+        throw new Error("store not ready");
+      },
+      onUnauthorized,
+      credentialRetryDelayMs: 500,
+    });
+
+    const call = client.agentFetch("/agent/me").catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(500);
+
+    const error = await call;
+    expect(error).toBeInstanceOf(UnauthorizedError);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(client.reconnecting).toBe(false);
+  });
+});
+
+/**
  * Every error's `.message` is shown as it is — the failed-run card, the
  * picker's error bar and the answer form print it with nothing around it —
  * so each of these pins the sentence a reader actually sees, and whether a
