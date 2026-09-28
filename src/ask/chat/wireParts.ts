@@ -1,4 +1,5 @@
 import type { UIPart } from "../parts/catalog.tsx";
+import { formatRowCount } from "../parts/DataTable.tsx";
 
 /**
  * The one place a wire `data-<name>` part (either live off `useChat.ts`'s
@@ -86,14 +87,21 @@ function isNumericColumn(rows: readonly (string | number)[][], index: number): b
  * has lost its paise no longer reconciles against the source.
  */
 function formatByKind(value: string | number, kind: string): string | number {
-  const parsed = Number(String(value).trim());
+  const text = String(value).trim();
+  // `Number("")` is 0, and "\u20B90.00" for a figure the row did not have is a
+  // claim about money nobody made.
+  if (text === "") return value;
+  const parsed = Number(text);
   if (!Number.isFinite(parsed)) return value;
   const fixed = new Intl.NumberFormat("en-IN", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(parsed);
-  if (kind === "currency") return `\u20B9${fixed}`;
-  return `${fixed}%`;
+  }).format(Math.abs(parsed));
+  // The sign leads the symbol, "-\u20B91,234.00", the way a statement prints a
+  // debit. Formatting the signed value put it after: "\u20B9-1,234.00".
+  const sign = parsed < 0 && fixed !== "0.00" ? "-" : "";
+  if (kind === "currency") return `${sign}\u20B9${fixed}`;
+  return `${sign}${fixed}%`;
 }
 
 /**
@@ -218,17 +226,15 @@ function isHiddenColumn(name: string): boolean {
  * `datetime` has been JSON-stringified: `app.stream.intents._json_safe`
  * (a real SQL column) and a Redis hash field read undecoded (`app.
  * datasource.redis_query`) both end up here — `YYYY-MM-DDTHH:MM:SS`, an
- * optional fractional second, then either `Z` or an explicit `±HH:MM`
- * offset. The offset is REQUIRED by this pattern on purpose: a value with
- * no offset at all is not safe to reinterpret as UTC (mirrors `app.
- * stream.columns._as_ist_aware_timestamp`'s identical rule on the Python
- * side of this same wire), and anchoring on `^...$` is what keeps a UUID
- * or a device name from ever matching — neither is date-shaped at all.
+ * optional fractional second, then `Z`, an explicit `±HH:MM` offset, or
+ * nothing at all (a `timestamp without time zone` column). Anchoring on
+ * `^...$` is what keeps a UUID or a device name from ever matching —
+ * neither is date-shaped at all.
  */
-const ISO_TIMESTAMP_WITH_TZ = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const ISO_TIMESTAMP = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
 
-function isIstTimestampCell(value: string | number): value is string {
-  return typeof value === "string" && ISO_TIMESTAMP_WITH_TZ.test(value.trim());
+function isTimestampCell(value: string | number): value is string {
+  return typeof value === "string" && ISO_TIMESTAMP.test(value.trim());
 }
 
 /**
@@ -243,7 +249,7 @@ function isTimestampColumn(rows: readonly (string | number)[][], index: number):
   for (const row of rows) {
     const value = row[index];
     if (value === undefined || value === "") continue;
-    if (!isIstTimestampCell(value)) return false;
+    if (!isTimestampCell(value)) return false;
     seen = true;
   }
   return seen;
@@ -274,6 +280,27 @@ function formatIstCell(value: string): string {
   const parts = IST_FORMATTER.formatToParts(date);
   const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} IST`;
+}
+
+/**
+ * Any timestamp cell, in the one shape the table uses.
+ *
+ * **A value with no offset is written as the local time it already is,**
+ * digit for digit and unlabelled: `2026-01-09T10:00:00` becomes
+ * `2026-01-09 10:00`. It used to stay raw ISO beside columns reading
+ * "… IST", which made two timestamps in one row look like two kinds of
+ * thing. It is not converted, because there is no zone to convert from —
+ * reading it as UTC would shift it by five and a half hours on a guess
+ * (`app.stream.columns._as_ist_aware_timestamp` refuses the same guess) —
+ * and not labelled IST for the same reason. That is also how
+ * `app.stream.columns.render` writes a naive datetime for the model, so
+ * the table still agrees with the sentence above it.
+ */
+function formatTimestampCell(value: string): string {
+  const match = ISO_TIMESTAMP.exec(value.trim());
+  if (match === null) return value;
+  if (match[4] !== undefined) return formatIstCell(value);
+  return `${match[1]} ${match[2]}`;
 }
 
 /**
@@ -330,7 +357,9 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
 
   return {
     title: "Query results",
-    subLabel: `${rowCount} row${rowCount === 1 ? "" : "s"}${truncated ? " · truncated" : ""}`,
+    // Grouped with the pager's own formatter: "12345 rows" above a pager
+    // reading "of 12,345" was one count written two ways.
+    subLabel: `${formatRowCount(rowCount)} row${rowCount === 1 ? "" : "s"}${truncated ? " · truncated" : ""}`,
     // `"number"` is what puts DataTable's own `.num` rule on the cell —
     // right-aligned, mono, `font-variant-numeric: tabular-nums`. Every
     // value is already a string, which DataTable's `formatCell` passes
@@ -345,7 +374,7 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
       Object.fromEntries(
         keys.map((key, index) => {
           if (timestamp[index]) {
-            return [key, formatIstCell(row[index] as string)];
+            return [key, formatTimestampCell(row[index] as string)];
           }
           const kind = kinds[index];
           if (kind === "currency" || kind === "percent") {

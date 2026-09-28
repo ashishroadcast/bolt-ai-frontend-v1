@@ -64,4 +64,24 @@ describe("a wire table, rendered", () => {
     ]);
     expect(cellTexts()).toEqual(["Bandra", "Asha", "Powai", "Ravi"]);
   });
+
+  it("writes zoned and unzoned timestamps in one shape", () => {
+    renderWireTable({
+      columns: ["last_ping", "scheduled_at"],
+      rows: [["2026-01-09T04:30:00Z", "2026-01-09T10:00:00"]],
+      row_count: 1,
+    });
+
+    expect(cellTexts()).toEqual(["2026-01-09 10:00 IST", "2026-01-09 10:00"]);
+  });
+
+  it("counts the rows in its header the way its pager does", () => {
+    renderWireTable({
+      columns: ["store_name"],
+      rows: Array.from({ length: 11 }, (_, index) => [`Store ${index}`]),
+      row_count: 12345,
+    });
+
+    expect(screen.getByText("12,345 rows")).toBeInTheDocument();
+  });
 });

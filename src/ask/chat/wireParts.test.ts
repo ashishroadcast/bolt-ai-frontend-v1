@@ -176,6 +176,8 @@ describe("toUIPart / data-table", () => {
     expect(tableProps({ columns: ["n"], rows: [[1]], row_count: 340, truncated: true }).subLabel).toBe(
       "340 rows · truncated",
     );
+    // Grouped the way the pager under it writes the same count.
+    expect(tableProps({ columns: ["n"], rows: [[1]], row_count: 12345 }).subLabel).toBe("12,345 rows");
   });
 });
 
@@ -218,6 +220,20 @@ describe("currency and percent columns", () => {
     const out = table(["text", "currency", "percent"], [["Sinhgad", "944220.66", "0"]]);
 
     expect(out.named[0].total_net_sales).toBe("₹9,44,220.66");
+  });
+
+  it("puts a negative figure's sign before the rupee sign", () => {
+    const out = table(["text", "currency", "percent"], [["Sinhgad", "-1234", "-12.3"]]);
+
+    expect(out.named[0].total_net_sales).toBe("-₹1,234.00");
+    expect(out.named[0].mom_growth_pct).toBe("-12.30%");
+  });
+
+  it("never writes a missing figure as ₹0.00", () => {
+    const out = table(["text", "currency", "percent"], [["Sinhgad", null, ""]]);
+
+    expect(out.named[0].total_net_sales).toBe("");
+    expect(out.named[0].mom_growth_pct).toBe("");
   });
 
   it("right-aligns a money column even when its values arrive as strings", () => {
@@ -281,17 +297,22 @@ describe("timestamp columns render in IST", () => {
     expect(out.named[0]!.last_ping).toBe("2026-01-09 17:30 IST");
   });
 
-  it("leaves a naive timestamp — no Z, no offset — unconverted", () => {
+  it("writes a naive timestamp — no Z, no offset — as the local time it is, unconverted", () => {
     // No timezone information to convert FROM; guessing UTC and shifting
     // anyway would be exactly the invented convention this fix exists to
-    // remove, just moved from "no timezone marker" to "a wrong one".
+    // remove, just moved from "no timezone marker" to "a wrong one". It is
+    // still written in the table's one shape rather than left raw ISO
+    // beside columns that read "… IST" — and unlabelled, since no zone was
+    // ever stated.
     const out = tableProps({
-      columns: ["lastUpdate"],
-      rows: [["2026-09-09T04:36:52"]],
+      columns: ["lastUpdate", "last_ping"],
+      rows: [["2026-09-09T04:36:52", "2026-09-09T04:36:52.123456"]],
       row_count: 1,
     });
 
-    expect(out.named[0]!.lastUpdate).toBe("2026-09-09T04:36:52");
+    expect(out.named[0]!.lastUpdate).toBe("2026-09-09 04:36");
+    expect(out.named[0]!.last_ping).toBe("2026-09-09 04:36");
+    expect(out.typeOf("lastUpdate")).toBeUndefined();
   });
 
   it("never mistakes a device name or a UUID for a timestamp", () => {

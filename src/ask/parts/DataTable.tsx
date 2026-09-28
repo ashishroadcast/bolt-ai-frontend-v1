@@ -83,6 +83,15 @@ function shareColumnMax(rows: DataTableRow[], key: string): number {
 
 const COUNT = new Intl.NumberFormat("en-IN");
 
+/**
+ * A row count, grouped the way the pager writes it. Exported so the
+ * "12,345 rows" a table's header carries (`wireParts.adaptTable`) cannot
+ * drift from the "of 12,345" under it.
+ */
+export function formatRowCount(count: number): string {
+  return COUNT.format(count);
+}
+
 interface PagerProps {
   page: number;
   pageCount: number;
