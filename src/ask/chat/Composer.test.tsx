@@ -158,6 +158,12 @@ describe("Composer", () => {
 
     expect(signal.aborted).toBe(true);
     expect(await screen.findByRole("button", { name: "Ask" })).toBeInTheDocument();
+    // Two elements, not one retyped. In a real browser the run ends inside
+    // the click's own microtasks, and a reused <button> was type="submit"
+    // again before the click's default action ran — so Stop also sent what
+    // had been typed meanwhile. jsdom cannot reproduce that timing, so this
+    // pins the structure that prevents it.
+    expect(stop.isConnected).toBe(false);
   });
 
   it("ignores the second click of a double-click on Ask, which lands on Stop", async () => {

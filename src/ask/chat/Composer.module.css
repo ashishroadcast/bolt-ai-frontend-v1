@@ -153,8 +153,14 @@
   line-height: 20px;
 }
 
+/* One line, clipped, as it was on the old <input>: a textarea wraps its
+   placeholder, and "Please specify what you want to change" in a narrow
+   panel would otherwise stand two lines tall in an empty box. */
 .field::placeholder {
   color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .field:focus-visible {

@@ -53,6 +53,13 @@ const MAX_QUESTION_LENGTH = 4_000;
 /** When the counter appears — near the cap, not all the time. */
 const SHOW_LENGTH_FROM = 3_600;
 
+/** Sizes the box to its text; see the effects in `Composer` for when. */
+function fitFieldHeight(field: HTMLTextAreaElement): void {
+  field.style.height = "auto";
+  field.style.height = `${field.scrollHeight}px`;
+  field.style.overflowY = field.scrollHeight > field.offsetHeight ? "auto" : "hidden";
+}
+
 /**
  * Whether handing focus back to the box would take it from nothing the
  * reader chose: focus is nowhere (the Stop button that had it just gave way
@@ -327,13 +334,25 @@ export function Composer() {
   const voiceSupported = speechRecognitionConstructor() !== null;
 
   // Grows with what is typed or pasted, up to the CSS max-height, then
-  // scrolls. Measured after layout so the height never lags a keystroke.
+  // scrolls — and shows a scrollbar only then, not a stray pair of arrows on
+  // a one-line box. Measured after layout so the height never lags a
+  // keystroke, and again whenever the box changes width: a panel resized
+  // narrower rewraps the same text onto more lines.
   useLayoutEffect(() => {
-    const field = inputRef.current;
-    if (field === null) return;
-    field.style.height = "auto";
-    field.style.height = `${field.scrollHeight}px`;
+    if (inputRef.current !== null) fitFieldHeight(inputRef.current);
   }, [value]);
+  useEffect(() => {
+    const field = inputRef.current;
+    if (field === null || typeof ResizeObserver === "undefined") return;
+    let width = field.offsetWidth;
+    const observer = new ResizeObserver(() => {
+      if (field.offsetWidth === width) return;
+      width = field.offsetWidth;
+      fitFieldHeight(field);
+    });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, []);
 
   // Focus back to the box when a run ends, so the next question can be typed
   // straight away — unless the reader has since put it somewhere else.
@@ -723,7 +742,14 @@ export function Composer() {
         // In Ask's place, not beside it: while a run is in flight there is
         // nothing to send, and the one thing worth doing is ending it. Runs
         // take minutes, and before this the only way out was a reload.
+        //
+        // Keyed apart from Ask so React builds two elements instead of
+        // retyping one. Stopping ends the run in the same click's microtasks,
+        // and a single reused <button> was already type="submit" again by the
+        // time the browser ran the click's default action — so Stop also
+        // sent whatever had been typed meanwhile.
         <button
+          key="stop"
           type="button"
           className={styles.stop}
           aria-label="Stop"
@@ -740,7 +766,7 @@ export function Composer() {
           <Square size={10} fill="currentColor" aria-hidden="true" />
         </button>
       ) : (
-        <button type="submit" className={styles.send} disabled={!canSend} aria-label="Ask">
+        <button key="send" type="submit" className={styles.send} disabled={!canSend} aria-label="Ask">
           <ArrowRight size={14} strokeWidth={2.25} aria-hidden="true" />
         </button>
       )}
