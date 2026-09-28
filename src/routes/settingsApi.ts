@@ -41,6 +41,10 @@ export interface AgentCodeExecution {
 export interface AskDisclosure {
   show_reasoning: boolean;
   show_query_results: boolean;
+  /** An organisation above this one set these for its whole tree, and this
+   * one cannot change them (the PATCH answers 409). Absent from an older
+   * agent-service, which treats every organisation as its own. */
+  set_by_ancestor?: boolean;
 }
 
 export interface SettingsSnapshot {

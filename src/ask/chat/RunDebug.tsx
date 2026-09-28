@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from "react";
-import { PASS_SCORE, type RunTrace, type TraceTool } from "./runTrace.ts";
+import type { UsageMetadata } from "./protocol.ts";
+import { formatCost, formatCount, modelsFromUsage, PASS_SCORE, type RunTrace, type TraceTool } from "./runTrace.ts";
 import styles from "./RunDebug.module.css";
 
 /**
@@ -15,6 +16,32 @@ import styles from "./RunDebug.module.css";
  */
 export interface RunDebugProps {
   trace: RunTrace;
+  /** What the run cost, when the stream reported it. */
+  usage?: UsageMetadata | null;
+}
+
+/**
+ * The run's own figures: how many tools it called, the models billed, tokens
+ * and cost (the judge's score has its own section below). They sat on the
+ * line under every answer and read as noise to anyone who was not building
+ * the agent; here they are one click away for someone who is.
+ *
+ * Omitted, never zero-filled, and a zero counts as absent: a provider can
+ * report the money but not the tokens, and "0 tok" on a run that answered is
+ * a missing count, not a count.
+ */
+function RunFigures({ trace, usage }: { trace: RunTrace; usage: UsageMetadata | null }): ReactElement {
+  const count = trace.tools.length;
+  const facts = [`${count} tool${count === 1 ? "" : "s"}`, ...modelsFromUsage(usage)];
+  if (usage !== null && usage.total_tokens > 0) facts.push(`${formatCount(usage.total_tokens)} tok`);
+  if (usage !== null && usage.cost_usd > 0) facts.push(formatCost(usage.cost_usd));
+
+  return (
+    <section className={styles.section}>
+      <h4 className={styles.sectionTitle}>Run</h4>
+      <p className={styles.argText}>{facts.join(" · ")}</p>
+    </section>
+  );
 }
 
 function ToolCall({ tool }: { tool: TraceTool }): ReactElement {
@@ -50,13 +77,14 @@ function ToolCall({ tool }: { tool: TraceTool }): ReactElement {
   );
 }
 
-export function RunDebug({ trace }: RunDebugProps): ReactElement {
+export function RunDebug({ trace, usage = null }: RunDebugProps): ReactElement {
   const hasParams = trace.executedSqlParams !== null && Object.keys(trace.executedSqlParams).length > 0;
   const planPhase = trace.phases.find((phase) => phase.phase === "plan");
   const planSteps = planPhase?.plan ?? [];
 
   return (
     <div className={styles.panel}>
+      <RunFigures trace={trace} usage={usage} />
       <section className={styles.section}>
         <h4 className={styles.sectionTitle}>Plan</h4>
         {planSteps.length > 0 ? (

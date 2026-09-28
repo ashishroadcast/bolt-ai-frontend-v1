@@ -127,7 +127,7 @@ describe("Thread", () => {
     expect(screen.getByText("Chicken Biryani")).toBeInTheDocument();
   });
 
-  it("names the agent, the tool count, the score and the real cost — and never a zero it has no source for", async () => {
+  it("names the agent under the answer, and keeps the tool count, score and cost in the debug drawer", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
     const { chatRef } = renderThread();
 
@@ -138,12 +138,15 @@ describe("Thread", () => {
     // the work) and once in the strip (who produced this answer) — the
     // same two places the reference console names it.
     expect(screen.getAllByText("Sales-Analyst")).toHaveLength(2);
-    expect(screen.getByText("1 tool")).toBeInTheDocument();
-    // Same reasoning as the agent name: on the step that produced it, and
-    // again in the strip so it survives collapsing the card.
-    expect(screen.getAllByText("score 0.82")).toHaveLength(2);
-    expect(screen.getByText("$0.0005")).toBeInTheDocument();
-    expect(screen.getByText("120 tok")).toBeInTheDocument();
+    // The line under the answer stays clean: no tool count, model id,
+    // tokens or cost there. The score stays on the reasoning step that
+    // produced it.
+    expect(screen.queryByText("1 tool")).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.0005")).not.toBeInTheDocument();
+    expect(screen.getAllByText("score 0.82")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show debug" }));
+    expect(screen.getByText(/^1 tool · .*120 tok · \$0\.0005$/)).toBeInTheDocument();
   });
 
   it("says so under an answer the router was not sure about, and only then", async () => {
@@ -286,7 +289,7 @@ describe("Thread", () => {
     expect(screen.queryByRole("button", { name: "Show debug" })).not.toBeInTheDocument();
   });
 
-  it("still reports a reopened answer's real cost and model, which do survive the reload", async () => {
+  it("keeps a reopened answer's line clean: who answered, not what it cost", async () => {
     fetchMock.mockImplementation(
       routeFetch(() => new Response(
         JSON.stringify({
@@ -332,10 +335,9 @@ describe("Thread", () => {
     const { chatRef } = renderThread();
     await act(() => chatRef.current!.loadConversation(9));
 
-    expect(screen.getByText("$0.0212")).toBeInTheDocument();
-    expect(screen.getByText("1,000 tok")).toBeInTheDocument();
-    // The routing prefix names how the call was routed, not what answered.
-    expect(screen.getByText("openai/gpt-5-mini")).toBeInTheDocument();
+    expect(screen.queryByText("$0.0212")).not.toBeInTheDocument();
+    expect(screen.queryByText("1,000 tok")).not.toBeInTheDocument();
+    expect(screen.queryByText("openai/gpt-5-mini")).not.toBeInTheDocument();
     // Attribution comes from this message's own agent_id (3), resolved
     // against the agent list — never from whichever agent the picker
     // happens to be showing now.

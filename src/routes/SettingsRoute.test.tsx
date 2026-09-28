@@ -177,6 +177,18 @@ describe("SettingsRoute", () => {
     setSession(null);
   });
 
+  it("greys out the Ask settings when a parent organisation decides them", async () => {
+    renderSettings(
+      routeFetch({
+        settings: { ...SNAPSHOT, ask: { show_reasoning: false, show_query_results: false, set_by_ancestor: true } },
+      }),
+    );
+
+    expect(await screen.findByText(/Your parent organisation decides what readers see here/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Reasoning steps/ })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Query result tables/ })).toBeDisabled();
+  });
+
   it("lists configured models with their key, default and active status", async () => {
     renderSettings(routeFetch());
 

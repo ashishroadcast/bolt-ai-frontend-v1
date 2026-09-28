@@ -530,9 +530,6 @@ function AnsweredTurn({
         messageId={message.id}
         answerText={message.content}
         agentName={agentName}
-        toolCount={summary !== undefined ? trace.tools.length : null}
-        score={trace.score}
-        usage={message.usage ?? null}
         observedMs={workedForMs(message)}
         runStatus={status}
         onRerun={notice === null ? onRerun : undefined}
@@ -543,7 +540,7 @@ function AnsweredTurn({
         showRunDetails={disclosure.showReasoning}
       />
 
-      {isDebugOpen && canDebug && <RunDebug trace={trace} />}
+      {isDebugOpen && canDebug && <RunDebug trace={trace} usage={message.usage ?? null} />}
     </AgentTurn>
   );
 }

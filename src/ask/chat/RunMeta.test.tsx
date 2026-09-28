@@ -1,28 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { UsageMetadata } from "./protocol.ts";
 import { RunMeta, type RunMetaProps } from "./RunMeta.tsx";
 import { TestAskProvider } from "../testing.tsx";
-
-const USAGE: UsageMetadata = {
-  input_tokens: 31_872,
-  output_tokens: 5378,
-  total_tokens: 37_250,
-  cost_usd: 0.021631,
-  duration_ms: 98_590,
-  calls: [
-    { model: "openrouter/openai/gpt-5-mini", input_tokens: 1540, output_tokens: 744, cost_usd: 0.001873, priced: true },
-  ],
-};
 
 function renderStrip(overrides: Partial<RunMetaProps> = {}) {
   const props: RunMetaProps = {
     messageId: "400084",
     answerText: "Top store: The Bombay Canteen.",
     agentName: "Sales-Analyst",
-    toolCount: 2,
-    score: 0.82,
-    usage: USAGE,
     observedMs: 99_000,
     rerunDisabled: false,
     showRunDetails: true,
@@ -39,60 +24,21 @@ describe("RunMeta", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports the agent, tool count, score, model, latency, cost and tokens the run really had", () => {
+  it("says who answered and how long it took, and nothing about how it was produced", () => {
     renderStrip();
 
     expect(screen.getByText("Sales-Analyst")).toBeInTheDocument();
-    expect(screen.getByText("2 tools")).toBeInTheDocument();
-    expect(screen.getByText("score 0.82")).toBeInTheDocument();
-    expect(screen.getByText("openai/gpt-5-mini")).toBeInTheDocument();
     expect(screen.getByText("Worked for 1m 39s")).toBeInTheDocument();
-    expect(screen.getByText("$0.0216")).toBeInTheDocument();
-    expect(screen.getByText("37,250 tok")).toBeInTheDocument();
-  });
-
-  it("omits cost, tokens and model entirely when the run reported no usage — never a zero", () => {
-    renderStrip({ usage: null });
-
+    // The model ids, tool count, score, tokens and cost moved to RunDebug.
+    expect(screen.queryByText(/tools?$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^score /)).not.toBeInTheDocument();
     expect(screen.queryByText(/tok$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^\$/)).not.toBeInTheDocument();
-    expect(screen.queryByText("openai/gpt-5-mini")).not.toBeInTheDocument();
-    // The wall clock this client measured is a real observation, so it
-    // stays even with no usage.
-    expect(screen.getByText("Worked for 1m 39s")).toBeInTheDocument();
-  });
-
-  it("omits a zero token count, which means unreported rather than free", () => {
-    // A real captured call comes back {input_tokens: 0, output_tokens: 0,
-    // cost_usd: 0.00524, priced: true} — the provider billed but did not
-    // report counts. A run that produced an answer did not spend 0 tokens.
-    renderStrip({ usage: { ...USAGE, total_tokens: 0 } });
-
-    expect(screen.queryByText(/tok$/)).not.toBeInTheDocument();
-    // The cost is a separate, independently-real measurement and stays.
-    expect(screen.getByText("$0.0216")).toBeInTheDocument();
-  });
-
-  it("omits a zero cost for the same reason, while keeping a real token count", () => {
-    renderStrip({ usage: { ...USAGE, cost_usd: 0 } });
-
-    expect(screen.queryByText(/^\$/)).not.toBeInTheDocument();
-    expect(screen.getByText("37,250 tok")).toBeInTheDocument();
   });
 
   it("names no agent at all when the run's own record does not name one", () => {
     renderStrip({ agentName: null });
     expect(screen.queryByText("Sales-Analyst")).not.toBeInTheDocument();
-  });
-
-  it("omits the score when no judge ran, rather than showing 0.00", () => {
-    renderStrip({ score: null });
-    expect(screen.queryByText(/^score /)).not.toBeInTheDocument();
-  });
-
-  it("says one tool, not 1 tools", () => {
-    renderStrip({ toolCount: 1 });
-    expect(screen.getByText("1 tool")).toBeInTheDocument();
   });
 
   it("offers a debug toggle only when there is something behind it", () => {
@@ -104,9 +50,6 @@ describe("RunMeta", () => {
         messageId="400084"
         answerText="a"
         agentName="A"
-        toolCount={1}
-        score={null}
-        usage={null}
         observedMs={1000}
         rerunDisabled={false}
         showRunDetails
@@ -192,9 +135,6 @@ describe("RunMeta", () => {
           messageId="400084"
           answerText="x"
           agentName="Sales-Analyst"
-          toolCount={2}
-          score={0.1}
-          usage={USAGE}
           observedMs={99_000}
           rerunDisabled={false}
           showRunDetails
@@ -222,9 +162,6 @@ describe("RunMeta under the tenant's disclosure", () => {
         messageId="400084"
         answerText="Top store: The Bombay Canteen."
         agentName="Sales-Analyst"
-        toolCount={2}
-        score={0.82}
-        usage={USAGE}
         observedMs={99_000}
         rerunDisabled={false}
         onRerun={() => {}}
@@ -236,30 +173,17 @@ describe("RunMeta under the tenant's disclosure", () => {
     );
   }
 
-  it("keeps the machinery out of a reader's strip when the tenant hides reasoning", () => {
-    strip(false);
-
-    expect(screen.queryByText("2 tools")).not.toBeInTheDocument();
-    expect(screen.queryByText(/^score /)).not.toBeInTheDocument();
-    expect(screen.queryByText("openai/gpt-5-mini")).not.toBeInTheDocument();
-    expect(screen.queryByText(/^\$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/tok$/)).not.toBeInTheDocument();
+  it("offers the debug drawer only when the tenant shows reasoning", () => {
+    const { unmount } = strip(false);
     expect(screen.queryByRole("button", { name: /debug/i })).not.toBeInTheDocument();
     // What any reader can use stays.
     expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Rerun this question" })).toBeInTheDocument();
     expect(screen.getByText("Sales-Analyst")).toBeInTheDocument();
     expect(screen.getByText(/1m 39s/)).toBeInTheDocument();
-  });
+    unmount();
 
-  it("shows all of it when the tenant shows reasoning", () => {
     strip(true);
-
-    expect(screen.getByText("2 tools")).toBeInTheDocument();
-    expect(screen.getByText("score 0.82")).toBeInTheDocument();
-    expect(screen.getByText("openai/gpt-5-mini")).toBeInTheDocument();
-    expect(screen.getByText("$0.0216")).toBeInTheDocument();
-    expect(screen.getByText("37,250 tok")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show debug" })).toBeInTheDocument();
   });
 });
@@ -273,9 +197,6 @@ describe("RunMeta on a turn that did not end in an answer", () => {
           answerText=""
           runStatus={runStatus}
           agentName={null}
-          toolCount={null}
-          score={null}
-          usage={null}
           observedMs={null}
           rerunDisabled={false}
           showRunDetails
@@ -293,9 +214,6 @@ describe("RunMeta on a turn that did not end in an answer", () => {
         messageId="400084"
         answerText={"  \n "}
         agentName={null}
-        toolCount={null}
-        score={null}
-        usage={null}
         observedMs={null}
         rerunDisabled={false}
         showRunDetails

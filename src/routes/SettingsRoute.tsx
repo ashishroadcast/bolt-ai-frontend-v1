@@ -966,7 +966,11 @@ export function SettingsRoute() {
         <section className={styles.sheet}>
           <header className={styles.sheetHead}>
             <h3>Ask — what readers see</h3>
-            <span className={styles.sub}>applies to everyone in this tenant</span>
+            <span className={styles.sub}>
+              {settings?.ask.set_by_ancestor === true
+                ? "set for every organisation by your parent organisation"
+                : "applies to this organisation and every one under it"}
+            </span>
           </header>
 
           <p className={styles.sub}>
@@ -983,13 +987,19 @@ export function SettingsRoute() {
               {askError}
             </p>
           )}
+          {settings?.ask.set_by_ancestor === true && (
+            <p className={styles.sub}>
+              Your parent organisation decides what readers see here, for every organisation
+              under it. Ask an admin there to change it.
+            </p>
+          )}
           {settings !== null && (
             <div className={styles.toggles}>
               <label className={styles.toggle}>
                 <input
                   type="checkbox"
                   checked={settings.ask.show_reasoning}
-                  disabled={askSaving}
+                  disabled={askSaving || settings.ask.set_by_ancestor === true}
                   onChange={(event) => void saveAsk({ show_reasoning: event.target.checked })}
                 />
                 <span>
@@ -1004,7 +1014,7 @@ export function SettingsRoute() {
                 <input
                   type="checkbox"
                   checked={settings.ask.show_query_results}
-                  disabled={askSaving}
+                  disabled={askSaving || settings.ask.set_by_ancestor === true}
                   onChange={(event) => void saveAsk({ show_query_results: event.target.checked })}
                 />
                 <span>

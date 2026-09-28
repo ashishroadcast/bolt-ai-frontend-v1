@@ -2,8 +2,7 @@ import { Check, Copy, RotateCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { CopyButton } from "./CopyButton.tsx";
 import { messageRowId, submitFeedback, type FeedbackRating } from "./feedbackApi.ts";
-import type { UsageMetadata } from "./protocol.ts";
-import { formatCost, formatCount, formatDuration, modelsFromUsage, PASS_SCORE } from "./runTrace.ts";
+import { formatDuration } from "./runTrace.ts";
 import styles from "./RunMeta.module.css";
 import { useAskClient } from "../config.tsx";
 
@@ -139,9 +138,6 @@ export interface RunMetaProps {
    */
   runStatus?: RunStatus;
   agentName: string | null;
-  toolCount: number | null;
-  score: number | null;
-  usage: UsageMetadata | null;
   /** Wall clock this client measured for the whole run. `usage.duration_ms`
    * is not an end-to-end measurement, so it is not shown as run duration. */
   observedMs: number | null;
@@ -158,12 +154,9 @@ export interface RunMetaProps {
   onToggleDebug?: () => void;
   /**
    * Whether the tenant lets this reader see how the run worked
-   * (`AskDisclosure.showReasoning`). Off, the strip keeps what any reader
-   * can use — Copy, Rerun, the rating, who answered and how long it took —
-   * and drops the tool count, the judge's score, the model ids, the dollar
-   * cost, the tokens and the debug toggle. Those are the same machinery the
-   * setting hides from the reasoning card, and leaving them here meant a
-   * reader the tenant chose to spare it could still open the SQL.
+   * (`AskDisclosure.showReasoning`), which is what offers the debug toggle.
+   * The run's figures (tool count, judge score, model ids, tokens, cost)
+   * are never in this strip; they live in that drawer (`RunDebug`).
    *
    * Required rather than defaulted, so a new caller has to decide.
    */
@@ -171,31 +164,18 @@ export interface RunMetaProps {
 }
 
 /**
- * The one dense line under an answer: what to do with it, then what it
- * cost to produce. Everything after the actions is read straight off the
- * stream — the agent named on the request, the tool calls the run made,
- * the judge's score, the models `usage.calls[]` billed, this session's
- * client-measured elapsed time and the dollar cost.
- *
- * **Fields are omitted, never zero-filled — and a zero counts as absent.**
- * Two different things produce a zero here and only one of them is a
- * measurement. `usage.total_tokens` and `usage.cost_usd` are roll-ups over
- * `usage.calls[]`, and a real captured run shows a call arriving as
- * `{input_tokens: 0, output_tokens: 0, cost_usd: 0.00524, priced: true}`
- * — the provider reported the money but not the token counts. A run that
- * produced an answer cannot have spent zero tokens, so `0 tok` is not the
- * count being zero, it is the count being missing; the same holds for an
- * unpriced call's `$0`. Both are therefore dropped rather than printed,
- * which is what "0 tokens" on the old summary line always actually meant.
+ * The one quiet line under an answer: what to do with it, who answered and
+ * how long it took. Nothing about how it was produced — the tool count,
+ * judge score, model ids ("openai/cc/claude-sonnet-4-6-medium"), tokens and
+ * cost read as noise to someone asking about their fleet, so they moved to
+ * the debug drawer (`RunDebug`), which only a tenant that shows reasoning
+ * offers at all.
  */
 export function RunMeta({
   messageId,
   answerText,
   runStatus = "done",
   agentName,
-  toolCount,
-  score,
-  usage,
   observedMs,
   onRerun,
   onRetryFresh,
@@ -205,7 +185,6 @@ export function RunMeta({
   showRunDetails,
 }: RunMetaProps): ReactElement {
   const rowId = messageRowId(messageId);
-  const models = modelsFromUsage(usage);
   const durationMs = observedMs;
 
   return (
@@ -237,21 +216,6 @@ export function RunMeta({
             {agentName}
           </span>
         )}
-        {showRunDetails && toolCount !== null && (
-          <span className={styles.fact}>
-            {toolCount} tool{toolCount === 1 ? "" : "s"}
-          </span>
-        )}
-        {showRunDetails && score !== null && (
-          <span className={styles.fact} data-tone={score >= PASS_SCORE ? "good" : "weak"}>
-            score {score.toFixed(2)}
-          </span>
-        )}
-        {showRunDetails && models.map((model) => (
-          <span key={model} className={styles.fact} title={model}>
-            {model}
-          </span>
-        ))}
         {durationMs !== null && durationMs !== undefined && (
           <span
             className={styles.fact}
@@ -259,12 +223,6 @@ export function RunMeta({
           >
             {runStatus === "stopped" ? "Stopped after" : "Worked for"} {formatDuration(durationMs)}
           </span>
-        )}
-        {showRunDetails && usage !== null && usage.cost_usd > 0 && (
-          <span className={styles.fact}>{formatCost(usage.cost_usd)}</span>
-        )}
-        {showRunDetails && usage !== null && usage.total_tokens > 0 && (
-          <span className={styles.fact}>{formatCount(usage.total_tokens)} tok</span>
         )}
       </span>
 

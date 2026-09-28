@@ -82,3 +82,26 @@ describe("RunDebug", () => {
     expect(screen.queryByText("Tool calls")).not.toBeInTheDocument();
   });
 });
+
+describe("RunDebug run figures", () => {
+  const USAGE = {
+    input_tokens: 31_872,
+    output_tokens: 5378,
+    total_tokens: 37_250,
+    cost_usd: 0.021631,
+    duration_ms: 98_590,
+    calls: [
+      { model: "openrouter/openai/gpt-5-mini", input_tokens: 1540, output_tokens: 744, cost_usd: 0.001873, priced: true },
+    ],
+  };
+
+  it("keeps the tool count, models, tokens and cost here, off the line under the answer", () => {
+    render(<RunDebug trace={TRACE} usage={USAGE} />);
+    expect(screen.getByText("2 tools · openai/gpt-5-mini · 37,250 tok · $0.0216")).toBeInTheDocument();
+  });
+
+  it("drops a zero count or cost, which means unreported rather than free", () => {
+    render(<RunDebug trace={TRACE} usage={{ ...USAGE, total_tokens: 0, cost_usd: 0 }} />);
+    expect(screen.getByText("2 tools · openai/gpt-5-mini")).toBeInTheDocument();
+  });
+});
