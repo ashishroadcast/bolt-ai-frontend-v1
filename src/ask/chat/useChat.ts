@@ -4,7 +4,7 @@ import type { UIPart } from "../parts/catalog.tsx";
 import { fetchConversation } from "./conversation.ts";
 import { buildPhaseTimeline, readPhaseDetail, type PhaseTimelineEvent } from "./phaseTimeline.ts";
 import { readDataStream, type DataChunk, type UsageMetadata } from "./protocol.ts";
-import { postAgentRun } from "./runStream.ts";
+import { isMissingConversationError, postAgentRun } from "./runStream.ts";
 import { buildRunTrace, EMPTY_TRACE, type TraceEvent } from "./runTrace.ts";
 import type { ActiveRun, ChatMessage, RunSummary } from "./types.ts";
 import { toUIPart } from "./wireParts.ts";
@@ -22,6 +22,14 @@ export interface UseChatResult {
    * with `runSummary.status === "error"` instead, since that failure has
    * a place in the thread and this one doesn't. */
   error: string | null;
+  /**
+   * Something the reader should know about the last send that is not a
+   * failure — today only that a follow-up could not continue its
+   * conversation and started a new one instead. Cleared by the next send,
+   * and by opening or starting a conversation. `Composer` shows it, since
+   * it is about what just happened to the question the reader sent.
+   */
+  notice: string | null;
   sendMessage: (text: string, options?: SendOptions) => void;
   /**
    * Ends the run in flight at the reader's request. Closing the connection
@@ -117,6 +125,7 @@ function nextLocalId(prefix: string): string {
  */
 const STALL_TIMEOUT_MS = 20_000;
 const LOST_CONNECTION = "Lost connection to the run.";
+const CONVERSATION_RESTARTED = "That conversation can't be continued, so this started a new one.";
 
 export interface UseChatOptions {
   /** `STALL_TIMEOUT_MS`, overridable so a test can watch a run stall
@@ -199,6 +208,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [status, setStatus] = useState<"idle" | "streaming">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
 
@@ -265,6 +275,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     isStreamingRef.current = true;
     setStatus("streaming");
     setError(null);
+    setNotice(null);
 
     const runStartAt = Date.now();
     const userMessage: ChatMessage = {
@@ -382,18 +393,38 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         hostContextRef.current,
         options?.omitSelectedWidget === true,
       );
-      const response = await postAgentRun(
-        client,
-        {
-          message: text,
-          agent: options?.agent,
-          session_id: conversationIdRef.current ?? undefined,
-          // Left off entirely when there is none: an embed with no
-          // dashboard beside it sends exactly the body it always did.
-          ...(hostContext === null ? {} : { host_context: hostContext }),
-        },
-        { signal: controller.signal },
-      );
+      const send = () =>
+        postAgentRun(
+          client,
+          {
+            message: text,
+            agent: options?.agent,
+            session_id: conversationIdRef.current ?? undefined,
+            // Left off entirely when there is none: an embed with no
+            // dashboard beside it sends exactly the body it always did.
+            ...(hostContext === null ? {} : { host_context: hostContext }),
+          },
+          { signal: controller.signal },
+        );
+      let response: Response;
+      try {
+        response = await send();
+      } catch (err) {
+        // A conversation that can be read but not continued — deleted in
+        // another tab since it was opened, or a channel transcript that was
+        // never this user's own run. The follow-up used to fail with the
+        // server's "no conversation N for this user" and nothing else to try;
+        // now it is sent once more, as the first turn of a new conversation.
+        // Refused only before any run started, so this never runs a question
+        // twice.
+        if (!isMissingConversationError(err) || conversationIdRef.current === null || !isCurrent()) {
+          throw err;
+        }
+        conversationIdRef.current = null;
+        setActiveConversationId(null);
+        response = await send();
+        if (isCurrent()) setNotice(CONVERSATION_RESTARTED);
+      }
 
       armWatchdog();
       // Left the moment a terminal chunk lands. The server writes nothing
@@ -615,6 +646,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       setMessages(hydrated);
       setActiveConversationId(conversationId);
       setError(null);
+      setNotice(null);
       // Same rule as `clearConversation`: an agent armed by slash command was
       // armed for the conversation it was typed in, not for this one.
       setSelectedAgent(null);
@@ -629,6 +661,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     setActiveConversationId(null);
     setMessages([]);
     setError(null);
+    setNotice(null);
     // A slash command arms an agent for "the rest of this conversation", so a
     // new one starts unarmed and routes itself. Keeping it sent the next plain
     // question to the last builder used.
@@ -640,6 +673,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     activeRun,
     status,
     error,
+    notice,
     sendMessage,
     stop,
     loadConversation,

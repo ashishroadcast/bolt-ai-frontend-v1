@@ -559,6 +559,72 @@ describe("useChat", () => {
     expect(await sentBody(2)).not.toHaveProperty("session_id");
   });
 
+  it("starts a new conversation with the same question when the open one can't be continued", async () => {
+    // Deleted in another tab since it was opened, or a channel transcript:
+    // readable, but the server will not add a turn to it.
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: {"type":"start","messageId":"m1","messageMetadata":{"session_id":57}}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      )
+      .mockResolvedValueOnce(jsonResponse({ detail: "no conversation 57 for this user" }, 404))
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: {"type":"start","messageId":"m2","messageMetadata":{"session_id":58}}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Here it is."}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    const sentBody = async (call: number) =>
+      (await (fetchMock.mock.calls[call]![0] as Request).clone().json()) as Record<string, unknown>;
+
+    act(() => result.current.sendMessage("Sales this week?"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(57));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    act(() => result.current.sendMessage("And by city?"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await sentBody(1)).toMatchObject({ message: "And by city?", session_id: 57 });
+    expect(await sentBody(2)).toMatchObject({ message: "And by city?" });
+    expect(await sentBody(2)).not.toHaveProperty("session_id");
+    expect(result.current.activeConversationId).toBe(58);
+    // Asked once, answered once — the refusal never became a turn of its own.
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      "Sales this week?",
+      "",
+      "And by city?",
+      "Here it is.",
+    ]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.notice).toBe("That conversation can't be continued, so this started a new one.");
+
+    // The note is about that send, not the ones after it.
+    fetchMock.mockResolvedValueOnce(sseResponse([`data: {"type":"finish"}`, `data: [DONE]`]));
+    act(() => result.current.sendMessage("Thanks"));
+    await waitFor(() => expect(result.current.notice).toBeNull());
+  });
+
+  it("does not retry a 404 that is not about the conversation", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "no active agent named 'Retired' available to this tenant" }, 404),
+    );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello", { agent: "Retired" }));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.messages[1]!.runSummary).toMatchObject({ status: "error" });
+    expect(result.current.notice).toBeNull();
+  });
+
   it("clearConversation disarms a slash-command agent, so the next question routes itself", () => {
     const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
     act(() => result.current.setSelectedAgent("Dashboard-Builder"));

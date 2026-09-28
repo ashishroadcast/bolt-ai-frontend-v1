@@ -69,6 +69,17 @@
   outline-offset: 1px;
 }
 
+/* A note about the question just sent — not an error, so it reads in the
+   quiet body tint rather than the danger colour the voice bubble uses. */
+.notice {
+  margin: 0;
+  padding: 0 12px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
 .composer {
   display: flex;
   align-items: center;

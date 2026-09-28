@@ -192,6 +192,48 @@ describe("Composer", () => {
     expect(body.agent).toBeUndefined();
   });
 
+  it("says so when a follow-up had to start a new conversation", async () => {
+    const frames = (sessionId: number) =>
+      [
+        `data: {"type":"start","messageId":"m${sessionId}","messageMetadata":{"session_id":${sessionId}}}`,
+        `data: {"type":"finish"}`,
+        `data: [DONE]`,
+      ]
+        .map((frame) => `${frame}\n\n`)
+        .join("");
+    const runs = [
+      () => new Response(frames(57), { status: 200 }),
+      () =>
+        new Response(JSON.stringify({ detail: "no conversation 57 for this user" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+      () => new Response(frames(58), { status: 200 }),
+    ];
+    fetchMock = vi.fn((request: Request) => {
+      if (new URL(request.url).pathname === "/agent/agents") {
+        return Promise.resolve(
+          new Response(JSON.stringify([SALES]), { status: 200, headers: { "content-type": "application/json" } }),
+        );
+      }
+      return Promise.resolve(runs.shift()!());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderComposer(null);
+    const field = screen.getByLabelText("Ask a question");
+
+    for (const question of ["sales this week", "and by city"]) {
+      await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).toBeEnabled());
+      fireEvent.change(field, { target: { value: question } });
+      fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+      await screen.findByRole("button", { name: "Ask" });
+    }
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "That conversation can't be continued, so this started a new one.",
+    );
+  });
+
   it("stays disabled while the tenant has no agent at all, so a run can never fire with nothing to route to", async () => {
     fetchMock = routed([]);
     vi.stubGlobal("fetch", fetchMock);

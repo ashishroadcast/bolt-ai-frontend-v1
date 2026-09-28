@@ -209,7 +209,7 @@ export function Composer() {
   // dismissed cannot be dismissed at all.
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const { status, sendMessage, stop, selectedAgent, setSelectedAgent } = useChatContext();
+  const { status, sendMessage, stop, notice, selectedAgent, setSelectedAgent } = useChatContext();
   const { copy, hostContextProvider } = useAskConfig();
   const { agents } = useAskAgents();
   const selectedWidget = useSelectedWidget(hostContextProvider, status);
@@ -428,6 +428,13 @@ export function Composer() {
           </button>
         </span>
       </div>
+    )}
+    {notice !== null && (
+      // In the flow, above the pill, not a floating bubble: it explains the
+      // turn just sent — "this started a new one" — and stays until the next.
+      <p className={styles.notice} role="status">
+        {notice}
+      </p>
     )}
     <form className={styles.composer} onSubmit={handleSubmit} data-offline={!isOnline || undefined}>
       {menuOpen && (
