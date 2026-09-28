@@ -374,6 +374,18 @@ const NO_INSPECTOR: AskInspector = { selection: null, selectPhase: () => {} };
 const CREDENTIAL_RETRY_DELAY_MS = 1_000;
 
 /**
+ * The widget's own version, defined only by the element build
+ * (`vite.element.config.ts` replaces the identifier with
+ * `packages/ask-element/package.json`'s `version`). Everywhere else — the
+ * console, the tests, a React host bundling `src/ask` itself — the name is
+ * never defined, `typeof` says so without throwing, and no
+ * `X-Ask-Element-Version` header is sent.
+ */
+declare const __ASK_ELEMENT_VERSION__: string | undefined;
+const ELEMENT_VERSION =
+  typeof __ASK_ELEMENT_VERSION__ === "string" ? __ASK_ELEMENT_VERSION__ : undefined;
+
+/**
  * Wraps Ask (or any part of it) with its configuration.
  *
  * Builds the HTTP client here rather than at module scope. A module-level
@@ -419,6 +431,7 @@ export function AskProvider({
           return (await refreshCredential()) !== null;
         },
         credentialRetryDelayMs: CREDENTIAL_RETRY_DELAY_MS,
+        elementVersion: ELEMENT_VERSION,
         // A no-op default rather than a required callback: a host that has
         // nothing to do about a refusal should not have to say so.
         onUnauthorized: () => authRef.current.onUnauthorized?.(),

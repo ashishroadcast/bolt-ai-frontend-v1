@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -72,6 +73,21 @@ function inlineShadowStyles(): Plugin {
   };
 }
 
+/**
+ * The package's own version, baked into the bundle as `__ASK_ELEMENT_VERSION__`
+ * and sent as `X-Ask-Element-Version` (see `src/ask/config.tsx`).
+ *
+ * Read from `package.json` at build time rather than imported by the source:
+ * nothing under `src/ask/` may import from outside it, and the version belongs
+ * to this build target, not to the code — the console built from the same
+ * source is not version 1.3.x of anything.
+ */
+const elementVersion = (
+  JSON.parse(readFileSync(new URL("./packages/ask-element/package.json", import.meta.url), "utf8")) as {
+    version: string;
+  }
+).version;
+
 export default defineConfig({
   plugins: [react(), inlineShadowStyles()],
   // React (and several of its dependencies) branch on `process.env.NODE_ENV`
@@ -84,7 +100,10 @@ export default defineConfig({
   // ever exists to be embedded in someone else's app, and shipping React's
   // development build into a host drags its whole warning apparatus along
   // (and, here, 540kB of it — the bundle halved when this was set).
-  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+    __ASK_ELEMENT_VERSION__: JSON.stringify(elementVersion),
+  },
   // No `public/`. That directory is the CONSOLE's — its favicon was being
   // copied into the package and published as though the widget had one, which
   // a widget cannot: it has no document of its own.

@@ -15,6 +15,10 @@ import {
  */
 export { AgentApiError, stringDetailMessage };
 
+/** Which build of the `<bolt-ai-ask>` widget sent a request — see
+ * `GatewayClientOptions.elementVersion`. */
+const ELEMENT_VERSION_HEADER = "X-Ask-Element-Version";
+
 /** `fetch`'s own cancellation, which must reach the caller untouched:
  * `useChat` tells a deliberate stop from a failure by exactly this shape. */
 function isAbort(err: unknown, signal: AbortSignal | null | undefined): boolean {
@@ -88,6 +92,24 @@ export interface GatewayClientOptions {
    * first, and the pause only happens when it does not produce a credential.
    */
   credentialRetryDelayMs?: number;
+  /**
+   * The `@bolt-ai/ask-element` version, sent as `X-Ask-Element-Version` so
+   * agent-service's logs can tell which widget build a request came from — a
+   * vendored widget lags the console, and "which one was it?" is the first
+   * question about any bug report from inside bolt-v2. Omitted — the console,
+   * or a React host importing Ask directly — no header is sent.
+   *
+   * **A custom header needs agent-service's CORS `allow_headers` to name it**,
+   * or the browser's preflight fails and the request never leaves — the exact
+   * way `Organisation` and `X-Api-Key` once took every call down. So the
+   * client does not trust that it is allowed: if the first request carrying
+   * it fails without any HTTP answer, it is sent again without the header,
+   * and the header is dropped for this client's life. One wasted preflight
+   * per page, instead of a dead widget. Once any request carrying it gets an
+   * answer, it is known to be allowed and a later network failure is just a
+   * network failure.
+   */
+  elementVersion?: string;
 }
 
 export interface GraphQLRequestOptions {
@@ -128,6 +150,10 @@ export class GatewayClient {
   private readonly getOrganisationId?: () => string | null;
   private readonly clientType: string;
   private readonly credentialRetryDelayMs?: number;
+  private readonly elementVersion?: string;
+  /** Whether agent-service's CORS lets `X-Ask-Element-Version` through —
+   * unknown until a request carrying it has been answered or refused. */
+  private elementVersionHeader: "untested" | "accepted" | "refused" = "untested";
   private refreshInFlight: Promise<boolean> | null = null;
   private waitingForCredential = 0;
   private readonly reconnectingListeners = new Set<() => void>();
@@ -140,6 +166,7 @@ export class GatewayClient {
     this.getOrganisationId = options.getOrganisationId;
     this.clientType = options.clientType ?? "web";
     this.credentialRetryDelayMs = options.credentialRetryDelayMs;
+    this.elementVersion = options.elementVersion;
   }
 
   /**
@@ -261,12 +288,24 @@ export class GatewayClient {
    * `TypeError("Failed to fetch")`, and before this that string was what the
    * failed-run card printed. A cancellation passes through untouched — see
    * `isAbort`.
+   *
+   * Also where `X-Ask-Element-Version` goes on, and comes back off when the
+   * server's CORS turns out not to allow it — see `elementVersion`.
    */
   private async send(url: string, init: RequestInit): Promise<Response> {
+    const version = this.elementVersionHeader === "refused" ? undefined : this.elementVersion;
+    const headers = new Headers(init.headers);
+    if (version !== undefined) headers.set(ELEMENT_VERSION_HEADER, version);
     try {
-      return await fetch(new Request(url, init));
+      const response = await fetch(new Request(url, { ...init, headers }));
+      if (version !== undefined) this.elementVersionHeader = "accepted";
+      return response;
     } catch (err) {
       if (isAbort(err, init.signal)) throw err;
+      if (version !== undefined && this.elementVersionHeader !== "accepted") {
+        this.elementVersionHeader = "refused";
+        return this.send(url, init);
+      }
       throw new NetworkError(err);
     }
   }

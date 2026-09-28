@@ -730,3 +730,82 @@ describe("GatewayClient context headers", () => {
     expect(request.headers.get("Organisation")).toBe("explicit");
   });
 });
+
+/**
+ * `X-Ask-Element-Version` — and the fallback that keeps a custom header from
+ * taking the widget down before agent-service's CORS has been taught it.
+ */
+describe("GatewayClient element version header", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function widgetClient() {
+    return new GatewayClient({
+      baseUrl: "http://gw",
+      getToken: () => "t",
+      onUnauthorized: () => {},
+      elementVersion: "1.3.3",
+    });
+  }
+
+  const sent = (call: number) =>
+    (fetchMock.mock.calls[call]![0] as Request).headers.get("X-Ask-Element-Version");
+
+  it("names the widget build on every request", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await client.agentFetch("/agent/agents");
+    await client.agentStream("/agent/run", { method: "POST", body: "{}" });
+
+    expect(sent(0)).toBe("1.3.3");
+    expect(sent(1)).toBe("1.3.3");
+  });
+
+  it("sends nothing from a client with no version — the console", async () => {
+    fetchMock.mockImplementation(async () => jsonResponse({ ok: true }));
+    await new GatewayClient({ baseUrl: "http://gw", getToken: () => "t", onUnauthorized: () => {} }).agentFetch(
+      "/agent/agents",
+    );
+    expect(sent(0)).toBeNull();
+  });
+
+  it("drops the header, and re-sends without it, when the first request carrying it gets no answer", async () => {
+    // What a refused CORS preflight looks like from inside the page.
+    fetchMock
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await expect(client.agentFetch("/agent/agents")).resolves.toEqual({ ok: true });
+    await client.agentFetch("/agent/settings/ask");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sent(0)).toBe("1.3.3");
+    expect(sent(1)).toBeNull();
+    expect(sent(2)).toBeNull();
+  });
+
+  it("keeps it once it has been answered — a later outage is just an outage", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockImplementation(async () => jsonResponse({ ok: true }));
+    const client = widgetClient();
+
+    await client.agentFetch("/agent/agents");
+    await expect(client.agentFetch("/agent/agents")).rejects.toBeInstanceOf(NetworkError);
+    await client.agentFetch("/agent/agents");
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(sent(2)).toBe("1.3.3");
+  });
+});
