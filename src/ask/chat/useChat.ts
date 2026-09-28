@@ -330,7 +330,12 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       );
 
       armWatchdog();
-      for await (const chunk of readDataStream(response.body!, { onActivity: armWatchdog })) {
+      // Left the moment a terminal chunk lands. The server writes nothing
+      // after `finish`/`error` but `[DONE]`, and it commits the answer
+      // before it sends `finish` (`app.api.run`), so there is nothing left
+      // to wait for — and waiting is what let a connection that broke in
+      // that gap turn a delivered answer into a second, failed turn.
+      stream: for await (const chunk of readDataStream(response.body!, { onActivity: armWatchdog })) {
         switch (chunk.type) {
           case "start": {
             messageId = chunk.messageId;
@@ -377,13 +382,13 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
             sawTerminal = true;
             events.push({ kind: "run-end", at: Date.now() });
             finalize(summaryFrom("done", null), chunk.messageMetadata?.usage ?? null);
-            break;
+            break stream;
           }
           case "error": {
             sawTerminal = true;
             events.push({ kind: "run-end", at: Date.now() });
             finalize(summaryFrom("error", chunk.errorText), null);
-            break;
+            break stream;
           }
           default: {
             if (!chunk.type.startsWith("data-")) break;
@@ -447,6 +452,10 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         finalize(summaryFrom("error", "Connection closed before the run finished."), null);
       }
     } catch (err) {
+      // The turn already landed. Whatever broke after that — the connection
+      // dropping before `[DONE]`, Stop pressed a beat too late — must not
+      // append a second, failed turn beneath the answer.
+      if (sawTerminal) return;
       if (controller.signal.aborted) {
         // Checked off the signal, not the error: `fetch` and a body read
         // reject with whatever the platform chose, and it was this hook that

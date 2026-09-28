@@ -281,6 +281,37 @@ describe("useChat", () => {
     });
   });
 
+  it("shows the answer once when the connection breaks after finish but before [DONE]", async () => {
+    // Delivered in one read, then the next read fails the way a dropped
+    // socket does. Before, that failure became a second, "network error"
+    // turn under an answer that had already arrived whole.
+    const frames = [
+      `data: {"type":"start","messageId":"msg-20"}`,
+      `data: {"type":"text-delta","id":"answer","delta":"Done."}`,
+      `data: {"type":"finish"}`,
+    ];
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames.map((frame) => `${frame}\n\n`).join("")));
+      },
+      pull(controller) {
+        pulls += 1;
+        controller.error(new TypeError("network error"));
+      },
+    });
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(pulls).toBeGreaterThan(0); // the break really was there to be hit
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[1]).toMatchObject({ content: "Done.", runSummary: { status: "done" } });
+    expect(result.current.error).toBeNull();
+  });
+
   it("does not start a second run while one is already streaming", async () => {
     fetchMock.mockImplementation((request: Request) =>
       Promise.resolve(openEndedResponse(request.signal)),
