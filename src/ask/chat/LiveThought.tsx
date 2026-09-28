@@ -25,6 +25,12 @@ import styles from "./LiveThought.module.css";
  * bottom; what a reader wants from it is evidence of motion and a rough
  * sense of what the agent is working on. The whole of it is still in the
  * run trace behind the Inspector for anyone who does want to read it.
+ *
+ * **Not a live region.** It was one, and a screen reader read out every
+ * streamed chunk of the model's reasoning for the whole run: a fragment of
+ * a sentence every few hundred milliseconds, over anything else the reader
+ * tried to do. It is now a labelled group a reader can visit and leave;
+ * `WaitAnnouncement` is what speaks while a run is in flight.
  */
 
 /**
@@ -55,8 +61,16 @@ export function LiveThought({ text }: { text: string }): ReactElement | null {
     // The window is a wrapper, not this paragraph: it holds a fixed height
     // and clips from the TOP (see the stylesheet), so the newest words are
     // always the ones on screen and the block never grows the page.
-    <div className={styles.window}>
-      <p className={styles.thought} aria-live="polite" aria-label="What the agent is working on">
+    //
+    // `aria-live="off"` spelled out rather than left as the default, so a
+    // live region added around this later cannot start reading the stream.
+    <div
+      className={styles.window}
+      role="group"
+      aria-label="What the agent is working on"
+      aria-live="off"
+    >
+      <p className={styles.thought}>
         {trimmed.length > TAIL_CHARS && <span aria-hidden="true">… </span>}
         {fromWord}
         <span className={styles.caret} aria-hidden="true" />
