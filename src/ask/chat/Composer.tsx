@@ -9,6 +9,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useAskConfig, type AskHostContext } from "../config.tsx";
+import { useAskLocale } from "../i18n/AskLocale.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
@@ -299,6 +300,7 @@ export function Composer() {
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const { copy, hostContextProvider } = useAskConfig();
+  const { locale } = useAskLocale();
   const { agents } = useAskAgents();
   const selectedWidget = useSelectedWidget(hostContextProvider, status);
   // The widget whose chip the reader dismissed. Keyed by id so selecting a
@@ -432,7 +434,13 @@ export function Composer() {
     const recognition = new Recognition();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = document.documentElement.lang || navigator.language || "en-US";
+    // The widget's own language when its host set one (`resolveAskLocale`
+    // reads the element's `lang`), because inside bolt-v2 the page's <html>
+    // can say "en" while the widget's element says "hi". With no provider —
+    // the console — `locale` is the "en" default, and the page's own
+    // language is still the better guess.
+    recognition.lang =
+      locale !== "en" ? locale : document.documentElement.lang || navigator.language || "en-US";
     // Read now, not from this click's render: the permission prompt may have
     // sat open while the reader kept typing.
     voiceBaseRef.current = valueRef.current.trimEnd();

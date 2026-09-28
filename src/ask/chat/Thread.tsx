@@ -5,6 +5,7 @@ import { useAgents } from "./useAskAgents.ts";
 import { renderUIPart, type UIPart } from "../parts/catalog.tsx";
 import { PartBoundary } from "../parts/PartBoundary.tsx";
 import { AnswerText } from "./AnswerText.tsx";
+import { AnswerAnnouncer } from "./AnswerAnnouncer.tsx";
 import { motionIsWelcome, useTypewriter } from "./typewriter.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
 import { useAskClient, useAskInspector } from "../config.tsx";
@@ -706,6 +707,9 @@ export function Thread(): ReactElement {
           );
         })}
         <LiveTurn />
+        {/* Last, so reading the thread top to bottom ends on it rather than
+            starting with a stale "Answer ready.". */}
+        <AnswerAnnouncer />
       </div>
     </AskDisclosureProvider>
   );

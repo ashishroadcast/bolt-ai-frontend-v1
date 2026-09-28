@@ -215,7 +215,7 @@ describe("what a closed question says about how it ended", () => {
       timed_out: false,
     });
 
-    render(renderUIPart(part));
+    render(renderUIPart(part!));
 
     expect(screen.getByRole("region", { name: "Answered" })).toHaveTextContent(
       "You answered: Last week",
@@ -230,7 +230,7 @@ describe("what a closed question says about how it ended", () => {
       timed_out: true,
     });
 
-    render(renderUIPart(part));
+    render(renderUIPart(part!));
 
     expect(screen.getByText(/went with its best reading/)).toBeInTheDocument();
   });
