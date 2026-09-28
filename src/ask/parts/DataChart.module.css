@@ -50,3 +50,50 @@
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
+
+/*
+ * The legend, beneath the plot. A plain wrapping list, so five long series
+ * names in a 420px panel take a second line instead of being clipped by
+ * the sheet — Recharts' own legend lived in a fixed 28px box. Mono, like
+ * every other label on the chart; the swatch colour arrives per item as
+ * `--swatch`, since series colours are data.
+ */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin: 6px 0 2px;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.legendItem::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--swatch);
+  transform: translateY(1px);
+}
+
+/* A line chart's key is a line: the swatch should look like the mark. */
+.legend[data-swatch="line"] > .legendItem::before {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  transform: translateY(-3px);
+}

@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 
 import {
   DataChart,
+  MAX_SLICES,
   ScatterTip,
   axisTickLabel,
+  foldSlices,
   formatAxisTick,
   formatValue,
   formatterFor,
   hasIsolatedPoint,
+  hbarHeight,
   shareFormatterFor,
   sharedFormat,
+  withDistinctColors,
 } from "./DataChart.tsx";
 import type { DataChartPoint, DataChartSeries } from "./DataChart.tsx";
 
@@ -392,5 +396,94 @@ describe("the scatter's hover read-out", () => {
     const { container } = render(<ScatterTip active={false} row={undefined} measures={measures} />);
 
     expect(container.firstChild).toBeNull();
+  });
+});
+
+// --- legends that fit, slices that can be told apart -------------------------
+//
+// Recharts' legend sat in a fixed 28px box, so a legend that wrapped was cut
+// off by the sheet. Every slice past the sixth came back the same slate. And
+// forty hbar categories shared the same 240px as four.
+
+describe("the legend", () => {
+  it("is a wrapping list beneath the plot, naming every series", () => {
+    const { container } = render(<DataChart title="Weekly" kind="line" series={series} data={data} />);
+
+    const items = [...container.querySelectorAll("ul > li")].map((item) => item.textContent);
+    expect(items).toEqual(series.map((s) => s.label));
+    // Outside the SVG, where Recharts' fixed-height wrapper cannot clip it.
+    expect(container.querySelector("svg ul")).toBeNull();
+    expect(container.querySelector(".recharts-legend-wrapper")).toBeNull();
+  });
+
+  it("names each slice of a pie", () => {
+    const { container } = render(<DataChart title="Mix" kind="pie" series={series} data={data} />);
+
+    expect([...container.querySelectorAll("ul > li")].map((item) => item.textContent)).toEqual(
+      series.map((s) => s.label),
+    );
+  });
+});
+
+describe("slices past the palette", () => {
+  const many: DataChartSeries[] = Array.from({ length: 11 }, (_, index) => ({
+    key: `c${index}`,
+    label: `Channel ${index + 1}`,
+    // What the server sends: six tokens, then the last one repeated.
+    color: `var(--series-${Math.min(index + 1, 6)})`,
+    format: "currency",
+  }));
+  const shares: DataChartPoint[] = [
+    { label: "This month", values: Object.fromEntries(many.map((s, index) => [s.key, 1000 * (12 - index)])) },
+  ];
+
+  it("folds everything past the largest seven into one Other slice", () => {
+    const slices = many.map((s) => ({ ...s, value: shares[0]!.values[s.key]! }));
+    const folded = foldSlices(slices);
+
+    expect(folded).toHaveLength(MAX_SLICES);
+    expect(folded.slice(0, 7).map((slice) => slice.label)).toEqual(many.slice(0, 7).map((s) => s.label));
+    expect(folded[7]).toMatchObject({ label: "Other", value: 5000 + 4000 + 3000 + 2000, format: "currency" });
+  });
+
+  it("leaves eight or fewer slices alone", () => {
+    const eight = many.slice(0, 8).map((s) => ({ ...s, value: 1 }));
+
+    expect(foldSlices(eight)).toEqual(eight);
+  });
+
+  it("draws a pie of eleven channels as eight distinctly coloured slices", () => {
+    const { container } = render(<DataChart title="Mix" kind="pie" series={many} data={shares} />);
+
+    const fills = [...container.querySelectorAll(".recharts-pie-sector path")].map((path) =>
+      path.getAttribute("fill"),
+    );
+    expect(fills).toHaveLength(MAX_SLICES);
+    expect(new Set(fills).size).toBe(MAX_SLICES);
+    expect(screen.getByText("Other")).toBeInTheDocument();
+  });
+
+  it("never folds a funnel, whose stages are a sequence", () => {
+    const { container } = render(<DataChart title="Steps" kind="funnel" series={many} data={shares} />);
+
+    expect(container.querySelectorAll(".recharts-funnel-trapezoid")).toHaveLength(many.length);
+  });
+
+  it("recolours only a repeated colour, keeping the server's first choices", () => {
+    const coloured = withDistinctColors(many);
+
+    expect(coloured.slice(0, 6).map((s) => s.color)).toEqual(many.slice(0, 6).map((s) => s.color));
+    expect(new Set(coloured.slice(0, 8).map((s) => s.color)).size).toBe(8);
+    // Partner colours are never repeated, so never replaced.
+    const partners = withDistinctColors(series);
+    expect(partners.map((s) => s.color)).toEqual(series.map((s) => s.color));
+  });
+});
+
+describe("hbarHeight", () => {
+  it("gives each category room for a bar, never less than the standard height", () => {
+    expect(hbarHeight(3, 1)).toBe(240);
+    expect(hbarHeight(40, 1)).toBe(40 * 28);
+    expect(hbarHeight(20, 2)).toBe(20 * 36);
   });
 });

@@ -1,5 +1,5 @@
 import { BarChart3 } from "lucide-react";
-import type { ReactElement } from "react";
+import type { CSSProperties, ReactElement } from "react";
 import {
   Area,
   AreaChart,
@@ -11,7 +11,6 @@ import {
   Funnel,
   FunnelChart,
   LabelList,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -136,6 +135,139 @@ export interface DataChartProps {
 }
 
 const CHART_H = 240;
+
+/**
+ * How tall an hbar chart has to be for its bars to stay bars: a fixed
+ * 240px shared out across forty categories left each a hairline with a
+ * label it could not hold. A row per category, and a little more per extra
+ * series grouped inside it; never shorter than every other chart.
+ */
+export function hbarHeight(categories: number, seriesCount: number): number {
+  return Math.max(CHART_H, categories * (20 + 8 * Math.max(1, seriesCount)));
+}
+
+/**
+ * The series ramp, extended past the six tokens the server assigns from.
+ *
+ * `intents.py` hands out `--series-1`…`--series-6` in order and gives
+ * every series after the sixth the LAST one again, so the seventh slice of
+ * a pie onward were all the same slate — a tail of slices a reader could
+ * not tell apart. Two more are added here (a light orchid and a dark umber,
+ * continuing the ramp's dark/light alternation and staying off the orange
+ * and red reserved for Swiggy and Zomato); `var()` fallbacks, so a host
+ * without the tokens still gets the colour.
+ */
+const PALETTE = [
+  "var(--series-1)",
+  "var(--series-2)",
+  "var(--series-3)",
+  "var(--series-4)",
+  "var(--series-5)",
+  "var(--series-6)",
+  "var(--series-7, #c27bb0)",
+  "var(--series-8, #6b4a33)",
+];
+
+/** "The rest" — a neutral, so it never reads as one more named category. */
+const OTHER_COLOR = "var(--series-other, #b3bab6)";
+
+/**
+ * Series with every colour distinct, as far as the palette reaches.
+ *
+ * Only a REPEATED colour is replaced — the first series to hold a colour
+ * keeps it, so the server's own choices (and the partner reservation, which
+ * is never repeated) stand. A repeat takes the first palette colour no
+ * series is using yet.
+ */
+export function withDistinctColors<T extends DataChartSeries>(series: readonly T[]): T[] {
+  const taken = new Set<string>();
+  const spare = PALETTE.filter((color) => !series.some((s) => s.color === color));
+  return series.map((s) => {
+    if (!taken.has(s.color)) {
+      taken.add(s.color);
+      return s;
+    }
+    const next = spare.shift();
+    if (next === undefined) return s;
+    taken.add(next);
+    return { ...s, color: next };
+  });
+}
+
+/** A slice of a pie, treemap, funnel or radial: one series at one value. */
+export interface Slice extends DataChartSeries {
+  value: number;
+}
+
+/**
+ * The most slices a part-of-a-whole chart draws. Past this a pie is a
+ * ring of slivers, and even an extended palette runs out of colours a
+ * reader can tell apart.
+ */
+export const MAX_SLICES = 8;
+
+/**
+ * Slices, with everything past the largest seven folded into one "Other".
+ *
+ * The seven kept stay in the server's order (usually already ranked); the
+ * fold only decides which make the cut. "Other" takes the format its
+ * members share, so its tooltip still reads in their unit. The accessible
+ * table beside the chart lists every slice, folded or not.
+ */
+export function foldSlices(slices: readonly Slice[], max: number = MAX_SLICES): Slice[] {
+  if (slices.length <= max) return [...slices];
+  const keep = new Set(
+    [...slices]
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+      .slice(0, max - 1)
+      .map((slice) => slice.key),
+  );
+  const rest = slices.filter((slice) => !keep.has(slice.key));
+  return [
+    ...slices.filter((slice) => keep.has(slice.key)),
+    {
+      key: "__other__",
+      label: "Other",
+      color: OTHER_COLOR,
+      format: sharedFormat(rest),
+      value: rest.reduce((sum, slice) => sum + slice.value, 0),
+    },
+  ];
+}
+
+/** Kinds whose shapes are slices of one moment rather than a series over points. */
+const SLICE_KINDS: ReadonlySet<DataChartKind> = new Set(["pie", "donut", "treemap", "funnel", "radial"]);
+
+interface LegendEntry {
+  key: string;
+  label: string;
+  color: string;
+}
+
+/**
+ * The legend, as HTML beneath the plot rather than inside it.
+ *
+ * Recharts' own legend sits in a wrapper of a fixed height (28px here), so
+ * a legend that wrapped to a second line — five long store names in a
+ * 420px panel — was cut off by the sheet's `overflow: hidden`, and the
+ * series it named became colours nobody could decode. A plain list wraps
+ * as far as it needs to and the plot keeps its full height above it.
+ */
+function ChartLegend({ entries, line }: { entries: readonly LegendEntry[]; line: boolean }): ReactElement {
+  return (
+    <ul className={styles.legend} data-swatch={line ? "line" : "block"}>
+      {entries.map((entry) => (
+        <li
+          key={entry.key}
+          className={styles.legendItem}
+          style={{ "--swatch": entry.color } as CSSProperties}
+        >
+          {entry.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /**
  * An axis tick, short enough not to crowd the plot.
@@ -380,6 +512,19 @@ export function DataChart({
   const hasNegative = data.some((point) =>
     series.some((s) => (point.values[s.key] ?? 0) < 0),
   );
+  const drawn = withDistinctColors(series);
+  // A slice chart's slices are its series at the first point. A funnel's
+  // stages are an ordered sequence, so they are never folded: an "Other"
+  // stage would be a step nobody took.
+  const sliceValues: Slice[] = drawn.map((s) => ({ ...s, value: Number(rows[0]?.[`v:${s.key}`] ?? 0) }));
+  const slices = SLICE_KINDS.has(kind) ? (kind === "funnel" ? sliceValues : foldSlices(sliceValues)) : [];
+  const legend: LegendEntry[] =
+    kind === "treemap" || kind === "funnel" || kind === "scatter" || kind === "bubble"
+      ? []
+      : SLICE_KINDS.has(kind)
+        ? slices
+        : drawn;
+  const height = kind === "hbar" ? hbarHeight(rows.length, drawn.length) : CHART_H;
 
   const describedBy =
     ariaLabel ??
@@ -419,12 +564,6 @@ export function DataChart({
         {...TOOLTIP_STYLE}
         cursor={{ fill: "var(--ground-lift)", stroke: "var(--rule)" }}
       />
-      <Legend
-        verticalAlign="bottom"
-        height={28}
-        iconType="plainline"
-        wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }}
-      />
       {/* Zero has to read as zero when values sit on both sides of it,
           otherwise a small rise and a small fall look alike. */}
       {hasNegative && <ReferenceLine y={0} stroke="var(--fg-faint)" />}
@@ -434,9 +573,12 @@ export function DataChart({
   return (
     <Sheet title={title} subLabel={subLabel} icon={BarChart3}>
       <div className={styles.body} role="img" aria-label={describedBy}>
-        <ResponsiveContainer width="100%" height={CHART_H}>
-          {renderChart(kind, rows, series, axis)}
+        <ResponsiveContainer width="100%" height={height}>
+          {renderChart(kind, rows, drawn, axis, slices)}
         </ResponsiveContainer>
+        {legend.length > 0 && (
+          <ChartLegend entries={legend} line={kind === "line" || kind === "step"} />
+        )}
       </div>
     </Sheet>
   );
@@ -452,6 +594,7 @@ function renderChart(
   rows: ChartRow[],
   series: DataChartSeries[],
   axis: ReactElement,
+  slices: Slice[],
 ): ReactElement {
   const margin = { top: 8, right: 12, bottom: 0, left: 0 };
   // A dot only where a line cannot be drawn — see `hasIsolatedPoint`.
@@ -517,14 +660,9 @@ function renderChart(
       // the Swiggy/Zomato reservation inside it — applies per slice.
       return (
         <PieChart margin={margin}>
-          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
-          <Legend
-            verticalAlign="bottom"
-            height={28}
-            wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }}
-          />
+          <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
           <Pie
-            data={series.map((s) => ({ name: s.label, value: Number(rows[0]?.[`v:${s.key}`] ?? 0) }))}
+            data={slices.map((slice) => ({ name: slice.label, value: slice.value }))}
             dataKey="value"
             nameKey="name"
             // A donut, not a full pie: the hole gives the labels somewhere
@@ -535,8 +673,8 @@ function renderChart(
             paddingAngle={1}
             isAnimationActive={false}
           >
-            {series.map((s) => (
-              <Cell key={s.key} fill={s.color} />
+            {slices.map((slice) => (
+              <Cell key={slice.key} fill={slice.color} />
             ))}
           </Pie>
         </PieChart>
@@ -747,7 +885,6 @@ function renderChart(
             tickFormatter={(value: number) => formatAxisTick(value, sharedFormat(series))}
           />
           <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
-          <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }} />
           {series.map((s) => (
             <Radar key={s.key} dataKey={`v:${s.key}`} name={s.label} stroke={s.color} fill={s.color} fillOpacity={0.18} isAnimationActive={false} />
           ))}
@@ -760,12 +897,12 @@ function renderChart(
       // items still reads as a long tail.
       return (
         <Treemap
-          data={series.map((s) => ({ name: s.label, size: Math.abs(Number(rows[0]?.[`v:${s.key}`] ?? 0)), fill: s.color }))}
+          data={slices.map((slice) => ({ name: slice.label, size: Math.abs(slice.value), fill: slice.color }))}
           dataKey="size"
           isAnimationActive={false}
           stroke="var(--surface)"
         >
-          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
+          <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
         </Treemap>
       );
 
@@ -775,10 +912,10 @@ function renderChart(
       // reader is looking for.
       return (
         <FunnelChart margin={margin}>
-          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
+          <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
           <Funnel
             dataKey="size"
-            data={series.map((s) => ({ name: s.label, size: Number(rows[0]?.[`v:${s.key}`] ?? 0), fill: s.color }))}
+            data={slices.map((slice) => ({ name: slice.label, size: slice.value, fill: slice.color }))}
             isAnimationActive={false}
           >
             <LabelList position="right" dataKey="name" fill="var(--fg-dim)" stroke="none" fontSize={11} />
@@ -792,7 +929,7 @@ function renderChart(
       // capacity wants — not the register a pie wants.
       return (
         <RadialBarChart
-          data={series.map((s) => ({ name: s.label, value: Number(rows[0]?.[`v:${s.key}`] ?? 0), fill: s.color }))}
+          data={slices.map((slice) => ({ name: slice.label, value: slice.value, fill: slice.color }))}
           innerRadius="28%"
           outerRadius="95%"
           startAngle={90}
@@ -800,8 +937,7 @@ function renderChart(
           margin={margin}
         >
           <RadialBar dataKey="value" background={{ fill: "var(--surface-sunk)" }} isAnimationActive={false} />
-          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
-          <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }} />
+          <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
         </RadialBarChart>
       );
 
