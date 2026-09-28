@@ -1,8 +1,9 @@
 import { Copy } from "lucide-react";
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { AgentIcon } from "../AgentIcon.tsx";
 import { useAgents } from "./useAskAgents.ts";
 import { renderUIPart, type UIPart } from "../parts/catalog.tsx";
+import { PartBoundary } from "../parts/PartBoundary.tsx";
 import { AnswerText } from "./AnswerText.tsx";
 import { motionIsWelcome, useTypewriter } from "./typewriter.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
@@ -124,6 +125,10 @@ function withAnswering(
   );
 }
 
+/**
+ * Each part inside its own `PartBoundary`, so one that throws costs that
+ * sheet and not the screen — see `PartBoundary` for the parts that did.
+ */
 function PartList({ parts }: { parts: UIPart[] }): ReactElement {
   return (
     <>
@@ -132,7 +137,9 @@ function PartList({ parts }: { parts: UIPart[] }): ReactElement {
         // (catalog.tsx's UIPart.data is intent-specific, not a keyed
         // entity list) — the same convention DataTable's own row map uses.
         // eslint-disable-next-line react/no-array-index-key
-        <div key={index}>{renderUIPart(part)}</div>
+        <div key={index}>
+          <PartBoundary part={part}>{renderUIPart(part)}</PartBoundary>
+        </div>
       ))}
     </>
   );
@@ -431,14 +438,20 @@ function LiveTurn(): ReactElement | null {
   const { selection, selectPhase } = useAskInspector();
   const disclosure = useAskDisclosure();
   const isOnline = useOnlineStatus();
+  // Memoised on the parts array, which changes only when a part arrives:
+  // `withAnswering` rebuilds each question it touches, and a fresh object
+  // on every text delta would make `PartBoundary` re-try a part that threw
+  // sixty times a second.
+  const runParts = activeRun?.parts;
+  const answerable = useMemo(
+    () => (runParts === undefined ? [] : withAnswering(client, runParts, true)),
+    [client, runParts],
+  );
 
   if (activeRun === null) return null;
 
   const isWaiting = activeRun.text === "";
-  const liveVisible = visibleParts(
-    withAnswering(client, activeRun.parts, true),
-    disclosure.showQueryResults,
-  );
+  const liveVisible = visibleParts(answerable, disclosure.showQueryResults);
 
   return (
     <AgentTurn>

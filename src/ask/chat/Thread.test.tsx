@@ -415,6 +415,39 @@ describe("Thread", () => {
     expect(screen.getByText("May")).toBeInTheDocument();
   });
 
+  it("costs one sheet, not the screen, when a part cannot render", async () => {
+    // A chart point with no `values` threw inside DataChart, and with no
+    // error boundary anywhere it blanked the whole Ask screen.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-5"}`,
+          `data: {"type":"data-chart","data":{"title":"Net sales","series":[{"key":"net","label":"Net","color":"red"}],"data":[{"label":"May"}]}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Bandra led."}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("month on month net sales"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText(/Couldn.t display this part of the answer\./)).toBeInTheDocument();
+    expect(screen.getByText("Bandra led.")).toBeInTheDocument();
+    expect(screen.getByText("month on month net sales")).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Ask could not render a "data-chart" part.',
+      expect.anything(),
+      expect.anything(),
+    );
+    consoleError.mockRestore();
+  });
+
   it("leaves a legible error line, not a stuck rail, when a run fails mid-stream", async () => {
     fetchMock.mockImplementation(
       routeFetch(() =>
