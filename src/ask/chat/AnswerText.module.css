@@ -15,6 +15,12 @@
   font-size: var(--text-body);
   line-height: 1.65;
   color: var(--fg);
+  /* A bare URL, a 40-character hash or a run of IMEIs has nowhere to break
+     and pushed the answer past the edge of a 420px panel. `anywhere`
+     rather than `break-word` so the column's own min-content shrinks too —
+     it sits in a grid track that would otherwise grow to fit the token.
+     Tables and code opt back out below: they scroll instead. */
+  overflow-wrap: anywhere;
 }
 
 .paragraph {
@@ -58,7 +64,9 @@
 .lead::after {
   content: "";
   position: absolute;
-  left: 0;
+  /* The start edge, so a right-to-left finding keeps its rule under its
+     first word rather than its last. */
+  inset-inline-start: 0;
   bottom: 0;
   width: 28px;
   height: 2px;
@@ -67,8 +75,12 @@
 }
 
 /* The figure in the finding, in the accent. Only inside the lead: an
-   answer that tinted every bold run would be a page of green. */
-.lead strong {
+   answer that tinted every bold run would be a page of green.
+
+   `.prose` in front on purpose. `.prose strong` below sets every other bold
+   run back to the body ink, and at equal specificity the later rule won —
+   so the accent this rule exists for never once reached the screen. */
+.prose .lead strong {
   color: var(--signal);
   font-weight: 800;
 }
@@ -121,7 +133,6 @@
   /* Each observation is a separate thought and needs to read as one; at
      3px they were a single block of text with markers in it. */
   gap: 9px;
-  counter-reset: answer-item;
 }
 
 .item {
@@ -129,6 +140,35 @@
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: baseline;
   column-gap: 2px;
+}
+
+/* The number column grows with the number: "10." in the 18px that fits
+   "9." overlaps its own text. Every item in one list shares a width, so the
+   text still starts on one line down the list. */
+.ordered[data-digits="2"] > .item {
+  grid-template-columns: 24px minmax(0, 1fr);
+}
+
+.ordered[data-digits="3"] > .item {
+  grid-template-columns: 31px minmax(0, 1fr);
+}
+
+.itemBody {
+  min-width: 0;
+}
+
+/* What sits under an item — a sub-list, a second paragraph, a sample —
+   hangs from the item's text, closer to it than the next item is. */
+.itemBody > .bullets,
+.itemBody > .ordered {
+  margin: 6px 0 0;
+  gap: 6px;
+}
+
+.itemBody > .paragraph,
+.itemBody > .codeBlock,
+.itemBody > .tableScroll {
+  margin: 6px 0 0;
 }
 
 .item::before {
@@ -153,12 +193,18 @@
   transform: translateY(-0.32em);
 }
 
-.ordered > .item {
-  counter-increment: answer-item;
+/* One level down the square is an outline, so a sub-point reads as
+   belonging to the point above it rather than as a sibling of it. */
+.itemBody .bullets > .item::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--signal);
 }
 
+/* The number the agent wrote, from the markup rather than a CSS counter:
+   a counter reset per list is what printed "1." for a list that started
+   at 3, and restarted every list split around a sub-bullet. */
 .ordered > .item::before {
-  content: counter(answer-item) ".";
+  content: attr(data-marker);
 }
 
 /* Emphasis has to survive a greyscale print, so it is carried by weight —
@@ -175,6 +221,115 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
+}
+
+/* A heading the agent wrote (`## …`). A bold line with room above it, not
+   a heading element and not the finding: it labels what follows. */
+.heading {
+  margin: 14px 0 6px;
+}
+
+.prose > .heading:first-child {
+  margin-top: 0;
+}
+
+/*
+ * Code — inline and fenced. A real monospace stack rather than
+ * --font-mono: the Ask screen sets that token to Inter for its structural
+ * labels, and a sample whose columns do not line up is not a sample.
+ */
+.code,
+.codeBlock {
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule-soft);
+  /* An identifier or a hash can be longer than the column. */
+  overflow-wrap: anywhere;
+}
+
+/* Scrolls inside itself, never widens the answer: indentation is the
+   content here, so the lines are kept exactly as written instead of
+   wrapped. */
+.codeBlock {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  background: var(--surface-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-control);
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.codeBlock > code {
+  font: inherit;
+}
+
+/* Quoted text — a note, a definition, a passage from a document. Set off
+   by a rule and a quieter ink, the way every reader already expects. */
+.quote {
+  margin: 0 0 10px;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--rule);
+  color: var(--fg-dim);
+}
+
+.quote > :last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * A markdown table. The wrapper scrolls sideways so a wide table never
+ * pushes the conversation past the edge of a narrow panel; the table
+ * itself is only as wide as its content, like a table in a document.
+ */
+.tableScroll {
+  margin: 0 0 10px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table {
+  border-collapse: collapse;
+  font-size: var(--text-small);
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th,
+.table td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  text-align: left;
+  vertical-align: top;
+  /* Breaks a long token only once it cannot fit, so a column is sized by
+     its words rather than collapsing to one character wide. */
+  overflow-wrap: break-word;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--fg);
+  border-bottom-color: var(--rule);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table [data-align="right"] {
+  text-align: right;
+}
+
+.table [data-align="center"] {
+  text-align: center;
 }
 
 /*

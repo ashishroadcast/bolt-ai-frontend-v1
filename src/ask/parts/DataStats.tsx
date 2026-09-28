@@ -72,8 +72,14 @@ export function DataStats({ title, subLabel, figures }: DataStatsProps): ReactEl
           // unique to key on — the same convention DataTable's rows use.
           // eslint-disable-next-line react/no-array-index-key
           <div key={index} className={styles.figure}>
-            <dt className={styles.label}>{figure.label}</dt>
-            <dd className={styles.value}>{figure.value}</dd>
+            {/* Titles, so a label clamped to two lines — or a figure that
+                had to wrap — can still be read whole on hover. */}
+            <dt className={styles.label} title={figure.label}>
+              {figure.label}
+            </dt>
+            <dd className={styles.value} title={figure.value}>
+              {figure.value}
+            </dd>
           </div>
         ))}
       </dl>

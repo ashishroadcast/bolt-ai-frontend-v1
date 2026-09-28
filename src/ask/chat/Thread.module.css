@@ -45,6 +45,10 @@
   font-size: var(--text-body);
   line-height: 1.55;
   color: var(--fg);
+  /* A pasted URL, trip id or IMEI list is one unbroken token and ran out of
+     the bubble and off the panel. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .askedFoot {
@@ -248,7 +252,13 @@
   margin-bottom: 8px;
 }
 
-@media (max-width: 900px) {
+/*
+ * Narrow column. `@container`, not `@media`: inside the widget a media
+ * query reads the host page's viewport, so a 420px side panel on a 1440px
+ * screen kept the desktop gutter. The `ask` container is Ask's own screen
+ * (Ask.module.css), so this reads the width the thread actually has.
+ */
+@container ask (max-width: 34rem) {
   /* The gutter is the first thing to go: at this width the tile costs more
      of the answer's own measure than the side-cue is worth. */
   .answerTurn {

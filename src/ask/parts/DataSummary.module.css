@@ -23,6 +23,9 @@
   margin: 26px 0 var(--stack);
   padding: 0;
   max-width: none;
+  /* An unbroken token in a point (a URL, a hash) must wrap, not widen the
+     column past the panel. */
+  overflow-wrap: anywhere;
 }
 
 /* The measure is set on the prose, not the block — the answer spans the
@@ -44,6 +47,10 @@
   font-family: var(--font-display);
   font-weight: 700;
   font-size: clamp(20px, 2.1vw, 25px);
+  /* Against Ask's own width where container units exist: in the widget,
+     `vw` is the host page's viewport, which set a 420px panel's headline
+     at the full 25px. The line above stays as the fallback. */
+  font-size: clamp(20px, 2.1cqi, 25px);
   line-height: 1.22;
   letter-spacing: -0.021em;
   color: var(--fg);

@@ -24,3 +24,92 @@
   font-family: var(--font-body);
   color: var(--on-sheet-dim);
 }
+
+/* A scatter's hover read-out, built by hand so it can name the point and
+   show only its measures. Its frame comes from the same inline style every
+   other tooltip on these sheets takes (DataChart.tsx's TOOLTIP_STYLE). */
+.tip {
+  padding: 8px 10px;
+  color: var(--fg-dim);
+}
+
+.tipTitle {
+  margin: 0 0 4px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.tipRow {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tipValue {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The legend, beneath the plot. A plain wrapping list, so five long series
+ * names in a 420px panel take a second line instead of being clipped by
+ * the sheet — Recharts' own legend lived in a fixed 28px box. Mono, like
+ * every other label on the chart; the swatch colour arrives per item as
+ * `--swatch`, since series colours are data.
+ */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin: 6px 0 2px;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--fg-dim);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.legendItem::before {
+  content: "";
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--swatch);
+  transform: translateY(1px);
+}
+
+/* A line chart's key is a line: the swatch should look like the mark. */
+.legend[data-swatch="line"] > .legendItem::before {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  transform: translateY(-3px);
+}
+
+/* The chart's numbers for a screen reader: present to assistive tech,
+   invisible on screen. The same pattern the console's own routes use
+   (DocumentsRoute.module.css) — repeated here because Ask ships without
+   them. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

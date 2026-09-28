@@ -448,7 +448,8 @@ describe("Thread", () => {
     expect(screen.queryByText("No data for this window.")).not.toBeInTheDocument();
     // The axis is legible at money scale rather than eight digits wide.
     expect(screen.getByText("3Cr")).toBeInTheDocument();
-    expect(screen.getByText("May")).toBeInTheDocument();
+    // In the axis itself — the chart's accessible table names May too.
+    expect(screen.getAllByText("May").some((node) => node.closest("svg") !== null)).toBe(true);
   });
 
   it("costs one sheet, not the screen, when a part cannot render", async () => {

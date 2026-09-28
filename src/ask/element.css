@@ -41,6 +41,11 @@
    * be built for a width it does not have. `container-type: inline-size`
    * makes the element its own query container, so `@container` sees 420px
    * and the panel lays out like the narrow column it actually is.
+   *
+   * `.screen` (Ask.module.css) declares the same name for the console,
+   * where there is no host to carry it. Inside the widget the screen is the
+   * nearer of the two and fills the host, so a rule reads the same width
+   * whichever one answers it.
    */
   container-type: inline-size;
   container-name: ask;

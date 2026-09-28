@@ -143,8 +143,11 @@
 }
 
 /* Below the reflow point the movement chip wraps under the figure rather
-   than squeezing the store name to an ellipsis after two characters. */
-@media (max-width: 560px) {
+   than squeezing the store name to an ellipsis after two characters.
+
+   `@container ask`, not `@media`: in the widget a media query reads the
+   host page's viewport, so a 420px panel on a wide screen never reflowed. */
+@container ask (max-width: 560px) {
   .row {
     grid-template-columns: 18px minmax(0, 1fr) auto auto;
     padding-top: 6px;

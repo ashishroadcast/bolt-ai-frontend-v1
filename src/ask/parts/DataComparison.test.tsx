@@ -195,3 +195,13 @@ describe("share of the total", () => {
     expect(container.textContent).not.toMatch(/%/);
   });
 });
+
+// --- a name that does not fit --------------------------------------------
+
+describe("a label cut short on a narrow sheet", () => {
+  it("still offers the whole name on hover", () => {
+    render(<DataComparison title="Top stores" rows={rows} />);
+
+    expect(screen.getByText("Veronica Lower Parel").getAttribute("title")).toBe("Veronica Lower Parel");
+  });
+});

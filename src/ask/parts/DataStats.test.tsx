@@ -43,4 +43,16 @@ describe("DataStats", () => {
     expect(screen.getByText("No figures for this window.")).toBeInTheDocument();
     expect(screen.queryAllByRole("definition")).toHaveLength(0);
   });
+
+  it("keeps a label or figure cut short on a narrow tile readable in full on hover", () => {
+    render(
+      <DataStats
+        title="Net sales per store"
+        figures={[{ label: "Median net sales per store per month", value: "₹9,44,220.66" }]}
+      />,
+    );
+
+    expect(screen.getByRole("term").getAttribute("title")).toBe("Median net sales per store per month");
+    expect(screen.getByRole("definition").getAttribute("title")).toBe("₹9,44,220.66");
+  });
 });

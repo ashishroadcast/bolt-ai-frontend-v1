@@ -81,6 +81,96 @@ describe("AnswerText", () => {
   });
 });
 
+// --- numbered lists ----------------------------------------------------------
+
+describe("numbering a list the way the agent numbered it", () => {
+  const markers = (root: HTMLElement) =>
+    [...root.querySelectorAll("ol > li")].map((item) => item.getAttribute("data-marker"));
+
+  it("numbers a loose list 1, 2, 3 rather than 1, 1, 1", () => {
+    const { container } = render(<AnswerText text={"1. Bandra\n\n2. Lower Parel\n\n3. BKC"} />);
+
+    expect(container.querySelectorAll("ol")).toHaveLength(1);
+    expect(markers(container)).toEqual(["1.", "2.", "3."]);
+  });
+
+  it("starts a list at the number it was written with", () => {
+    const { container } = render(<AnswerText text={"3. BKC\n4. Andheri"} />);
+
+    expect(container.querySelector("ol")!.getAttribute("start")).toBe("3");
+    expect(markers(container)).toEqual(["3.", "4."]);
+  });
+
+  it("draws sub-bullets inside the numbered item they belong to", () => {
+    const { container } = render(
+      <AnswerText text={"1. Bandra\n   - up 12%\n   - best day Saturday\n2. BKC"} />,
+    );
+
+    const outer = container.querySelectorAll("ol > li");
+    expect(outer).toHaveLength(2);
+    expect(outer[0]!.querySelectorAll("ul > li")).toHaveLength(2);
+    expect(markers(container)).toEqual(["1.", "2."]);
+  });
+});
+
+// --- the markdown models write anyway ---------------------------------------
+
+describe("rendering tables, code and quotes", () => {
+  it("renders a pipe table as a real table with column headers", () => {
+    render(<AnswerText text={"| Store | Net sales |\n|---|---:|\n| Bandra | ₹10,08,942.35 |"} />);
+
+    const table = screen.getByRole("table");
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Store",
+      "Net sales",
+    ]);
+    expect(screen.getByRole("cell", { name: "₹10,08,942.35" }).getAttribute("data-align")).toBe(
+      "right",
+    );
+    expect(table.textContent).not.toContain("|");
+  });
+
+  it("renders fenced code verbatim, with no fence and no heading made of a comment", () => {
+    const { container } = render(<AnswerText text={"```bash\n# count\n  wc -l a.csv\n```"} />);
+
+    const code = container.querySelector("pre > code")!;
+    expect(code.textContent).toBe("# count\n  wc -l a.csv");
+    expect(container.textContent).not.toContain("```");
+    expect(container.querySelector("strong")).toBeNull();
+  });
+
+  it("renders `code`, *italic* and > quotes as their own elements", () => {
+    const { container } = render(<AnswerText text={"Run `SUM` on *net*.\n\n> Excludes refunds."} />);
+
+    expect(container.querySelector("p code")!.textContent).toBe("SUM");
+    expect(container.querySelector("em")!.textContent).toBe("net");
+    expect(container.querySelector("blockquote")!.textContent).toBe("Excludes refunds.");
+  });
+
+  it("lets each paragraph and list item find its own direction, for RTL answers", () => {
+    const { container } = render(<AnswerText text={"بندرا في المقدمة\n\n- باندرا\n- BKC"} />);
+
+    expect(container.querySelector("p")!.getAttribute("dir")).toBe("auto");
+    for (const item of container.querySelectorAll("li")) {
+      expect(item.getAttribute("dir")).toBe("auto");
+    }
+  });
+
+  it("never shows half an emoji while revealing", () => {
+    const { container } = render(<AnswerText text={"Top 👍🏽 pick"} visibleChars={"Top ".length + 2} />);
+
+    expect(container.textContent).toBe("Top ");
+  });
+
+  it("keeps a single caret while a table is still arriving", () => {
+    const text = "| Store | Sales |\n|---|---|\n| Bandra | 10 |";
+    const { container } = render(<AnswerText text={text} visibleChars={"StoreSales".length + 3} />);
+
+    expect(container.querySelectorAll("span[aria-hidden='true']")).toHaveLength(1);
+    expect(container.querySelector("td")!.textContent).toBe("Ban");
+  });
+});
+
 // --- the three voices in an answer ----------------------------------------
 //
 // The prompt asks for one line carrying the answer, then observations, then
@@ -135,5 +225,65 @@ describe("telling the finding apart from the reading of it", () => {
     // No list between them, so the second is ordinary prose, not a
     // recommendation.
     expect(paragraphs[1]!.className).not.toBe(paragraphs[0]!.className);
+  });
+});
+
+// --- a voice decided once, not per frame -------------------------------------
+//
+// The lead and closing were decided from the part of the answer the reveal
+// had reached, so a block changed voice under the reader: a long opening was
+// the 18px headline for 120 characters and snapped to body text at the 121st.
+
+describe("keeping each block in one voice while it is revealed", () => {
+  const classOfFirst = (text: string, visibleChars?: number) =>
+    render(<AnswerText text={text} visibleChars={visibleChars} />).container.querySelector("p")!
+      .className;
+  const LEAD = classOfFirst("**POS** led.");
+
+  it("never sets a long opening as the headline, even before its 121st character", () => {
+    const long = `Bandra led the month, ${"with a margin that kept widening every single week ".repeat(3)}and closed well ahead.`;
+    expect(long.length).toBeGreaterThan(120);
+
+    expect(classOfFirst(long, 40)).not.toBe(LEAD);
+    expect(classOfFirst(long)).not.toBe(LEAD);
+  });
+
+  it("never sets a two-line opening as the headline while only its first line is showing", () => {
+    const twoLines = "Bandra led.\nBKC was second.";
+
+    expect(classOfFirst(twoLines, 6)).not.toBe(LEAD);
+    expect(classOfFirst(twoLines)).toBe(classOfFirst(twoLines, 6));
+  });
+
+  it("keeps a short finding the headline from its first character", () => {
+    expect(classOfFirst("**POS** led with **₹21,36,43,836.26**", 2)).toBe(LEAD);
+  });
+
+  it("never makes a ## heading the finding", () => {
+    const { container } = render(<AnswerText text={"## Geofences\nA geofence is a boundary."} />);
+
+    const [heading, body] = [...container.querySelectorAll("p")];
+    expect(heading!.className).not.toBe(LEAD);
+    expect(body!.className).not.toBe(LEAD);
+  });
+
+  it("never dresses a refusal or a question back as the finding", () => {
+    expect(
+      classOfFirst(
+        "I can only help with questions about our menu and outlets. Could you rephrase your question around that?",
+      ),
+    ).not.toBe(LEAD);
+    expect(classOfFirst("Sorry, I couldn’t reach the sales database.")).not.toBe(LEAD);
+    expect(classOfFirst("Which store do you mean — Bandra or BKC?")).not.toBe(LEAD);
+  });
+
+  it("styles the closing line as the closing line as soon as the reveal reaches it", () => {
+    const text = "**POS** led.\n\n- In-store dominates.\n- Delivery is small.\n\nWorth checking by store.";
+    const { container } = render(<AnswerText text={text} visibleChars={text.length - 20} />);
+    const done = render(<AnswerText text={text} />).container;
+
+    const revealing = [...container.querySelectorAll("p")];
+    const finished = [...done.querySelectorAll("p")];
+    expect(revealing[revealing.length - 1]!.className).toBe(finished[finished.length - 1]!.className);
   });
 });

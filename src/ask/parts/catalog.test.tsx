@@ -31,7 +31,8 @@ describe("renderUIPart — the intent-to-component catalog", () => {
     render(renderUIPart({ intent: "data-chart", data }));
 
     expect(document.querySelector("svg")).not.toBeNull();
-    expect(screen.getByText("Swiggy")).toBeInTheDocument();
+    // Named twice on purpose: in the legend, and in the chart's accessible table.
+    expect(screen.getAllByText("Swiggy").length).toBeGreaterThan(0);
   });
 
   it("routes a citations intent to Citations", () => {
