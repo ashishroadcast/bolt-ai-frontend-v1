@@ -82,9 +82,10 @@ export function hydrateMessages(messages: readonly MessageOut[]): ChatMessage[] 
       id: String(message.id),
       role: message.role,
       content: message.content,
-      parts: (message.meta?.ui_parts ?? []).map((part) =>
-        toUIPart(part.type, (part.data ?? {}) as Record<string, unknown>),
-      ),
+      parts: (message.meta?.ui_parts ?? []).flatMap((part) => {
+        const adapted = toUIPart(part.type, (part.data ?? {}) as Record<string, unknown>);
+        return adapted === null ? [] : [adapted];
+      }),
       createdAt: new Date(message.created_at).getTime(),
       // The two pieces of run metadata that really do survive a reload —
       // see `ChatMessage.usage`/`agentId` for why they sit on the message

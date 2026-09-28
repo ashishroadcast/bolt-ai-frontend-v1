@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { toUIPart } from "./wireParts.ts";
+import { toUIPart as adaptPart } from "./wireParts.ts";
+
+/** Every part below but the dropped summaries is one the adapter keeps, so
+ * a `null` from it is a failure rather than a case to handle. */
+function toUIPart(...args: Parameters<typeof adaptPart>) {
+  const part = adaptPart(...args);
+  if (part === null) throw new Error(`the adapter dropped a ${args[0]} part this test expected`);
+  return part;
+}
 
 /** The exact wire shape a real run produced (captured 2026-08-28): a
  * Decimal column arrives as a *string*, because `intents._json_safe`
@@ -536,5 +544,53 @@ describe("toUIPart — data-widget-draft", () => {
         live: false,
       });
     }
+  });
+});
+
+describe("toUIPart — data-summary", () => {
+  // A summary is the one part whose presence hides something else: Thread
+  // drops the prose when a summary is on screen. An empty one kept that
+  // power while showing nothing, and the whole answer vanished.
+
+  it("keeps a summary with a headline, dropping points that are not text", () => {
+    const data = toUIPart("data-summary", {
+      headline: "Bandra led the week",
+      headlineValue: "₹9,44,220.66",
+      points: ["It outsold Andheri.", null, 12, ""],
+      basis: "14 stores, last 7 days",
+    }).data;
+
+    expect(data).toEqual({
+      headline: "Bandra led the week",
+      headlineValue: "₹9,44,220.66",
+      points: ["It outsold Andheri."],
+      basis: "14 stores, last 7 days",
+    });
+  });
+
+  it("keeps a headline whose points never arrived", () => {
+    expect(toUIPart("data-summary", { headline: "Bandra led" }).data).toEqual({
+      headline: "Bandra led",
+      points: [],
+    });
+  });
+
+  it("drops a summary with no headline, an empty one, or a malformed one", () => {
+    expect(adaptPart("data-summary", {})).toBeNull();
+    expect(adaptPart("data-summary", { headline: "", points: [] })).toBeNull();
+    expect(adaptPart("data-summary", { headline: "   ", points: ["x"] })).toBeNull();
+    expect(adaptPart("data-summary", { headline: 42, points: ["x"] })).toBeNull();
+  });
+
+  it("never passes an object through to be rendered as text", () => {
+    const data = toUIPart("data-summary", {
+      headline: "Bandra led",
+      points: [],
+      headlineValue: { amount: 1 },
+      nextStep: ["look at Andheri"],
+    }).data as Record<string, unknown>;
+
+    expect(Object.hasOwn(data, "headlineValue")).toBe(false);
+    expect(Object.hasOwn(data, "nextStep")).toBe(false);
   });
 });

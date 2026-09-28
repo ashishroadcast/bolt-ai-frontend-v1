@@ -61,9 +61,18 @@ function formatTime(ms: number): string {
  * once styled and once as a markdown restatement under the evidence. The
  * panel is the rendering; the prose stays in `message.content`, where Copy
  * and the judge read it.
+ *
+ * Only a summary with a headline counts. `wireParts.adaptSummary` already
+ * drops one without, and this checks again because the cost of getting it
+ * wrong is the whole answer: a summary that hides the prose while showing
+ * nothing leaves the reader with a blank turn.
  */
 function rendersItsOwnProse(parts: UIPart[]): boolean {
-  return parts.some((part) => part.intent === "data-summary");
+  return parts.some((part) => {
+    if (part.intent !== "data-summary") return false;
+    const { headline } = (part.data ?? {}) as { headline?: unknown };
+    return typeof headline === "string" && headline.trim() !== "";
+  });
 }
 
 /**

@@ -619,6 +619,32 @@ describe("an answer that laid itself out", () => {
     expect(screen.getAllByText(/Chicken Biryani led the week/)).toHaveLength(1);
   });
 
+  it("shows the prose when the summary arrived empty or malformed", async () => {
+    // The summary is what hides the prose. One with nothing in it hid the
+    // whole answer behind an empty panel.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-1"}`,
+          `data: {"type":"data-summary","data":{"headline":"","points":[]}}`,
+          `data: {"type":"data-summary","data":{"points":"not a list"}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Chicken Biryani led the week."}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "What this shows" })).not.toBeInTheDocument();
+  });
+
   it("still renders prose when nothing laid itself out", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
     const { chatRef } = renderThread();

@@ -405,12 +405,27 @@ function adaptComparison(data: Record<string, unknown>): Record<string, unknown>
  * figure was rendered server-side from the row, and a client that
  * re-punctuated it would recreate the exact drift this part exists to
  * prevent.
+ *
+ * **A summary with no headline is dropped, not rendered empty.** Unlike
+ * every other part, a summary replaces something: `Thread` hides the prose
+ * when one is on screen, because the panel says the same words. This used
+ * to fall back to `{headline: "", points: []}` and keep the intent, so an
+ * empty or malformed summary hid the whole answer behind a panel with
+ * nothing in it. Dropped, the prose shows instead.
+ *
+ * The optional strings are kept only when they are strings: each is
+ * rendered as a React child, and an object there would throw.
  */
-function adaptSummary(data: Record<string, unknown>): Record<string, unknown> {
-  if (typeof data.headline === "string" && Array.isArray(data.points)) {
-    return data;
-  }
-  return { headline: "", points: [] };
+function adaptSummary(data: Record<string, unknown>): Record<string, unknown> | null {
+  if (!nonEmptyString(data.headline)) return null;
+  const points = Array.isArray(data.points) ? data.points.filter(nonEmptyString) : [];
+  return {
+    headline: data.headline,
+    points,
+    ...(typeof data.headlineValue === "string" ? { headlineValue: data.headlineValue } : {}),
+    ...(typeof data.basis === "string" ? { basis: data.basis } : {}),
+    ...(typeof data.nextStep === "string" ? { nextStep: data.nextStep } : {}),
+  };
 }
 
 /**
@@ -549,12 +564,18 @@ function adaptWidgetDraft(data: Record<string, unknown>, live: boolean): Record<
  * `live` is true only for a part `useChat` is reading off a run this session
  * started. History (`conversation.hydrateMessages`) never passes it. Only
  * `data-widget-draft` reads it today — see `adaptWidgetDraft`.
+ *
+ * `null` means "leave this part out". Almost every malformed part renders
+ * its component's own empty state instead, because an empty table or chart
+ * hides nothing else. The exception is a part whose presence changes what
+ * ELSE renders — today only `adaptSummary`'s — where an empty one would
+ * take the answer down with it.
  */
 export function toUIPart(
   type: string,
   data: Record<string, unknown>,
   options: { live?: boolean } = {},
-): UIPart {
+): UIPart | null {
   const intent = wireTypeToIntent(type);
   if (intent === "data-dashboard-draft") return { intent, data: adaptDashboardDraft(data) };
   if (intent === "data-widget-draft") {
@@ -564,7 +585,10 @@ export function toUIPart(
   if (intent === "data-chart") return { intent, data: adaptChart(data) };
   if (intent === "data-stats") return { intent, data: adaptStats(data) };
   if (intent === "data-comparison") return { intent, data: adaptComparison(data) };
-  if (intent === "data-summary") return { intent, data: adaptSummary(data) };
+  if (intent === "data-summary") {
+    const summary = adaptSummary(data);
+    return summary === null ? null : { intent, data: summary };
+  }
   if (intent === "data-question") return { intent, data: adaptQuestion(data) };
   if (intent === "data-form-draft") return { intent, data: adaptFormDraft(data) };
   if (intent === "citations") return { intent, data: adaptCitations(data) };

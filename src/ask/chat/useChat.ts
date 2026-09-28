@@ -370,8 +370,12 @@ export function useChat(): UseChatResult {
               // `live`: this part is arriving on a run this session started,
               // which is what lets a drafted widget insert itself exactly once
               // (wireParts.adaptWidgetDraft). History never passes it.
-              partsAcc.push(toUIPart(dataChunk.type, dataChunk.data, { live: true }));
-              updateActiveRun({ parts: [...partsAcc] });
+              // `null` is a part the adapter refused (an empty summary).
+              const part = toUIPart(dataChunk.type, dataChunk.data, { live: true });
+              if (part !== null) {
+                partsAcc.push(part);
+                updateActiveRun({ parts: [...partsAcc] });
+              }
             }
           }
         }
