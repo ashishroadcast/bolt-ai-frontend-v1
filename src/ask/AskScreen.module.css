@@ -1,11 +1,25 @@
 /*
- * The screen's own passing states: opening a linked conversation, failing
- * to, and asking before a new conversation stops a running question.
+ * The screen's own states: History shown over the conversation, opening a
+ * linked conversation or failing to, and asking before a new conversation
+ * stops a running question.
  *
  * Separate from `Ask.module.css` because these are states of the screen
  * rather than its layout, and they read the same Ask tokens that sheet
  * sets on `.screen`, so they restyle with it.
  */
+
+/* The conversation view — header, picker, thread, composer — as one unit
+   that History can hide without unmounting. `contents`, so its children
+   stay the flex items of `.screen` they were before this wrapper existed;
+   `[hidden]` restated, because an author `display` beats the browser's own
+   `[hidden] { display: none }`. */
+.view {
+  display: contents;
+}
+
+.view[hidden] {
+  display: none;
+}
 
 /* Around the composer, so the whole of it can be disabled at once while a
    linked conversation loads. A fieldset is the one element whose

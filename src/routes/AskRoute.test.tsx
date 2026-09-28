@@ -301,6 +301,39 @@ describe("AskRoute", () => {
     expect(screen.queryByRole("region", { name: "Conversation history" })).not.toBeInTheDocument();
   });
 
+  it("keeps the History button's aria-expanded and aria-controls in step with the panel, and returns focus to it", () => {
+    renderAskRoute(routeFetch());
+    const button = screen.getByRole("button", { name: /^Conversation history$/ });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(button);
+
+    // The same element, still in the document. It used to be unmounted
+    // with the rest of the conversation view, so a reference to it kept
+    // reading "false" while the panel was open.
+    const region = screen.getByRole("region", { name: "Conversation history" });
+    expect(button.isConnected).toBe(true);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    expect(region.id).not.toBe("");
+    expect(button).toHaveAttribute("aria-controls", region.id);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
+
+    expect(button).toHaveAttribute("aria-expanded", "false");
+    expect(button).toHaveFocus();
+  });
+
+  it("keeps a half-typed question through a trip into History and back", async () => {
+    renderAskRoute(routeFetch());
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "fuel spend by dep" } });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Conversation history$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to conversation" }));
+
+    expect(screen.getByLabelText("Ask a question")).toHaveValue("fuel spend by dep");
+  });
+
   it("starts a fresh conversation from the thread it is showing", async () => {
     const chatRef = renderAskRoute(
       routeFetch({

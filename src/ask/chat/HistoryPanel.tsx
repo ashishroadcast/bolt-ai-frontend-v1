@@ -294,6 +294,9 @@ function HistoryItem({ item, bucket, shareLink, onOpen, onDeleted, disabled, ope
  * its own muted line, with the message count.
  */
 export interface HistoryPanelProps {
+  /** The panel's element id — what the History button's `aria-controls`
+   * names, so the control and the region it opens are tied together. */
+  id?: string;
   /** Returns to the conversation screen. Called on Escape, on the back
    * arrow, and once a conversation has actually opened. */
   onClose: () => void;
@@ -312,7 +315,7 @@ export interface HistoryPanelProps {
   conversationLink?: (conversationId: number) => string;
 }
 
-export function HistoryPanel({ onClose, onMinimize, conversationLink }: HistoryPanelProps) {
+export function HistoryPanel({ id, onClose, onMinimize, conversationLink }: HistoryPanelProps) {
   const client = useAskClient();
   const { loadConversation, activeConversationId, clearConversation } = useChatContext();
   const [searchInput, setSearchInput] = useState("");
@@ -463,7 +466,7 @@ export function HistoryPanel({ onClose, onMinimize, conversationLink }: HistoryP
   const groups = items !== null ? groupByDate(items) : [];
 
   return (
-    <div className={styles.panel} role="region" aria-label="Conversation history">
+    <div id={id} className={styles.panel} role="region" aria-label="Conversation history">
       <div className={styles.head}>
         <button type="button" className={styles.back} onClick={onClose} aria-label="Back to conversation">
           <ArrowLeft size={20} strokeWidth={2} aria-hidden="true" />

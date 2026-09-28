@@ -1,5 +1,5 @@
 import { History, MessageSquarePlus, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AgentIcon } from "./AgentIcon.tsx";
 import styles from "./Ask.module.css";
 import screenStyles from "./AskScreen.module.css";
@@ -131,6 +131,7 @@ export function AskScreen({
   const { copy, onClose } = useAskConfig();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const historyButtonRef = useRef<HTMLButtonElement>(null);
+  const historyPanelId = useId();
   const isEmpty = messages.length === 0 && activeRun === null;
 
   // Three sources, most specific first: the `emptyState` prop (a React host
@@ -224,31 +225,39 @@ export function AskScreen({
     );
   }
 
+  // Kept for the trip into History and back: the thread stays mounted but
+  // hidden (see below), and a scroll container that is `display: none`
+  // loses its scroll position. Restored only onto the same thread — one
+  // opened from History starts wherever stick-to-bottom puts it.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const leftAt = useRef<{ top: number; messages: ChatMessage[] } | null>(null);
+
+  function openHistory() {
+    leftAt.current = { top: scrollRef.current?.scrollTop ?? 0, messages };
+    setIsHistoryOpen(true);
+  }
+
   // Stable so HistoryPanel's own Escape listener isn't torn down and
   // re-added on every render.
-  const closeHistory = useCallback(() => {
-    setIsHistoryOpen(false);
-    // Focus goes back where it came from — a drawer that dumps focus at the
-    // top of the document is worse than one that never opened.
-    historyButtonRef.current?.focus();
-  }, []);
+  const closeHistory = useCallback(() => setIsHistoryOpen(false), []);
 
-  if (isHistoryOpen) {
-    // A view-swap, not an overlay drawer: HistoryPanel now fills the whole
-    // panel (its own back-arrow header, grouped list, and "start a new
-    // conversation" footer) rather than sliding in over a scrim. The old
-    // fixed-position drawer was anchored to the viewport, which is right
-    // for the console (it slides over the nav rail) but breaks a narrow
-    // embedded panel — a `position: fixed` drawer inside a 400px widget
-    // covers the HOST PAGE, not just the widget. Swapping the panel's own
-    // content sidesteps that regardless of where Ask is mounted.
-    return (
-      <div className={styles.screen}>
-        <div className={styles.accentLine} />
-        <HistoryPanel onClose={closeHistory} onMinimize={onClose} conversationLink={conversationLink} />
-      </div>
-    );
-  }
+  // Focus goes back where it came from — a drawer that dumps focus at the
+  // top of the document is worse than one that never opened. After the
+  // commit, not in `closeHistory`: until then the button is still hidden,
+  // and a hidden element cannot take focus. (It used to be unmounted
+  // outright, so that call never did anything.) A layout effect so the
+  // scroll position is back before the thread is painted.
+  const wasHistoryOpen = useRef(false);
+  useLayoutEffect(() => {
+    if (wasHistoryOpen.current && !isHistoryOpen) {
+      const scroller = scrollRef.current;
+      if (scroller !== null && leftAt.current?.messages === messagesRef.current) {
+        scroller.scrollTop = leftAt.current.top;
+      }
+      historyButtonRef.current?.focus();
+    }
+    wasHistoryOpen.current = isHistoryOpen;
+  }, [isHistoryOpen]);
 
   return (
     // One agent fetch for the screen. Both the picker and the composer's `/`
@@ -256,83 +265,110 @@ export function AskScreen({
     <AskAgentsProvider>
     <div className={styles.screen}>
       <div className={styles.accentLine} />
-      <div className={styles.panelHeader}>
-        <div className={styles.agentProfile}>
-          <span className={styles.avatarShield} aria-hidden="true">
-            <AgentIcon size={18} />
-          </span>
-          <span className={styles.headerTitle}>AI Agent Assistant</span>
-        </div>
-        <div className={styles.headerActions}>
-          <button
-            ref={historyButtonRef}
-            type="button"
-            className={styles.iconAction}
-            onClick={() => setIsHistoryOpen(true)}
-            aria-expanded={isHistoryOpen}
-            aria-label="Conversation history"
-            title="History"
-          >
-            <History size={18} strokeWidth={2} aria-hidden="true" />
-          </button>
-          {!isEmpty && (
+      {/*
+        History is a view-swap, not an overlay drawer: HistoryPanel fills
+        the whole panel (its own back-arrow header, grouped list, and "start
+        a new conversation" footer) rather than sliding in over a scrim. The
+        old fixed-position drawer was anchored to the viewport, which is
+        right for the console (it slides over the nav rail) but breaks a
+        narrow embedded panel — a `position: fixed` drawer inside a 400px
+        widget covers the HOST PAGE, not just the widget.
+
+        The conversation view is HIDDEN while History shows, not unmounted.
+        Unmounting took the History button with it, so its `aria-expanded`
+        could never say "true" and focus had nowhere to return to; it also
+        threw away the composer's half-typed question, the thread's scroll
+        position and the agent list, all refetched or lost on the way back.
+      */}
+      <div className={screenStyles.view} hidden={isHistoryOpen}>
+        <div className={styles.panelHeader}>
+          <div className={styles.agentProfile}>
+            <span className={styles.avatarShield} aria-hidden="true">
+              <AgentIcon size={18} />
+            </span>
+            <span className={styles.headerTitle}>AI Agent Assistant</span>
+          </div>
+          <div className={styles.headerActions}>
             <button
+              ref={historyButtonRef}
               type="button"
               className={styles.iconAction}
-              onClick={clearConversation}
-              aria-label="Start a new conversation"
-              title="New conversation"
+              onClick={openHistory}
+              aria-expanded={isHistoryOpen}
+              aria-controls={historyPanelId}
+              aria-label="Conversation history"
+              title="History"
             >
-              <MessageSquarePlus size={18} strokeWidth={2} aria-hidden="true" />
+              <History size={18} strokeWidth={2} aria-hidden="true" />
             </button>
+            {!isEmpty && (
+              <button
+                type="button"
+                className={styles.iconAction}
+                onClick={clearConversation}
+                aria-label="Start a new conversation"
+                title="New conversation"
+              >
+                <MessageSquarePlus size={18} strokeWidth={2} aria-hidden="true" />
+              </button>
+            )}
+            {onClose !== undefined && (
+              <button
+                type="button"
+                className={styles.iconAction}
+                onClick={onClose}
+                aria-label="Minimize assistant"
+                title="Minimize"
+              >
+                <X size={18} strokeWidth={2} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.pickerRow}>
+          <AgentPicker />
+          {/* After the picker, on purpose — see AgentSelectionBridge. */}
+          <AgentSelectionBridge />
+        </div>
+
+        <div ref={scrollRef} className={styles.scroll} {...{ [SCROLL_REGION_ATTR]: "" }}>
+          {linkNotice}
+          {isEmpty ? (
+            // Not while a linked conversation is loading or has failed: a
+            // quick action clicked then started a run that the conversation
+            // arriving a moment later wiped off the screen.
+            linkNotice === null && (
+              <div className={styles.empty}>
+                <EmptyState title={title} body={body} />
+              </div>
+            )
+          ) : (
+            <Thread />
           )}
-          {onClose !== undefined && (
-            <button
-              type="button"
-              className={styles.iconAction}
-              onClick={onClose}
-              aria-label="Minimize assistant"
-              title="Minimize"
-            >
-              <X size={18} strokeWidth={2} aria-hidden="true" />
-            </button>
-          )}
+        </div>
+
+        <div className={styles.composerBar}>
+          <div className={styles.composerInner}>
+            {/* Disabled while a linked conversation loads, for the reason the
+                empty state is hidden then: a question sent in that gap is
+                overwritten when the conversation arrives. Always rendered,
+                so toggling it never remounts the composer and its draft. */}
+            <fieldset role="presentation" className={screenStyles.composerGate} disabled={linkLoading}>
+              <Composer />
+            </fieldset>
+          </div>
         </div>
       </div>
 
-      <div className={styles.pickerRow}>
-        <AgentPicker />
-        {/* After the picker, on purpose — see AgentSelectionBridge. */}
-        <AgentSelectionBridge />
-      </div>
-
-      <div className={styles.scroll} {...{ [SCROLL_REGION_ATTR]: "" }}>
-        {linkNotice}
-        {isEmpty ? (
-          // Not while a linked conversation is loading or has failed: a
-          // quick action clicked then started a run that the conversation
-          // arriving a moment later wiped off the screen.
-          linkNotice === null && (
-            <div className={styles.empty}>
-              <EmptyState title={title} body={body} />
-            </div>
-          )
-        ) : (
-          <Thread />
-        )}
-      </div>
-
-      <div className={styles.composerBar}>
-        <div className={styles.composerInner}>
-          {/* Disabled while a linked conversation loads, for the reason the
-              empty state is hidden then: a question sent in that gap is
-              overwritten when the conversation arrives. Always rendered,
-              so toggling it never remounts the composer and its draft. */}
-          <fieldset role="presentation" className={screenStyles.composerGate} disabled={linkLoading}>
-            <Composer />
-          </fieldset>
-        </div>
-      </div>
+      {isHistoryOpen && (
+        <HistoryPanel
+          id={historyPanelId}
+          onClose={closeHistory}
+          onMinimize={onClose}
+          conversationLink={conversationLink}
+        />
+      )}
     </div>
     </AskAgentsProvider>
   );
