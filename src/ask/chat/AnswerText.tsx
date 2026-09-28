@@ -229,12 +229,15 @@ const LEAD_MAX_CHARS = 120;
 /**
  * Openings that are not a finding however short they are: an apology, or
  * the topic guard's refusal ("I can only help with questions about our
- * menu…", `agent-service`'s `_DEFAULT_REFUSAL`). Set as the headline, a
+ * menu…", `agent-service`'s `_DEFAULT_REFUSAL`, and the per-agent ones in
+ * `pipeline_config.topic_guard`: "I only answer questions about your
+ * vehicles right now…", "I answer questions about how bolt-v2 works…").
+ * Set as the headline, a
  * refusal arrived in display bold with the accent rule under it — dressed
  * as the answer to a question it had just declined.
  */
 const NOT_A_FINDING =
-  /^(?:sorry\b|i'm sorry|i am sorry|i apologi[sz]e|unfortunately\b|i (?:can only|cannot|can't|am unable|'m unable|am not able|'m not able|do not have|don't have)\b)/i;
+  /^(?:sorry\b|i'm sorry|i am sorry|i apologi[sz]e|unfortunately\b|i (?:can only|cannot|can't|am unable|'m unable|am not able|'m not able|do not have|don't have)\b|i (?:only )?(?:answer|handle|help with) questions about\b)/i;
 
 function isHeadline(block: AnswerBlock | undefined): boolean {
   // A `## Heading` labels what follows it; it is not what was found.

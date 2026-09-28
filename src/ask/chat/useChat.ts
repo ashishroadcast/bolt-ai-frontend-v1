@@ -4,10 +4,9 @@ import type { UIPart } from "../parts/catalog.tsx";
 import { fetchConversation } from "./conversation.ts";
 import { buildPhaseTimeline, readPhaseDetail, type PhaseTimelineEvent } from "./phaseTimeline.ts";
 import { readDataStream, type DataChunk, type UsageMetadata } from "./protocol.ts";
-import { isMissingConversationError, isUnknownAgentError, postAgentRun } from "./runStream.ts";
+import { isMissingConversationError, postAgentRun } from "./runStream.ts";
 import { buildRunTrace, EMPTY_TRACE, type TraceEvent } from "./runTrace.ts";
 import type { ActiveRun, ChatMessage, RunSummary } from "./types.ts";
-import type { AskAgent } from "./useAskAgents.ts";
 import { toUIPart } from "./wireParts.ts";
 
 export interface UseChatResult {
@@ -151,23 +150,6 @@ export interface UseChatOptions {
  * nothing at all. */
 type EndReason = "stopped" | "stalled";
 
-/**
- * The agent a conversation's plain follow-ups go to: the one the server
- * routed its last plain question to.
- *
- * Without it every turn was routed afresh from its own text alone, and a
- * follow-up carries almost none — "yes", "now by city" — so it could land on
- * a different agent from the one that asked the question being answered.
- *
- * By name, because that is what `RunIn.agent` takes. A conversation reopened
- * from History knows only the id that answered (`ChatMessage.agentId`), so
- * the name is looked up on the first follow-up that needs it.
- */
-interface PinnedAgent {
-  name: string | null;
-  id: number | null;
-}
-
 interface InFlightRun {
   end: (reason: EndReason) => void;
   /** Takes this run out of `runsInFlight`. Idempotent: the run's own
@@ -248,7 +230,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   const abortRef = useRef<AbortController | null>(null);
   const inFlightRef = useRef<InFlightRun | null>(null);
   const conversationIdRef = useRef<number | null>(null);
-  const pinnedAgentRef = useRef<PinnedAgent | null>(null);
   // Which thread a run belongs to. Bumped whenever the thread on screen is
   // replaced (a new conversation, or one reopened from History), and every
   // write a run makes checks it first: without it, the previous run's answer
@@ -300,36 +281,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       abortRef.current?.abort();
     };
   }, []);
-
-  /**
-   * The pinned agent's name, looking it up by id for a conversation reopened
-   * from History (which records only who answered, by id). `null` when there
-   * is no pin, or when that agent is gone or switched off — the question is
-   * then routed like any other. Only a Stop or a replaced thread (the signal)
-   * is allowed to fail the send from here; a lookup that merely fails does
-   * not stop the reader asking.
-   */
-  const resolvePinnedAgent = useCallback(
-    async (signal: AbortSignal): Promise<string | null> => {
-      const pin = pinnedAgentRef.current;
-      if (pin === null) return null;
-      if (pin.name !== null) return pin.name;
-      let found: AskAgent | undefined;
-      try {
-        const agents = await client.agentFetch<AskAgent[]>("/agent/agents", { signal });
-        found = Array.isArray(agents)
-          ? agents.find((candidate) => candidate.id === pin.id && candidate.is_active)
-          : undefined;
-      } catch (err) {
-        if (signal.aborted) throw err;
-      }
-      if (pinnedAgentRef.current === pin) {
-        pinnedAgentRef.current = found === undefined ? null : { name: found.name, id: found.id };
-      }
-      return found?.name ?? null;
-    },
-    [client],
-  );
 
   const runTurn = useCallback(async (text: string, options?: SendOptions) => {
     const generation = generationRef.current;
@@ -465,18 +416,13 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         hostContextRef.current,
         options?.omitSelectedWidget === true,
       );
-      // An agent the reader armed (a slash command, a rerun) always wins;
-      // otherwise a follow-up goes where this conversation's last plain
-      // question was routed — see PinnedAgent.
-      let agent = options?.agent;
-      let agentIsPinned = false;
-      if (agent === undefined) {
-        const pinned = await resolvePinnedAgent(controller.signal);
-        if (pinned !== null) {
-          agent = pinned;
-          agentIsPinned = true;
-        }
-      }
+      // Only an agent the reader armed (a slash command, a rerun) is named.
+      // A plain follow-up is left to the server, which routes it with the
+      // conversation's last turns in view (`app.api.run`) and keeps it with
+      // the previous agent when it can't tell. Pinning it here instead sent
+      // "How do I create a geofence?" to Fleet because Fleet answered the
+      // question before, and Fleet can only refuse it.
+      const agent = options?.agent;
       const send = () =>
         postAgentRun(
           client,
@@ -498,15 +444,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         try {
           response = await send();
         } catch (err) {
-          if (agentIsPinned && isUnknownAgentError(err) && isCurrent()) {
-            // The agent this conversation was pinned to has been deleted or
-            // switched off since. The reader never named it, so route the
-            // question afresh rather than fail it.
-            agentIsPinned = false;
-            agent = undefined;
-            pinnedAgentRef.current = null;
-            continue;
-          }
           if (
             !restartedConversation &&
             isMissingConversationError(err) &&
@@ -542,18 +479,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
             const resolvedAgent = chunk.messageMetadata?.agent_name;
             if (typeof resolvedAgent === "string") agentName = resolvedAgent;
             routingFallback = chunk.messageMetadata?.routing_fallback === true;
-            if (isCurrent()) {
-              // Pinned only from a question nobody addressed: an agent the
-              // reader armed is carried by `selectedAgent` for as long as it
-              // stays armed, and once they disarm it they are asking for
-              // routing, not for the agent they just let go of. And never
-              // from a fallback — pinning a guess would send every follow-up
-              // to the agent the router already said it was unsure about.
-              pinnedAgentRef.current =
-                options?.agent === undefined && typeof resolvedAgent === "string" && !routingFallback
-                  ? { name: resolvedAgent, id: null }
-                  : null;
-            }
             // The conversation this run was saved under. A fresh thread has
             // no id until here, and without keeping it every follow-up was
             // sent with no `session_id` — a new conversation each time, so
@@ -729,7 +654,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     isStreamingRef.current = false;
     setStatus("idle");
     setActiveRun(null);
-  }, [resolvePinnedAgent]);
+  }, []);
 
   const stop = useCallback(() => {
     inFlightRef.current?.end("stopped");
@@ -763,11 +688,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       // fails leaves the current thread, and any run in it, as they were.
       discardRun();
       conversationIdRef.current = conversationId;
-      // Who answered last, so a follow-up goes back to them. Resolved to a
-      // name only when one is sent (`resolvePinnedAgent`); a turn with no
-      // recorded agent leaves nothing pinned and the follow-up is routed.
-      const lastAgentId = hydrated.findLast((message) => message.role === "assistant")?.agentId;
-      pinnedAgentRef.current = typeof lastAgentId === "number" ? { name: null, id: lastAgentId } : null;
       setMessages(hydrated);
       setActiveConversationId(conversationId);
       setError(null);
@@ -783,7 +703,6 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     loadTokenRef.current += 1;
     discardRun();
     conversationIdRef.current = null;
-    pinnedAgentRef.current = null;
     setActiveConversationId(null);
     setMessages([]);
     setError(null);

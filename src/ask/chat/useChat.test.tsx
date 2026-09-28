@@ -632,34 +632,32 @@ describe("useChat", () => {
       await waitFor(() => expect(result.current.status).toBe("idle"));
     }
 
-    it("keeps a plain follow-up with the agent the server routed the conversation to", async () => {
+    it("leaves a plain follow-up's routing to the server, and names only an armed agent", async () => {
       fetchMock
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Knowledge")))
         .mockResolvedValueOnce(sseResponse(routedTo("Form-Builder")))
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")));
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet")));
       const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
 
-      await ask(result, "trips per vehicle last week");
-      await ask(result, "now by city");
-      // Armed by the reader: that wins, and is not what gets pinned — once
-      // they disarm it they want routing, not the builder they let go of.
+      await ask(result, "which vehicles are idle?");
+      // A different kind of question in the same conversation. Pinned to the
+      // agent that answered the first, this went to Fleet, which can only
+      // refuse a how-to; the server routes it with the conversation in view.
+      await ask(result, "how do I create a geofence?");
       await ask(result, "a checklist form", "Form-Builder");
-      await ask(result, "how many trips today?");
-      // A new conversation starts unpinned.
-      act(() => result.current.clearConversation());
-      await ask(result, "something else");
+      await ask(result, "and the stopped ones?");
 
       const bodies = await runBodies();
       expect(bodies[0]!.agent).toBeUndefined();
-      expect(bodies[1]).toMatchObject({ message: "now by city", agent: "Fleet-Report" });
+      expect(bodies[1]).toMatchObject({ message: "how do I create a geofence?", session_id: 57 });
+      expect(bodies[1]!.agent).toBeUndefined();
       expect(bodies[2]).toMatchObject({ agent: "Form-Builder" });
       expect(bodies[3]!.agent).toBeUndefined();
-      expect(bodies[4]!.agent).toBeUndefined();
+      expect(bodies[3]).toMatchObject({ session_id: 57 });
     });
 
-    it("does not pin an agent the router fell back to, and says it was a fallback", async () => {
+    it("says when the router fell back", async () => {
       fetchMock
         .mockResolvedValueOnce(sseResponse(routedTo("General", `,"routing_fallback":true`)))
         .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")));
@@ -677,94 +675,6 @@ describe("useChat", () => {
       expect(result.current.messages[3]!.runSummary!.routingFallback).toBe(false);
     });
 
-    it("routes afresh when the pinned agent has been switched off since", async () => {
-      fetchMock
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
-        .mockResolvedValueOnce(
-          jsonResponse({ detail: "no active agent named 'Fleet-Report' available to this tenant" }, 404),
-        )
-        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Ops")));
-      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
-
-      await ask(result, "trips per vehicle");
-      await ask(result, "and by city");
-
-      const bodies = await runBodies();
-      expect(bodies).toHaveLength(3);
-      expect(bodies[1]).toMatchObject({ agent: "Fleet-Report", session_id: 57 });
-      expect(bodies[2]!.agent).toBeUndefined();
-      expect(bodies[2]).toMatchObject({ message: "and by city", session_id: 57 });
-      expect(result.current.messages[3]!.runSummary).toMatchObject({ status: "done", agentName: "Fleet-Ops" });
-    });
-
-    it("sends a reopened conversation's follow-up to whoever answered it last, by name", async () => {
-      const conversation = {
-        ...CONVERSATION_5,
-        messages: [
-          ...CONVERSATION_5.messages,
-          {
-            id: 2,
-            role: "assistant",
-            content: "an older answer",
-            agent_id: 3,
-            trace_id: null,
-            meta: null,
-            created_at: "2026-09-20T10:00:01Z",
-          },
-        ],
-      };
-      fetchMock.mockImplementation((request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/agent/conversations/5") return Promise.resolve(jsonResponse(conversation));
-        if (path === "/agent/agents") {
-          return Promise.resolve(
-            jsonResponse([
-              { id: 1, name: "General", is_active: true },
-              { id: 3, name: "Fleet-Report", is_active: true },
-            ]),
-          );
-        }
-        return Promise.resolve(sseResponse(routedTo("Fleet-Report")));
-      });
-      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
-
-      await act(() => result.current.loadConversation(5));
-      await ask(result, "and last month?");
-
-      expect((await runBodies())[0]).toMatchObject({ agent: "Fleet-Report", session_id: 5 });
-    });
-
-    it("routes a reopened conversation's follow-up when its last agent is gone", async () => {
-      const conversation = {
-        ...CONVERSATION_5,
-        messages: [
-          ...CONVERSATION_5.messages,
-          {
-            id: 2,
-            role: "assistant",
-            content: "an older answer",
-            agent_id: 3,
-            trace_id: null,
-            meta: null,
-            created_at: "2026-09-20T10:00:01Z",
-          },
-        ],
-      };
-      fetchMock.mockImplementation((request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/agent/conversations/5") return Promise.resolve(jsonResponse(conversation));
-        if (path === "/agent/agents") {
-          return Promise.resolve(jsonResponse([{ id: 3, name: "Fleet-Report", is_active: false }]));
-        }
-        return Promise.resolve(sseResponse(routedTo("General")));
-      });
-      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
-
-      await act(() => result.current.loadConversation(5));
-      await ask(result, "and last month?");
-
-      expect((await runBodies())[0]!.agent).toBeUndefined();
-    });
   });
 
   it("does not retry a 404 that is not about the conversation", async () => {

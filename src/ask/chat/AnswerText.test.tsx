@@ -273,6 +273,13 @@ describe("keeping each block in one voice while it is revealed", () => {
         "I can only help with questions about our menu and outlets. Could you rephrase your question around that?",
       ),
     ).not.toBe(LEAD);
+    // The per-agent topic guards' own wording, seen live on stage.
+    expect(
+      classOfFirst("I answer questions about how bolt-v2 works: its features, screens, settings and how-to steps."),
+    ).not.toBe(LEAD);
+    expect(
+      classOfFirst("I only answer questions about your vehicles right now: where they are, and whether they are moving."),
+    ).not.toBe(LEAD);
     expect(classOfFirst("Sorry, I couldn’t reach the sales database.")).not.toBe(LEAD);
     expect(classOfFirst("Which store do you mean — Bandra or BKC?")).not.toBe(LEAD);
   });
