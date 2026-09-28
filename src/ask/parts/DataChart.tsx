@@ -54,7 +54,13 @@ export interface DataChartSeries {
 export interface DataChartPoint {
   /** X-axis tick label — a day, a date, whatever the time axis is. */
   label: string;
-  /** seriesKey -> value at this point. A missing key reads as 0. */
+  /**
+   * seriesKey -> value at this point. A missing key is a GAP, not a zero:
+   * the server leaves a value out on purpose when there was no reading
+   * (a store closed that week, a sensor offline), and a line drawn down to
+   * zero and back claims a collapse that never happened. Only a stack —
+   * where every band sits on the ones below it — reads a gap as 0.
+   */
   values: Record<string, number>;
 }
 
@@ -151,18 +157,44 @@ function tooltipValue(value: number): string {
   }).format(value)}`;
 }
 
+type ChartRow = Record<string, string | number | null>;
+
 /**
  * Recharts wants a flat row per point; this component's props keep the
  * values nested so a series key can be anything. `label` is reserved as
  * the x key, so a series whose key is literally "label" would collide —
  * it is prefixed rather than trusted.
+ *
+ * `missing` is what an absent value becomes: `null` — a gap Recharts
+ * leaves undrawn — everywhere except where the shape needs a number to
+ * stand on (a stack's bands, a radar's polygon, a slice).
  */
-function toRows(data: DataChartPoint[], series: DataChartSeries[]) {
+function toRows(data: DataChartPoint[], series: DataChartSeries[], missing: 0 | null): ChartRow[] {
   return data.map((point) => {
-    const row: Record<string, string | number> = { label: point.label };
-    for (const s of series) row[`v:${s.key}`] = point.values[s.key] ?? 0;
+    const row: ChartRow = { label: point.label };
+    for (const s of series) {
+      const value = point.values[s.key];
+      row[`v:${s.key}`] = typeof value === "number" && Number.isFinite(value) ? value : missing;
+    }
     return row;
   });
+}
+
+/** Kinds whose shape needs every value to be a number. */
+const ZERO_FILLED: ReadonlySet<DataChartKind> = new Set(["stack", "share", "radar"]);
+
+/**
+ * Whether a series has a point that no line reaches — the only point on
+ * the chart, or one with a gap on both sides of it.
+ *
+ * Lines and areas are drawn without dots (see `line` below), and a line
+ * needs two points to exist. So a one-week chart, or a store with a single
+ * reading between two gaps, drew an empty plot: the value was there, the
+ * mark for it was not. Such a series gets its dots back.
+ */
+export function hasIsolatedPoint(rows: ChartRow[], dataKey: string): boolean {
+  const present = (row: ChartRow | undefined) => typeof row?.[dataKey] === "number";
+  return rows.some((row, index) => present(row) && !present(rows[index - 1]) && !present(rows[index + 1]));
 }
 
 /**
@@ -171,14 +203,11 @@ function toRows(data: DataChartPoint[], series: DataChartSeries[]) {
  * percentage axis — so the numbers themselves are converted, and a column
  * whose total is zero is left alone rather than dividing by it.
  */
-function toPercentRows(
-  rows: Record<string, string | number>[],
-  series: DataChartSeries[],
-): Record<string, string | number>[] {
+function toPercentRows(rows: ChartRow[], series: DataChartSeries[]): ChartRow[] {
   return rows.map((row) => {
     const total = series.reduce((sum, s) => sum + Math.abs(Number(row[`v:${s.key}`] ?? 0)), 0);
     if (total === 0) return row;
-    const scaled: Record<string, string | number> = { label: row.label! };
+    const scaled: ChartRow = { label: row.label! };
     for (const s of series) scaled[`v:${s.key}`] = Number(row[`v:${s.key}`] ?? 0) / total;
     return scaled;
   });
@@ -214,7 +243,7 @@ export function DataChart({
     );
   }
 
-  const rows = toRows(data, series);
+  const rows = toRows(data, series, ZERO_FILLED.has(kind) ? 0 : null);
   const hasNegative = data.some((point) =>
     series.some((s) => (point.values[s.key] ?? 0) < 0),
   );
@@ -288,11 +317,13 @@ export function DataChart({
  */
 function renderChart(
   kind: DataChartKind,
-  rows: Record<string, string | number>[],
+  rows: ChartRow[],
   series: DataChartSeries[],
   axis: ReactElement,
 ): ReactElement {
   const margin = { top: 8, right: 12, bottom: 0, left: 0 };
+  // A dot only where a line cannot be drawn — see `hasIsolatedPoint`.
+  const dotFor = (s: DataChartSeries) => (hasIsolatedPoint(rows, `v:${s.key}`) ? { r: 3 } : false);
 
   switch (kind) {
     case "line":
@@ -309,9 +340,11 @@ function renderChart(
               strokeWidth={2}
               // A dot per point would be 84 dots on a six-store fourteen-
               // week chart. The hover read-out is where a reader goes for
-              // a single value.
-              dot={false}
+              // a single value — unless a point has no line to sit on.
+              dot={dotFor(s)}
               activeDot={{ r: 3.5 }}
+              // A missing week is a break in the line, not a bridge over it.
+              connectNulls={false}
               isAnimationActive={false}
             />
           ))}
@@ -337,6 +370,8 @@ function renderChart(
               // Several areas stack: the composition-over-time reading is
               // the only one an area chart of multiple series supports.
               stackId={series.length > 1 ? "total" : undefined}
+              dot={dotFor(s)}
+              connectNulls={false}
               isAnimationActive={false}
             />
           ))}
@@ -420,7 +455,16 @@ function renderChart(
             cursor={{ stroke: "var(--rule)" }}
             formatter={(value, name) => [tooltipValue(Number(value)), String(name)]}
           />
-          <Scatter data={rows} fill={series[0]!.color} isAnimationActive={false} />
+          {/* A point missing either coordinate has nowhere to be drawn;
+              it used to be drawn at zero, which put it on an axis it never
+              reached. */}
+          <Scatter
+            data={rows.filter(
+              (row) => typeof row[`v:${series[0]!.key}`] === "number" && typeof row[`v:${series[1]!.key}`] === "number",
+            )}
+            fill={series[0]!.color}
+            isAnimationActive={false}
+          />
         </ScatterChart>
       );
     }
@@ -441,8 +485,9 @@ function renderChart(
               name={s.label}
               stroke={s.color}
               strokeWidth={2}
-              dot={false}
+              dot={dotFor(s)}
               activeDot={{ r: 3.5 }}
+              connectNulls={false}
               isAnimationActive={false}
             />
           ))}
@@ -538,7 +583,8 @@ function renderChart(
                 name={s.label}
                 stroke={s.color}
                 strokeWidth={2}
-                dot={false}
+                dot={dotFor(s)}
+                connectNulls={false}
                 isAnimationActive={false}
               />
             ),

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DataChart, axisTickLabel } from "./DataChart.tsx";
+import { DataChart, axisTickLabel, hasIsolatedPoint } from "./DataChart.tsx";
 import type { DataChartPoint, DataChartSeries } from "./DataChart.tsx";
 
 // The recharts ResponsiveContainer sizing mock lives in src/test/setup.ts —
@@ -195,5 +195,75 @@ describe("negative values", () => {
     for (const bar of bars(container)) {
       expect(Math.abs(Number(bar.getAttribute("height")))).toBeGreaterThan(0);
     }
+  });
+});
+
+// --- a point with no line to sit on, and a gap that is a gap ---------------
+//
+// Lines are drawn without dots, and a line needs two points: a one-week
+// chart drew an empty plot. And a value the server left out was plotted as
+// zero — a dive to the floor and back for a week that simply had no reading.
+
+describe("single points and gaps", () => {
+  const one: DataChartPoint[] = [{ label: "W1", values: { swiggy: 34, zomato: 18, dinein: 15 } }];
+  const gappy: DataChartPoint[] = [
+    { label: "W1", values: { swiggy: 30 } },
+    { label: "W2", values: { swiggy: 32 } },
+    { label: "W3", values: {} },
+    { label: "W4", values: { swiggy: 35 } },
+    { label: "W5", values: { swiggy: 31 } },
+  ];
+  const oneSeries = series.slice(0, 1);
+  const moves = (d: string | null) => (d ?? "").match(/M/g)?.length ?? 0;
+
+  for (const kind of ["line", "step", "area"] as const) {
+    it(`draws a dot for a ${kind} chart with only one point`, () => {
+      const { container } = render(<DataChart title="One week" kind={kind} series={series} data={one} />);
+
+      expect(container.querySelectorAll(".recharts-dot").length).toBeGreaterThanOrEqual(series.length);
+    });
+  }
+
+  it("keeps dots off a line that has neighbours to join", () => {
+    const { container } = render(<DataChart title="Weekly" kind="line" series={series} data={data} />);
+
+    expect(container.querySelectorAll(".recharts-line-dots .recharts-dot")).toHaveLength(0);
+  });
+
+  it("breaks a line at a missing value rather than diving to zero", () => {
+    const { container } = render(<DataChart title="Gappy" kind="line" series={oneSeries} data={gappy} />);
+
+    // Two separate runs of line — W1–W2 and W4–W5 — not one through zero.
+    expect(moves(container.querySelector(".recharts-line-curve")!.getAttribute("d"))).toBe(2);
+  });
+
+  it("breaks an area at a missing value too", () => {
+    const { container } = render(<DataChart title="Gappy" kind="area" series={oneSeries} data={gappy} />);
+
+    expect(moves(container.querySelector(".recharts-area-curve")!.getAttribute("d"))).toBe(2);
+  });
+
+  it("leaves a point missing a coordinate off a scatter instead of pinning it to zero", () => {
+    const { container } = render(
+      <DataChart
+        title="Orders against sales"
+        kind="scatter"
+        series={series.slice(0, 2)}
+        data={[
+          { label: "Bandra", values: { swiggy: 34, zomato: 18 } },
+          { label: "BKC", values: { swiggy: 29 } },
+        ]}
+      />,
+    );
+
+    expect(container.querySelectorAll(".recharts-scatter-symbol")).toHaveLength(1);
+  });
+});
+
+describe("hasIsolatedPoint", () => {
+  it("finds a value with no neighbour on either side", () => {
+    expect(hasIsolatedPoint([{ label: "a", "v:x": 1 }], "v:x")).toBe(true);
+    expect(hasIsolatedPoint([{ "v:x": 1 }, { "v:x": null }, { "v:x": 2 }], "v:x")).toBe(true);
+    expect(hasIsolatedPoint([{ "v:x": 1 }, { "v:x": 2 }, { "v:x": null }], "v:x")).toBe(false);
   });
 });
