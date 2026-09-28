@@ -1,7 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DataChart, axisTickLabel, hasIsolatedPoint } from "./DataChart.tsx";
+import {
+  DataChart,
+  ScatterTip,
+  axisTickLabel,
+  formatAxisTick,
+  formatValue,
+  formatterFor,
+  hasIsolatedPoint,
+  shareFormatterFor,
+  sharedFormat,
+} from "./DataChart.tsx";
 import type { DataChartPoint, DataChartSeries } from "./DataChart.tsx";
 
 // The recharts ResponsiveContainer sizing mock lives in src/test/setup.ts —
@@ -265,5 +275,122 @@ describe("hasIsolatedPoint", () => {
     expect(hasIsolatedPoint([{ label: "a", "v:x": 1 }], "v:x")).toBe(true);
     expect(hasIsolatedPoint([{ "v:x": 1 }, { "v:x": null }, { "v:x": 2 }], "v:x")).toBe(true);
     expect(hasIsolatedPoint([{ "v:x": 1 }, { "v:x": 2 }, { "v:x": null }], "v:x")).toBe(false);
+  });
+});
+
+// --- writing each number in its own unit ------------------------------------
+//
+// Every tooltip put a rupee sign on every value: trip counts read "₹42.00",
+// a 0–1 share read "₹0.35" on an axis from 0 to 1, and a scatter tooltip
+// read "label: ₹NaN" because the point's name had been fed in as a value.
+
+describe("formatValue", () => {
+  it("writes money in rupees with Indian grouping", () => {
+    expect(formatValue(1234567, "currency")).toBe("₹12,34,567.00");
+    expect(formatValue(-1234.5, "currency")).toBe("-₹1,234.50");
+  });
+
+  it("writes a percentage as a percentage, and a 0–1 share as one too", () => {
+    expect(formatValue(12.5, "percent")).toBe("12.5%");
+    expect(formatValue(0.35, "share")).toBe("35%");
+    expect(formatValue(0.1234, "share")).toBe("12.3%");
+  });
+
+  it("writes counts and plain numbers without a rupee sign", () => {
+    expect(formatValue(1204, "integer")).toBe("1,204");
+    expect(formatValue(1234567.891, "number")).toBe("12,34,567.89");
+  });
+
+  it("falls back to a plain grouped number when a series names no format", () => {
+    expect(formatValue(42)).toBe("42");
+    expect(formatValue(42)).not.toContain("₹");
+  });
+
+  it("never prints a negative zero", () => {
+    expect(formatValue(-0, "percent")).toBe("0%");
+  });
+});
+
+describe("formatAxisTick", () => {
+  it("labels a share axis in percent rather than 0–1", () => {
+    expect(formatAxisTick(0.25, "share")).toBe("25%");
+    expect(formatAxisTick(1, "share")).toBe("100%");
+  });
+
+  it("keeps money and counts in short Indian units", () => {
+    expect(formatAxisTick(29_082_789, "currency")).toBe("2.9Cr");
+    expect(formatAxisTick(12_400, "integer")).toBe("12.4k");
+    expect(formatAxisTick(50, "percent")).toBe("50%");
+  });
+});
+
+describe("sharedFormat", () => {
+  it("gives an axis a unit only when every series on it agrees", () => {
+    expect(sharedFormat([{ ...series[0]!, format: "integer" }, { ...series[1]!, format: "integer" }])).toBe(
+      "integer",
+    );
+    expect(sharedFormat([{ ...series[0]!, format: "integer" }, { ...series[1]!, format: "currency" }])).toBe(
+      undefined,
+    );
+  });
+});
+
+describe("tooltip formatters", () => {
+  const typed: DataChartSeries[] = [
+    { key: "trips", label: "Trips", color: "var(--series-1)", format: "integer" },
+    { key: "sales", label: "Net sales", color: "var(--series-2)", format: "currency" },
+  ];
+
+  it("writes each entry in its own series' format, found by key or by name", () => {
+    const format = formatterFor(typed);
+
+    expect(format(42, "Trips", { dataKey: "v:trips" })).toEqual(["42", "Trips"]);
+    expect(format(1500, "Net sales", { dataKey: "v:sales" })).toEqual(["₹1,500.00", "Net sales"]);
+    // A slice has no data key of ours, only its series' name.
+    expect(format(42, "Trips", undefined)).toEqual(["42", "Trips"]);
+  });
+
+  it("shows a share chart's share, then the figure it is a share of", () => {
+    const format = shareFormatterFor(typed);
+
+    expect(format(0.35, "Net sales", { dataKey: "v:sales", payload: { "r:sales": 1234 } })).toEqual([
+      "35% · ₹1,234.00",
+      "Net sales",
+    ]);
+  });
+});
+
+describe("the share chart's axis", () => {
+  it("reads in percent, not as a fraction", () => {
+    const { container } = render(<DataChart title="Channel mix" kind="share" series={series} data={data} />);
+
+    const ticks = [...container.querySelectorAll("svg text")].map((tick) => tick.textContent);
+    expect(ticks).toContain("100%");
+    expect(ticks.some((tick) => tick === "1")).toBe(false);
+  });
+});
+
+describe("the scatter's hover read-out", () => {
+  const measures: DataChartSeries[] = [
+    { key: "orders", label: "Orders", color: "var(--series-1)", format: "integer" },
+    { key: "sales", label: "Net sales", color: "var(--series-2)", format: "currency" },
+  ];
+
+  it("names the point and shows only its measures, each in its own format", () => {
+    render(
+      <ScatterTip active row={{ label: "Bandra", "v:orders": 1204, "v:sales": 1008942.35 }} measures={measures} />,
+    );
+
+    expect(screen.getByText("Bandra")).toBeInTheDocument();
+    expect(screen.getByText("1,204")).toBeInTheDocument();
+    expect(screen.getByText("₹10,08,942.35")).toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^label/i)).not.toBeInTheDocument();
+  });
+
+  it("renders nothing when nothing is hovered", () => {
+    const { container } = render(<ScatterTip active={false} row={undefined} measures={measures} />);
+
+    expect(container.firstChild).toBeNull();
   });
 });

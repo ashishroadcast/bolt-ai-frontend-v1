@@ -49,7 +49,21 @@ export interface DataChartSeries {
    * same as every other colour rule in this catalog.
    */
   color: string;
+  /**
+   * What this series' numbers ARE, so they can be written the way a reader
+   * expects. Optional: a part from before the field existed has none, and
+   * reads as a plain grouped number — never as money it may not be.
+   *
+   * - `currency` rupees, Indian grouping, two decimals ("₹12,34,567.00")
+   * - `percent`  already a percentage ("12.5" → "12.5%")
+   * - `share`    a 0–1 fraction, shown as a percentage ("0.35" → "35%")
+   * - `number`   a grouped plain number, up to two decimals
+   * - `integer`  a grouped whole count ("1,204")
+   */
+  format?: SeriesFormat;
 }
+
+export type SeriesFormat = "currency" | "percent" | "share" | "number" | "integer";
 
 export interface DataChartPoint {
   /** X-axis tick label — a day, a date, whatever the time axis is. */
@@ -148,13 +162,128 @@ function trimZero(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
-/** The tooltip shows one exact figure, so it gets the full grouping the
- * axis cannot afford — this is where a reader goes for the real number. */
-function tooltipValue(value: number): string {
-  return `₹${new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value)}`;
+const MONEY = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const PLAIN = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+const WHOLE = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+const PERCENT = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
+
+/**
+ * One exact figure, written the way its series says it should be — the
+ * tooltip and the data table are where a reader goes for the real number,
+ * so they get the full grouping the axis cannot afford.
+ *
+ * Every tooltip used to put a rupee sign in front of every value, so a
+ * trip count read "₹42.00" and a share of 0.35 read "₹0.35". Without a
+ * `format` this now falls back to a plain grouped number: a figure with no
+ * unit is less wrong than a figure with the wrong one.
+ */
+export function formatValue(value: number, format?: SeriesFormat): string {
+  if (!Number.isFinite(value)) return "—";
+  // `-0` would otherwise print as "-0%".
+  const v = value === 0 ? 0 : value;
+  switch (format) {
+    case "currency":
+      return `${v < 0 ? "-" : ""}₹${MONEY.format(Math.abs(v))}`;
+    case "percent":
+      return `${PERCENT.format(v)}%`;
+    case "share":
+      return `${PERCENT.format(v * 100)}%`;
+    case "integer":
+      return WHOLE.format(v);
+    default:
+      return PLAIN.format(v);
+  }
+}
+
+/** An axis tick in the same unit, kept short: percentages as percentages
+ * (a share axis read 0–1), everything else in Indian units. */
+export function formatAxisTick(value: number, format?: SeriesFormat): string {
+  const v = value === 0 ? 0 : value;
+  if (format === "percent") return `${PERCENT.format(v)}%`;
+  if (format === "share") return `${PERCENT.format(v * 100)}%`;
+  return axisTickLabel(v);
+}
+
+/** The format every one of these series shares, or none: one axis can only
+ * carry one unit, and a mixed axis is better plain than mislabelled. */
+export function sharedFormat(series: readonly DataChartSeries[]): SeriesFormat | undefined {
+  const first = series[0]?.format;
+  return series.every((s) => s.format === first) ? first : undefined;
+}
+
+/** The shared look of every hover read-out on these sheets. */
+const TOOLTIP_STYLE = {
+  contentStyle: {
+    background: "var(--surface)",
+    border: "1px solid var(--rule)",
+    borderRadius: "var(--radius-control)",
+    fontFamily: "var(--font-mono)",
+    fontSize: 11.5,
+    boxShadow: "var(--lift-float)",
+  },
+  labelStyle: { color: "var(--fg)", fontWeight: 600, marginBottom: 4 },
+} as const;
+
+/**
+ * A tooltip formatter that writes each entry in its OWN series' format.
+ * Found by data key first (`v:<key>`), then by name — a slice chart's
+ * entries are named for their series and carry no key of ours.
+ */
+export function formatterFor(series: readonly DataChartSeries[]) {
+  const byKey = new Map(series.map((s) => [`v:${s.key}`, s]));
+  const byLabel = new Map(series.map((s) => [s.label, s]));
+  return (value: unknown, name: unknown, item: { dataKey?: unknown } | undefined): [string, string] => {
+    const owner = byKey.get(String(item?.dataKey)) ?? byLabel.get(String(name));
+    return [formatValue(Number(value), owner?.format), String(name)];
+  };
+}
+
+/**
+ * For the share chart, whose drawn values are fractions of each column:
+ * the share first, then the figure it is a share of, in its own format.
+ */
+export function shareFormatterFor(series: readonly DataChartSeries[]) {
+  const byKey = new Map(series.map((s) => [`v:${s.key}`, s]));
+  return (
+    value: unknown,
+    name: unknown,
+    item: { dataKey?: unknown; payload?: Record<string, unknown> } | undefined,
+  ): [string, string] => {
+    const owner = byKey.get(String(item?.dataKey));
+    const raw = owner === undefined ? undefined : item?.payload?.[`r:${owner.key}`];
+    const share = formatValue(Number(value), "share");
+    return [typeof raw === "number" ? `${share} · ${formatValue(raw, owner?.format)}` : share, String(name)];
+  };
+}
+
+/**
+ * A scatter's hover read-out: WHICH point this is as the title, then each
+ * measure in its own format — and nothing that is not a number.
+ */
+export function ScatterTip({
+  active,
+  row,
+  measures,
+}: {
+  active: boolean;
+  row: ChartRow | undefined;
+  measures: readonly DataChartSeries[];
+}): ReactElement | null {
+  if (!active || row === undefined) return null;
+  return (
+    <div className={styles.tip} style={TOOLTIP_STYLE.contentStyle}>
+      <p className={styles.tipTitle}>{String(row.label ?? "")}</p>
+      {measures.map((s) => {
+        const value = row[`v:${s.key}`];
+        return typeof value === "number" ? (
+          <p key={s.key} className={styles.tipRow}>
+            <span>{s.label}</span>
+            <span className={styles.tipValue}>{formatValue(value, s.format)}</span>
+          </p>
+        ) : null;
+      })}
+    </div>
+  );
 }
 
 type ChartRow = Record<string, string | number | null>;
@@ -201,14 +330,18 @@ export function hasIsolatedPoint(rows: ChartRow[], dataKey: string): boolean {
  * Rows rescaled so each column sums to 1. `stackOffset="expand"` does the
  * drawing, but the TOOLTIP would still read raw values against a
  * percentage axis — so the numbers themselves are converted, and a column
- * whose total is zero is left alone rather than dividing by it.
+ * whose total is zero is left alone rather than dividing by it. The raw
+ * figure rides along under `r:<key>` for the tooltip to show beside it.
  */
 function toPercentRows(rows: ChartRow[], series: DataChartSeries[]): ChartRow[] {
   return rows.map((row) => {
     const total = series.reduce((sum, s) => sum + Math.abs(Number(row[`v:${s.key}`] ?? 0)), 0);
     if (total === 0) return row;
     const scaled: ChartRow = { label: row.label! };
-    for (const s of series) scaled[`v:${s.key}`] = Number(row[`v:${s.key}`] ?? 0) / total;
+    for (const s of series) {
+      scaled[`v:${s.key}`] = Number(row[`v:${s.key}`] ?? 0) / total;
+      scaled[`r:${s.key}`] = row[`v:${s.key}`] ?? 0;
+    }
     return scaled;
   });
 }
@@ -252,6 +385,11 @@ export function DataChart({
     ariaLabel ??
     `${title}${subLabel ? `, ${subLabel}` : ""}. Series: ${series.map((s) => s.label).join(", ")}.`;
 
+  // One unit per axis. A share chart's axis is a fraction of each column,
+  // whatever its series measure; a combo's left axis is its first series.
+  const leftFormat =
+    kind === "share" ? "share" : kind === "combo" ? series[0]!.format : sharedFormat(series);
+
   const axis = (
     <>
       <CartesianGrid stroke="var(--rule)" strokeDasharray="2 4" vertical={false} />
@@ -268,23 +406,17 @@ export function DataChart({
         interval="preserveStartEnd"
       />
       <YAxis
-        tickFormatter={axisTickLabel}
+        tickFormatter={(value: number) => formatAxisTick(value, leftFormat)}
+        // A count axis of 0, 0.5, 1, 1.5 trips claims half-trips exist.
+        allowDecimals={leftFormat !== "integer"}
         tick={{ fill: "var(--fg-faint)", fontSize: 10.5, fontFamily: "var(--font-mono)" }}
         tickLine={false}
         axisLine={false}
         width={46}
       />
       <Tooltip
-        formatter={(value, name) => [tooltipValue(Number(value)), String(name)]}
-        contentStyle={{
-          background: "var(--surface)",
-          border: "1px solid var(--rule)",
-          borderRadius: "var(--radius-control)",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11.5,
-          boxShadow: "var(--lift-float)",
-        }}
-        labelStyle={{ color: "var(--fg)", fontWeight: 600, marginBottom: 4 }}
+        formatter={kind === "share" ? shareFormatterFor(series) : formatterFor(series)}
+        {...TOOLTIP_STYLE}
         cursor={{ fill: "var(--ground-lift)", stroke: "var(--rule)" }}
       />
       <Legend
@@ -385,7 +517,7 @@ function renderChart(
       // the Swiggy/Zomato reservation inside it — applies per slice.
       return (
         <PieChart margin={margin}>
-          <Tooltip formatter={(value, name) => [tooltipValue(Number(value)), String(name)]} />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
           <Legend
             verticalAlign="bottom"
             height={28}
@@ -424,7 +556,7 @@ function renderChart(
             type="number"
             dataKey={`v:${series[0]!.key}`}
             name={series[0]!.label}
-            tickFormatter={axisTickLabel}
+            tickFormatter={(value: number) => formatAxisTick(value, series[0]!.format)}
             tick={{ fill: "var(--fg-faint)", fontSize: 10.5, fontFamily: "var(--font-mono)" }}
             tickLine={false}
             axisLine={{ stroke: "var(--rule)" }}
@@ -433,27 +565,37 @@ function renderChart(
             type="number"
             dataKey={`v:${series[1]!.key}`}
             name={series[1]!.label}
-            tickFormatter={axisTickLabel}
+            tickFormatter={(value: number) => formatAxisTick(value, series[1]!.format)}
             tick={{ fill: "var(--fg-faint)", fontSize: 10.5, fontFamily: "var(--font-mono)" }}
             tickLine={false}
             axisLine={false}
             width={46}
           />
-          {/* Names the point, so hovering says WHICH store this is —
-              without it a scatter is a cloud of anonymous dots. */}
           {/* For a bubble the third measure sizes the dot, so one chart
               carries three dimensions; for a plain scatter every dot is
-              the same size and the axis only carries the label. */}
-          <ZAxis
-            // Recharts narrows dataKey from the row type it inferred, which
-            // cannot know about the `v:` prefix these rows carry.
-            dataKey={(sizeBy === undefined ? "label" : `v:${sizeBy.key}`) as string}
-            name={sizeBy?.label ?? ""}
-            range={sizeBy === undefined ? [60, 60] : [40, 420]}
-          />
+              the same size. It used to be keyed on `label` to name the
+              point, which put the label into the tooltip as a value —
+              "label: ₹NaN". The point's name is the tooltip's title now. */}
+          {sizeBy === undefined ? (
+            <ZAxis range={[60, 60]} />
+          ) : (
+            <ZAxis
+              // Recharts narrows dataKey from the row type it inferred, which
+              // cannot know about the `v:` prefix these rows carry.
+              dataKey={`v:${sizeBy.key}` as string}
+              name={sizeBy.label}
+              range={[40, 420]}
+            />
+          )}
           <Tooltip
             cursor={{ stroke: "var(--rule)" }}
-            formatter={(value, name) => [tooltipValue(Number(value)), String(name)]}
+            content={({ active, payload }) => (
+              <ScatterTip
+                active={active === true}
+                row={payload?.[0]?.payload as ChartRow | undefined}
+                measures={sizeBy === undefined ? [series[0]!, series[1]!] : [series[0]!, series[1]!, sizeBy]}
+              />
+            )}
           />
           {/* A point missing either coordinate has nowhere to be drawn;
               it used to be drawn at zero, which put it on an axis it never
@@ -503,7 +645,8 @@ function renderChart(
           <CartesianGrid stroke="var(--rule)" strokeDasharray="2 4" horizontal={false} />
           <XAxis
             type="number"
-            tickFormatter={axisTickLabel}
+            tickFormatter={(value: number) => formatAxisTick(value, sharedFormat(series))}
+            allowDecimals={sharedFormat(series) !== "integer"}
             tick={{ fill: "var(--fg-faint)", fontSize: 10.5, fontFamily: "var(--font-mono)" }}
             tickLine={false}
             axisLine={{ stroke: "var(--rule)" }}
@@ -516,10 +659,7 @@ function renderChart(
             tickLine={false}
             axisLine={false}
           />
-          <Tooltip
-            formatter={(value, name) => [tooltipValue(Number(value)), String(name)]}
-            cursor={{ fill: "var(--ground-lift)" }}
-          />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} cursor={{ fill: "var(--ground-lift)" }} />
           {series.map((s) => (
             <Bar
               key={s.key}
@@ -565,7 +705,8 @@ function renderChart(
           <YAxis
             yAxisId="right"
             orientation="right"
-            tickFormatter={axisTickLabel}
+            tickFormatter={(value: number) => formatAxisTick(value, sharedFormat(series.slice(1)))}
+            allowDecimals={sharedFormat(series.slice(1)) !== "integer"}
             tick={{ fill: "var(--fg-faint)", fontSize: 10.5, fontFamily: "var(--font-mono)" }}
             tickLine={false}
             axisLine={false}
@@ -601,8 +742,11 @@ function renderChart(
         <RadarChart data={rows} margin={margin}>
           <PolarGrid stroke="var(--rule)" />
           <PolarAngleAxis dataKey="label" tick={{ fill: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--font-body)" }} />
-          <PolarRadiusAxis tick={{ fill: "var(--fg-faint)", fontSize: 10 }} tickFormatter={axisTickLabel} />
-          <Tooltip formatter={(value, name) => [tooltipValue(Number(value)), String(name)]} />
+          <PolarRadiusAxis
+            tick={{ fill: "var(--fg-faint)", fontSize: 10 }}
+            tickFormatter={(value: number) => formatAxisTick(value, sharedFormat(series))}
+          />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
           <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }} />
           {series.map((s) => (
             <Radar key={s.key} dataKey={`v:${s.key}`} name={s.label} stroke={s.color} fill={s.color} fillOpacity={0.18} isAnimationActive={false} />
@@ -621,7 +765,7 @@ function renderChart(
           isAnimationActive={false}
           stroke="var(--surface)"
         >
-          <Tooltip formatter={(value, name) => [tooltipValue(Number(value)), String(name)]} />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
         </Treemap>
       );
 
@@ -631,7 +775,7 @@ function renderChart(
       // reader is looking for.
       return (
         <FunnelChart margin={margin}>
-          <Tooltip formatter={(value, name) => [tooltipValue(Number(value)), String(name)]} />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
           <Funnel
             dataKey="size"
             data={series.map((s) => ({ name: s.label, size: Number(rows[0]?.[`v:${s.key}`] ?? 0), fill: s.color }))}
@@ -656,7 +800,7 @@ function renderChart(
           margin={margin}
         >
           <RadialBar dataKey="value" background={{ fill: "var(--surface-sunk)" }} isAnimationActive={false} />
-          <Tooltip formatter={(value, name) => [tooltipValue(Number(value)), String(name)]} />
+          <Tooltip formatter={formatterFor(series)} {...TOOLTIP_STYLE} />
           <Legend verticalAlign="bottom" height={28} wrapperStyle={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-dim)" }} />
         </RadialBarChart>
       );

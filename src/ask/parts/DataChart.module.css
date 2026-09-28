@@ -24,3 +24,29 @@
   font-family: var(--font-body);
   color: var(--on-sheet-dim);
 }
+
+/* A scatter's hover read-out, built by hand so it can name the point and
+   show only its measures. Its frame comes from the same inline style every
+   other tooltip on these sheets takes (DataChart.tsx's TOOLTIP_STYLE). */
+.tip {
+  padding: 8px 10px;
+  color: var(--fg-dim);
+}
+
+.tipTitle {
+  margin: 0 0 4px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.tipRow {
+  margin: 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tipValue {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
