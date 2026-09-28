@@ -50,6 +50,16 @@ function isNumeric(type: DataTableColumnType): boolean {
   return NUMERIC_TYPES.has(type);
 }
 
+/**
+ * A cell as the reader sees it. Strings pass through untouched; only a JS
+ * number is formatted, and a plain one is digit-grouped.
+ *
+ * That makes handing over a number a claim that it is a quantity. A wire
+ * table never does: `wireParts.adaptTable` decides per column whether an
+ * integer is a count or an identifier, and hands every cell over as the
+ * string it should read as — store 12345 reached the screen as "12,345"
+ * while it still handed ids through as numbers.
+ */
 function formatCell(value: DataTableCellValue, type: DataTableColumnType): string {
   if (typeof value !== "number") return value;
   switch (type) {
