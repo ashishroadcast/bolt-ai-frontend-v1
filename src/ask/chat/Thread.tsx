@@ -368,7 +368,7 @@ function AnsweredTurn({
           answer's own header rather than only in the measurements strip. */}
       {workedForMs(message) !== null && (
         <p className={styles.answerHeader}>
-          <span className={styles.answerHeaderLead}>Worked For </span>
+          <span className={styles.answerHeaderLead}>{summary?.status === "stopped" ? "Stopped after " : "Worked For "}</span>
           <span className={styles.answerHeaderValue}>{formatDuration(workedForMs(message)!)}</span>
         </p>
       )}

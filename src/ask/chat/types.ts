@@ -52,7 +52,13 @@ export interface ChatMessage {
 }
 
 export interface RunSummary {
-  status: "done" | "error";
+  /**
+   * `stopped` is the reader pressing Stop — not a failure, so it never gets
+   * the error treatment, and whatever the run had written by then stays as
+   * the message's `content`. A run that went silent (the stall watchdog in
+   * `useChat.ts`) is an `error`: the reader did not ask for that.
+   */
+  status: "done" | "error" | "stopped";
   totalMs: number;
   errorText: string | null;
   /** Kept for the inspector — clicking a reasoning step must still work

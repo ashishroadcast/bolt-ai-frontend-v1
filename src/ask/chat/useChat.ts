@@ -23,6 +23,14 @@ export interface UseChatResult {
    * a place in the thread and this one doesn't. */
   error: string | null;
   sendMessage: (text: string, options?: SendOptions) => void;
+  /**
+   * Ends the run in flight at the reader's request. Closing the connection
+   * is the only cancel `POST /agent/run` has (`app.api.run`'s docstring), so
+   * that is what this does; the turn then lands as `runSummary.status ===
+   * "stopped"`, keeping whatever text and parts had already arrived. A no-op
+   * between runs.
+   */
+  stop: () => void;
   loadConversation: (conversationId: number) => Promise<void>;
   /**
    * Who the Ask screen is currently talking to (a `GET /agent/agents`
@@ -94,6 +102,34 @@ function nextLocalId(prefix: string): string {
 }
 
 /**
+ * How long a run may say nothing at all — no chunk, and not the server's
+ * `: keepalive` either — before it is treated as gone.
+ *
+ * agent-service writes that keepalive after every five seconds of silence
+ * (`protocol.py`'s `HEARTBEAT_SECONDS`), so twenty is four missed in a row:
+ * a model thinking hard still beats every five seconds, while a connection
+ * that died with a sleeping laptop, or a proxy that half-closed it, beats
+ * never. Without this the second case showed "working" forever.
+ */
+const STALL_TIMEOUT_MS = 20_000;
+const LOST_CONNECTION = "Lost connection to the run.";
+
+export interface UseChatOptions {
+  /** `STALL_TIMEOUT_MS`, overridable so a test can watch a run stall
+   * without waiting twenty real seconds. Nothing else should set it. */
+  stallTimeoutMs?: number;
+}
+
+/** Why this hook itself aborted a run: the reader asked, or the run went
+ * silent. An abort with no reason recorded is an unmount, which appends
+ * nothing at all. */
+type EndReason = "stopped" | "stalled";
+
+interface InFlightRun {
+  end: (reason: EndReason) => void;
+}
+
+/**
  * Drives one `/agent/run` turn end to end and exposes the two-way split the
  * whole design rests on (design plan §10.1; task brief "The distinction
  * this whole design rests on"):
@@ -119,7 +155,7 @@ function nextLocalId(prefix: string): string {
  * mutually exclusive by construction, not by a flag `Thread.tsx` has to
  * check correctly.
  */
-export function useChat(): UseChatResult {
+export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = {}): UseChatResult {
   const client = useAskClient();
   const { hostContextProvider } = useAskConfig();
   // A ref, because `runTurn` is created once and must still reach the
@@ -137,6 +173,7 @@ export function useChat(): UseChatResult {
   const isStreamingRef = useRef(false);
   const mountedRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef<InFlightRun | null>(null);
   const conversationIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -240,7 +277,7 @@ export function useChat(): UseChatResult {
       setActiveRun(null);
     };
 
-    const summaryFrom = (outcome: "done" | "error", errorText: string | null) => {
+    const summaryFrom = (outcome: RunSummary["status"], errorText: string | null) => {
       const segments = buildPhaseTimeline(events);
       // `usage.duration_ms` is the sum of provider-reported model-call
       // durations, and the phase durations are independent measurements.
@@ -252,6 +289,27 @@ export function useChat(): UseChatResult {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    // Set just before this hook aborts the run itself, and read back in the
+    // catch below: an AbortError alone cannot say whether the reader pressed
+    // Stop, the watchdog gave up, or the provider unmounted — and those end
+    // three different ways.
+    let endReason: EndReason | null = null;
+    const end = (reason: EndReason) => {
+      if (controller.signal.aborted) return;
+      endReason = reason;
+      controller.abort();
+    };
+    inFlightRef.current = { end };
+
+    // Armed only once the response has arrived: agent-service routes the
+    // question before it sends headers, and that can legitimately take
+    // longer than the stall window. From then on every read resets it —
+    // keepalives included, which is the point.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const armWatchdog = () => {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => end("stalled"), stallTimeoutMs);
+    };
 
     try {
       const hostContext = readHostContext(
@@ -271,7 +329,8 @@ export function useChat(): UseChatResult {
         { signal: controller.signal },
       );
 
-      for await (const chunk of readDataStream(response.body!)) {
+      armWatchdog();
+      for await (const chunk of readDataStream(response.body!, { onActivity: armWatchdog })) {
         switch (chunk.type) {
           case "start": {
             messageId = chunk.messageId;
@@ -388,10 +447,21 @@ export function useChat(): UseChatResult {
         finalize(summaryFrom("error", "Connection closed before the run finished."), null);
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        // A deliberate cancel (provider unmount) — not a failure the
-        // operator caused, so nothing renders and nothing needs undoing:
-        // the assistant message simply never gets appended.
+      if (controller.signal.aborted) {
+        // Checked off the signal, not the error: `fetch` and a body read
+        // reject with whatever the platform chose, and it was this hook that
+        // pulled the plug either way.
+        if (endReason === null) {
+          // A deliberate cancel (provider unmount) — not a failure the
+          // operator caused, so nothing renders and nothing needs undoing:
+          // the assistant message simply never gets appended.
+          return;
+        }
+        events.push({ kind: "run-end", at: Date.now() });
+        finalize(
+          endReason === "stopped" ? summaryFrom("stopped", null) : summaryFrom("error", LOST_CONNECTION),
+          null,
+        );
         return;
       }
       const message = err instanceof Error ? err.message : "Asking failed unexpectedly.";
@@ -400,10 +470,16 @@ export function useChat(): UseChatResult {
         setError(message);
       }
     } finally {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      if (inFlightRef.current?.end === end) inFlightRef.current = null;
       abortRef.current = null;
       isStreamingRef.current = false;
       if (mountedRef.current) setStatus("idle");
     }
+  }, []);
+
+  const stop = useCallback(() => {
+    inFlightRef.current?.end("stopped");
   }, []);
 
   const sendMessage = useCallback(
@@ -445,6 +521,7 @@ export function useChat(): UseChatResult {
     status,
     error,
     sendMessage,
+    stop,
     loadConversation,
     selectedAgent,
     setSelectedAgent,

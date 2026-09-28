@@ -26,18 +26,40 @@ function sseResponse(frames: string[], status = 200): Response {
  * `signal` fires, the same reaction a real `fetch` body gives a caller
  * mid-read, so the abort test exercises `useChat`'s actual catch branch
  * rather than assuming the wiring works. */
-function openEndedResponse(signal?: AbortSignal): Response {
+function openEndedResponse(signal?: AbortSignal, frames: string[] = []): Response {
   let controllerRef: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controllerRef = controller;
       controller.enqueue(
-        new TextEncoder().encode(`data: {"type":"start","messageId":"pending"}\n\n`),
+        new TextEncoder().encode(
+          [`data: {"type":"start","messageId":"pending"}`, ...frames].map((frame) => `${frame}\n\n`).join(""),
+        ),
       );
     },
   });
   signal?.addEventListener("abort", () => {
     controllerRef.error(new DOMException("The operation was aborted.", "AbortError"));
+  });
+  return new Response(body, { status: 200 });
+}
+
+/** Open-ended, and quiet except for the server's `: keepalive` comment every
+ * `everyMs` — a model thinking for a long time, as the wire shows it. */
+function heartbeatOnlyResponse(signal: AbortSignal, everyMs: number): Response {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(`data: {"type":"start","messageId":"quiet"}\n\n`));
+      timer = setInterval(() => controller.enqueue(new TextEncoder().encode(": keepalive\n\n")), everyMs);
+      signal.addEventListener("abort", () => {
+        clearInterval(timer);
+        controller.error(new DOMException("The operation was aborted.", "AbortError"));
+      });
+    },
+    cancel() {
+      clearInterval(timer);
+    },
   });
   return new Response(body, { status: 200 });
 }
@@ -296,6 +318,73 @@ describe("useChat", () => {
     // — matching agent-service's own "a run cancelled this way persists
     // nothing new" (app/api/run.py's module docstring).
     expect(result.current.messages).toHaveLength(1);
+  });
+
+  it("stop() closes the connection and lands the turn as stopped, keeping what had arrived", async () => {
+    fetchMock.mockImplementation((request: Request) =>
+      Promise.resolve(
+        openEndedResponse(request.signal, [
+          `data: {"type":"data-table","data":{"columns":["n"],"rows":[[1]]}}`,
+          `data: {"type":"text-delta","id":"answer","delta":"So far, one"}`,
+        ]),
+      ),
+    );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.activeRun?.text).toBe("So far, one"));
+    const signal = (fetchMock.mock.calls[0]![0] as Request).signal;
+
+    act(() => result.current.stop());
+
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(signal.aborted).toBe(true);
+    expect(result.current.activeRun).toBeNull();
+    const assistant = result.current.messages[1]!;
+    expect(assistant.content).toBe("So far, one");
+    expect(assistant.parts).toHaveLength(1);
+    // Not an error: the reader asked for this.
+    expect(assistant.runSummary).toMatchObject({ status: "stopped", errorText: null });
+    expect(result.current.error).toBeNull();
+  });
+
+  it("stop() between runs does nothing", () => {
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    act(() => result.current.stop());
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("ends a run that goes completely silent as a lost connection, instead of working forever", async () => {
+    fetchMock.mockImplementation((request: Request) => Promise.resolve(openEndedResponse(request.signal)));
+    const { result } = renderHook(() => useChat({ stallTimeoutMs: 40 }), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect((fetchMock.mock.calls[0]![0] as Request).signal.aborted).toBe(true);
+    expect(result.current.messages[1]!.runSummary).toMatchObject({
+      status: "error",
+      errorText: "Lost connection to the run.",
+    });
+  });
+
+  it("keeps a quiet run alive for as long as the server's keepalives keep arriving", async () => {
+    fetchMock.mockImplementation((request: Request) =>
+      Promise.resolve(heartbeatOnlyResponse(request.signal, 10)),
+    );
+    const { result, unmount } = renderHook(() => useChat({ stallTimeoutMs: 150 }), {
+      wrapper: TestAskProvider,
+    });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    // Several stall windows pass with no chunk at all — only comments.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)));
+
+    expect(result.current.status).toBe("streaming");
+    expect(result.current.messages).toHaveLength(1);
+    unmount();
   });
 
   // The actual "chat history not opening" bug (this task's report): a

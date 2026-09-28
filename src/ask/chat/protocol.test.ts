@@ -130,4 +130,25 @@ describe("readDataStream", () => {
     );
     expect(chunks.map((c) => c.type)).toEqual(["start", "data-phase"]);
   });
+
+  it("reports a read that carried only the server's keepalive, which yields nothing", async () => {
+    // The heartbeat is the only sign a quiet run is still alive — dropped
+    // as a chunk, but never unnoticed (useChat's stall watchdog).
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: {"type":"start","messageId":"msg-4"}\n\n`));
+        controller.enqueue(encoder.encode(": keepalive\n\n"));
+        controller.enqueue(encoder.encode(": keepalive\n\n"));
+        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        controller.close();
+      },
+    });
+    let reads = 0;
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of readDataStream(body, { onActivity: () => (reads += 1) })) chunks.push(chunk);
+
+    expect(chunks.map((c) => c.type)).toEqual(["start"]);
+    expect(reads).toBe(4);
+  });
 });

@@ -312,6 +312,34 @@
   outline-offset: 2px;
 }
 
+/* Stop sits exactly where Ask was, at the same size, so the swap does not
+   shift the pill. Quieter than Ask — an outline rather than the accent fill —
+   because it is an escape hatch, not the next step. */
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.stop:hover {
+  border-color: var(--fg-dim);
+  background: var(--surface-sunk);
+}
+
+.stop:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
 /*
  * Narrow column. `@container`, not `@media` — the widget declares itself a
  * query container in `element.css`, because a shadow root's media queries

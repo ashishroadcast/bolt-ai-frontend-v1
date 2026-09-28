@@ -8,11 +8,15 @@ import { TestAskProvider } from "../testing.tsx";
 
 /** A stream that never closes — stands in for a run genuinely in flight,
  * the same helper shape useChat.test.tsx uses for its own concurrency
- * tests. */
-function openEndedResponse(): Response {
+ * tests. Errors its reader once `signal` fires, as a real `fetch` body does,
+ * so Stop is exercised for real. */
+function openEndedResponse(signal: AbortSignal): Response {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(`data: {"type":"start","messageId":"pending"}\n\n`));
+      signal.addEventListener("abort", () =>
+        controller.error(new DOMException("The operation was aborted.", "AbortError")),
+      );
     },
   });
   return new Response(body, { status: 200 });
@@ -43,7 +47,7 @@ function routed(agents: AskAgent[]): ReturnType<typeof vi.fn> {
         }),
       );
     }
-    return Promise.resolve(openEndedResponse());
+    return Promise.resolve(openEndedResponse(request.signal));
   });
 }
 
@@ -136,16 +140,34 @@ describe("Composer", () => {
     expect((field as HTMLInputElement).value).toBe("");
   });
 
-  it("keeps the action's name through the flow: Ask becomes Asking while a run streams, and both the field and button disable", async () => {
+  it("puts Stop where Ask was while a run streams, and Stop ends the run", async () => {
     renderComposer("Sales Analyst");
 
     await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
     fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Asking" })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Asking" })).toBeDisabled();
-    expect(screen.getByLabelText("Ask a question")).toBeDisabled();
+    const stop = await screen.findByRole("button", { name: "Stop" });
+    expect(stop).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Ask" })).not.toBeInTheDocument();
+    const signal = runCalls(fetchMock)[0]!.signal;
+
+    fireEvent.click(stop, { detail: 1 });
+
+    expect(signal.aborted).toBe(true);
+    expect(await screen.findByRole("button", { name: "Ask" })).toBeInTheDocument();
+  });
+
+  it("ignores the second click of a double-click on Ask, which lands on Stop", async () => {
+    renderComposer("Sales Analyst");
+
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }), { detail: 1 });
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }), { detail: 2 });
+
+    expect(runCalls(fetchMock)[0]!.signal.aborted).toBe(false);
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
   });
 
   it("does nothing for an empty or whitespace-only question", () => {

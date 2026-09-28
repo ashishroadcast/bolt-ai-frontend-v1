@@ -19,9 +19,9 @@ import styles from "./Composer.module.css";
  * Disabled only while there is truly nothing to route to yet: no agents
  * loaded for this tenant, streaming, or offline.
  *
- * Copy rule (task brief): an action keeps its name through the flow —
- * "Ask" becomes "Asking" while a run is in flight, never a spinner with no
- * label of its own.
+ * While a run is in flight, Ask gives way to Stop — the one action that
+ * means anything then. It used to become a disabled "Asking", which named
+ * the state but left no way out of a run that had stalled or gone wrong.
  */
 /** The console's own wording. A host in another domain overrides it —
  * `AskConfig.copy` — because "sales, items, discounts" is nonsense on a
@@ -209,7 +209,7 @@ export function Composer() {
   // dismissed cannot be dismissed at all.
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const { status, sendMessage, selectedAgent, setSelectedAgent } = useChatContext();
+  const { status, sendMessage, stop, selectedAgent, setSelectedAgent } = useChatContext();
   const { copy, hostContextProvider } = useAskConfig();
   const { agents } = useAskAgents();
   const selectedWidget = useSelectedWidget(hostContextProvider, status);
@@ -536,9 +536,31 @@ export function Composer() {
           <Slash size={14} strokeWidth={2.5} aria-hidden="true" />
         </button>
       )}
-      <button type="submit" className={styles.send} disabled={!canSend} aria-label={isStreaming ? "Asking" : "Ask"}>
-        <ArrowRight size={14} strokeWidth={2.25} aria-hidden="true" />
-      </button>
+      {isStreaming ? (
+        // In Ask's place, not beside it: while a run is in flight there is
+        // nothing to send, and the one thing worth doing is ending it. Runs
+        // take minutes, and before this the only way out was a reload.
+        <button
+          type="button"
+          className={styles.stop}
+          aria-label="Stop"
+          title="Stop this answer"
+          onClick={(click) => {
+            // The second click of a double-click on Ask lands here, on the
+            // button that just replaced it. `detail` is the platform's click
+            // count, so that one is ignored rather than cancelling the run it
+            // started; a keyboard press reports 0 and always counts.
+            if (click.detail > 1) return;
+            stop();
+          }}
+        >
+          <Square size={10} fill="currentColor" aria-hidden="true" />
+        </button>
+      ) : (
+        <button type="submit" className={styles.send} disabled={!canSend} aria-label="Ask">
+          <ArrowRight size={14} strokeWidth={2.25} aria-hidden="true" />
+        </button>
+      )}
     </form>
     </div>
   );
