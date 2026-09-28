@@ -572,3 +572,51 @@ describe("prefixWithin", () => {
     }
   });
 });
+
+// --- bare URLs ----------------------------------------------------------------
+
+describe("bare URLs", () => {
+  const links = (raw: string) => spansOf(raw).filter((span) => span.href !== undefined);
+
+  it("links a bare URL, leaving the sentence's full stop outside it", () => {
+    const spans = spansOf("See https://example.com/geofence_list.");
+
+    expect(spans).toEqual([
+      { text: "See ", bold: false },
+      { text: "https://example.com/geofence_list", bold: false, href: "https://example.com/geofence_list" },
+      { text: ".", bold: false },
+    ]);
+  });
+
+  it("leaves a bracket that closes the sentence outside, but keeps one the URL opened", () => {
+    expect(links("(see https://example.com/a)")[0]!.href).toBe("https://example.com/a");
+    expect(links("https://en.wikipedia.org/wiki/Foo_(bar)")[0]!.href).toBe(
+      "https://en.wikipedia.org/wiki/Foo_(bar)",
+    );
+  });
+
+  it("never links a markdown link twice", () => {
+    expect(links("[Docs](https://example.com/docs) and https://example.com/more")).toEqual([
+      { text: "Docs", bold: false, href: "https://example.com/docs" },
+      { text: "https://example.com/more", bold: false, href: "https://example.com/more" },
+    ]);
+  });
+
+  it("drops the angle brackets of a <https://…> autolink", () => {
+    expect(spansOf("<https://example.com/x>")).toEqual([
+      { text: "https://example.com/x", bold: false, href: "https://example.com/x" },
+    ]);
+  });
+
+  it("links only http(s), and nothing inside code or a word", () => {
+    expect(links("javascript:alert(1) ftp://example.com `https://example.com` xhttps://example.com")).toEqual(
+      [],
+    );
+  });
+
+  it("keeps emphasis around a URL out of it", () => {
+    expect(links("**https://example.com/a**")).toEqual([
+      { text: "https://example.com/a", bold: true, href: "https://example.com/a" },
+    ]);
+  });
+});

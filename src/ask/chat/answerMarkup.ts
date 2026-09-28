@@ -33,8 +33,9 @@ export interface InlineSpan {
   italic?: true;
   /** `` `x` `` — shown exactly as written, never parsed any further. */
   code?: true;
-  /** Set only for a `[label](https://…)` link, and only ever to an http(s)
-   * URL: anything else (`javascript:`, `data:`) stays literal text. */
+  /** Set only for a `[label](https://…)` link or a bare `https://…` URL,
+   * and only ever to an http(s) URL: anything else (`javascript:`,
+   * `data:`) stays literal text. */
   href?: string;
 }
 
@@ -205,11 +206,58 @@ function atomize(text: string): { atoms: Atom[]; literal: Set<number> } {
         continue;
       }
     }
+    // A bare URL — an agent citing a page without markdown, or a tracking
+    // link pasted into a note. It rendered as a long unclickable run that
+    // overflowed the panel; now it is the same safe link a `[label](url)`
+    // is. Only after a non-word character, so "xhttps://" is not one, and
+    // never inside a markdown link or code span, which were consumed above.
+    if ((ch === "h" || ch === "<") && !WORD.test(text[i - 1] ?? "")) {
+      BARE_URL.lastIndex = i;
+      const bare = BARE_URL.exec(text);
+      if (bare !== null) {
+        // `<https://…>` is markdown's own autolink: the brackets go.
+        const bracketed = bare[1] !== undefined;
+        const url = bracketed ? bare[1]! : trimUrl(bare[2]!);
+        flush();
+        atoms.push({ kind: "link", text: url, href: url });
+        i += bracketed ? bare[0].length : url.length;
+        continue;
+      }
+    }
     buffer += ch;
     i += 1;
   }
   flush();
   return { atoms, literal };
+}
+
+const BARE_URL = /<(https?:\/\/[^\s<>]+)>|(https?:\/\/[^\s<>"'`]+)/y;
+
+/**
+ * A URL without the punctuation of the sentence it ends: "see
+ * https://x.com/a." links to `/a`, and "(https://x.com/a)" leaves the
+ * bracket outside — unless the URL opened one itself, as Wikipedia's
+ * `Foo_(bar)` does. Trailing `*` / `_` belong to emphasis around it.
+ */
+function trimUrl(url: string): string {
+  let end = url.length;
+  while (end > 0) {
+    const last = url[end - 1]!;
+    if (".,;:!?*_".includes(last)) {
+      end -= 1;
+      continue;
+    }
+    const open = last === ")" ? "(" : last === "]" ? "[" : null;
+    if (open !== null) {
+      const body = url.slice(0, end);
+      if (body.split(last).length > body.split(open).length) {
+        end -= 1;
+        continue;
+      }
+    }
+    break;
+  }
+  return url.slice(0, end);
 }
 
 function runLength(text: string, from: number, ch: string): number {

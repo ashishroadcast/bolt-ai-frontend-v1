@@ -91,7 +91,12 @@ export function DataComparison({ title, subLabel, rows }: DataComparisonProps): 
               <span className={styles.rank} aria-hidden="true">
                 {index + 1}
               </span>
-              <span className={styles.label}>{row.label}</span>
+              {/* The full name on hover: a long store name ellipsizes on a
+                  narrow sheet, and a ranking whose names cannot be read is
+                  a ranking of nothing. */}
+              <span className={styles.label} title={row.label}>
+                {row.label}
+              </span>
               <span className={styles.value}>{row.value}</span>
               {/* Quieter than the figure it qualifies: the amount is the
                   fact, its share is the scale of it. */}

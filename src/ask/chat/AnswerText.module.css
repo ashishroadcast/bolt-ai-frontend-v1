@@ -15,6 +15,12 @@
   font-size: var(--text-body);
   line-height: 1.65;
   color: var(--fg);
+  /* A bare URL, a 40-character hash or a run of IMEIs has nowhere to break
+     and pushed the answer past the edge of a 420px panel. `anywhere`
+     rather than `break-word` so the column's own min-content shrinks too —
+     it sits in a grid track that would otherwise grow to fit the token.
+     Tables and code opt back out below: they scroll instead. */
+  overflow-wrap: anywhere;
 }
 
 .paragraph {

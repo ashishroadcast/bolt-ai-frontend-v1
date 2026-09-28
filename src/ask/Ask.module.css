@@ -70,6 +70,16 @@
    * unchanged.
    */
   --ask-bleed: var(--ask-host-padding, 20px);
+  /*
+   * The `ask` query container, for the console as well as the widget.
+   *
+   * Every narrow-column rule in Ask is `@container ask (…)`, and until now
+   * only the widget's `:host` (element.css) declared a container by that
+   * name — so in the console none of them ever matched, at any width.
+   * Declared on the screen itself, both hosts measure the same box: the
+   * column Ask actually has, never the viewport around it.
+   */
+  container: ask / inline-size;
   display: flex;
   flex-direction: column;
   overflow: hidden;
