@@ -281,7 +281,9 @@
   outline-offset: 1px;
 }
 
-.voiceMessage {
+/* A voice failure, or a `/word` that is not a command — both about what was
+   just attempted in the box, so both float just above it. */
+.inlineMessage {
   position: absolute;
   right: 42px;
   bottom: calc(100% + 6px);

@@ -516,6 +516,70 @@ describe("Composer slash commands", () => {
     expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ agent: "Fleet-Report" });
   });
 
+  it("arms a command typed out in full, and sends only the question after it", async () => {
+    await typeSlash();
+    type("/form vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({
+      message: "vehicle checklist",
+      agent: "Form-Builder",
+    });
+  });
+
+  it("arms a command typed alone, in any case, without sending anything", async () => {
+    await typeSlash();
+    type("/FORM");
+    fireEvent.submit(screen.getByLabelText("Ask a question").closest("form")!);
+
+    expect(runCalls(fetchMock)).toHaveLength(0);
+    expect((screen.getByLabelText("Ask a question") as HTMLInputElement).value).toBe("");
+
+    type("a vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ agent: "Form-Builder" });
+  });
+
+  it("does not send an unknown command, and names the real ones", async () => {
+    await typeSlash();
+    type("/fomr vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("No /fomr command. Try /form or /report.");
+    // Left in the box to be fixed, not cleared.
+    expect((screen.getByLabelText("Ask a question") as HTMLInputElement).value).toBe(
+      "/fomr vehicle checklist",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+
+    type("/form vehicle checklist");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("still sends a question that merely starts with a path", async () => {
+    await typeSlash();
+    type("/api/v1 returns 500 since Monday");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({
+      message: "/api/v1 returns 500 since Monday",
+    });
+  });
+
+  it("treats a leading slash as text for a tenant with no commands", async () => {
+    mount([SALES]);
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    type("/foo bar");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ message: "/foo bar" });
+  });
+
   it("offers nothing at all to a tenant whose agents have no commands", async () => {
     mount([SALES]);
     await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());

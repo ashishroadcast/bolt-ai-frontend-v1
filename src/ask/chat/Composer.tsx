@@ -149,6 +149,39 @@ function matching(commands: SlashCommand[], query: string): SlashCommand[] {
   return commands.filter((entry) => entry.command.startsWith(query));
 }
 
+type TypedCommand =
+  | { kind: "known"; entry: SlashCommand; rest: string }
+  | { kind: "unknown"; word: string };
+
+/**
+ * A command typed out in full and sent, rather than picked from the menu.
+ *
+ * The menu closes at the first space, so "/form vehicle checklist" typed in
+ * one go never armed anything — it went out as a routed question, slash and
+ * all — and a mistyped "/fomr" went out silently the same way.
+ *
+ * Only a command-shaped first word counts (letters, digits, `-`, `_`), so a
+ * question that starts with a path — "/api/v1 returns 500" — is still a
+ * question. And only for a tenant that has commands at all: where the menu
+ * never opens, a leading slash is just text.
+ */
+function typedCommand(text: string, commands: SlashCommand[]): TypedCommand | null {
+  if (commands.length === 0) return null;
+  const match = /^\/([\w-]+)(?:\s+([\s\S]*))?$/.exec(text);
+  if (match === null) return null;
+  const word = match[1]!;
+  const entry = commands.find((candidate) => candidate.command.toLowerCase() === word.toLowerCase());
+  if (entry === undefined) return { kind: "unknown", word };
+  return { kind: "known", entry, rest: (match[2] ?? "").trim() };
+}
+
+/** "No /foo command. Try /dashboard or /form." — the real ones, in menu order. */
+function unknownCommandHint(word: string, commands: SlashCommand[]): string {
+  const names = commands.map((entry) => `/${entry.command}`);
+  const choices = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
+  return `No /${word} command. Try ${choices}.`;
+}
+
 interface SelectedWidget {
   id: string;
   title: string;
@@ -232,6 +265,8 @@ export function Composer() {
   const [isListening, setIsListening] = useState(false);
   const [isStartingVoice, setIsStartingVoice] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Set when an unknown `/word` is sent; cleared by the next keystroke.
+  const [commandHint, setCommandHint] = useState<string | null>(null);
   const isStreaming = status === "streaming";
   // Not `selectedAgent !== null` — a question with no agent armed is now
   // the normal case, routed automatically once it reaches the server.
@@ -354,6 +389,7 @@ export function Composer() {
   function handleChange(next: string) {
     setValue(next);
     setVoiceError(null);
+    setCommandHint(null);
     setHighlight(0);
     if (dismissed) setDismissed(false);
   }
@@ -389,6 +425,30 @@ export function Composer() {
     event.preventDefault();
     const trimmed = value.trim();
     if (trimmed === "" || !canSend) return;
+
+    let question = trimmed;
+    let agent = selectedAgent ?? undefined;
+    const typed = typedCommand(trimmed, commands);
+    if (typed?.kind === "unknown") {
+      // Not sent: the reader meant a command, and the question as routed
+      // would reach an agent with a stray "/fomr" at its front.
+      setCommandHint(unknownCommandHint(typed.word, commands));
+      return;
+    }
+    if (typed?.kind === "known") {
+      // Armed exactly as choosing it from the menu would, so follow-ups keep
+      // reaching it (see `choose`); whatever followed the command is the
+      // question.
+      setSelectedAgent(typed.entry.agent.name);
+      if (typed.rest === "") {
+        setValue("");
+        inputRef.current?.focus();
+        return;
+      }
+      question = typed.rest;
+      agent = typed.entry.agent.name;
+    }
+
     recognitionRef.current?.abort();
     if (voiceStopTimerRef.current !== null) clearTimeout(voiceStopTimerRef.current);
     voiceStopTimerRef.current = null;
@@ -398,8 +458,8 @@ export function Composer() {
     // run is sent without it. For this one message only: the builder still
     // has it selected, and the next question may well be about it again.
     const omitSelectedWidget = selectedWidget !== null && chip === null;
-    sendMessage(trimmed, {
-      agent: selectedAgent ?? undefined,
+    sendMessage(question, {
+      agent,
       ...(omitSelectedWidget ? { omitSelectedWidget: true } : {}),
     });
     setDismissedWidgetId(null);
@@ -497,9 +557,9 @@ export function Composer() {
           disabled={!canSend}
         />
       </div>
-      {voiceError !== null && (
-        <span className={styles.voiceMessage} role="status">
-          {voiceError}
+      {(voiceError ?? commandHint) !== null && (
+        <span className={styles.inlineMessage} role="status">
+          {voiceError ?? commandHint}
         </span>
       )}
       <button
