@@ -197,7 +197,65 @@ const CAPABILITIES: Capability[] = [
     help: "Looks things up on the open web.",
     effect: "Never for tenant data · needs a Tavily key, else search reports unavailable",
   },
+  {
+    // Not in CAPABILITY_DEFAULTS: the server reads it in `app/agent/jev.py`'s
+    // `enabled_for`, with the same rule — only a real `false` turns it off.
+    key: "jev",
+    label: "Jev decisions",
+    fallback: true,
+    help: "Typed checks in ~0.4s: topic guard, plain-lookup routing, refusal check.",
+    effect: "Each check falls back to a model when Jev is unconfigured or unreachable",
+    offEffect: "Off: every check runs on a model, and a single-model answer goes unchecked",
+  },
 ];
+
+type RunMode = "phased" | "single";
+
+/**
+ * How a run walks its phases — `PIPELINE_MODES` in `app/agent/tools.py`.
+ * The help text names the cost, because that cost is why the switch exists:
+ * the phased walk waits on a model call per phase.
+ */
+const RUN_MODES: Array<{ value: RunMode; label: string; help: string }> = [
+  {
+    value: "phased",
+    label: "Phased",
+    help: "Research, plan, execute and validate, each its own model call. Most thorough.",
+  },
+  {
+    value: "single",
+    label: "Single model",
+    help: "One model answers. Jev checks scope and whether it answered. Fastest.",
+  },
+];
+
+/** Anything but "single" runs phased, matching the server's `pipeline_mode`. */
+function runMode(config: Record<string, unknown>): RunMode {
+  return config.pipeline_mode === "single" ? "single" : "phased";
+}
+
+/**
+ * What a phase does in single-model mode, for every phase but execute —
+ * execute keeps its controls, since its model is the one that answers.
+ * Stated on the row rather than hiding the row: the bindings are kept, and
+ * switching back to phased puts them straight back into use.
+ */
+function singleModelRole(phase: string, jevOn: boolean): { value: string; because: string } | null {
+  switch (phase) {
+    case "research":
+      return { value: "Retrieval only", because: "searches on the question as asked · no model call" };
+    case "plan":
+      return { value: "Skipped", because: "execute plans its own tool calls" };
+    case "validate":
+      return jevOn
+        ? { value: "Jev only", because: "flags a refusal · no LLM judge" }
+        : { value: "Unchecked", because: "Jev is off, and there is no LLM judge" };
+    case "guardrail":
+      return { value: "Execute model", because: "topic guard asks Jev first, then the execute model" };
+    default:
+      return null;
+  }
+}
 
 /**
  * Only a real boolean flips a capability; anything else is the documented
@@ -364,6 +422,8 @@ export function ConfigTab() {
     (a, b) => PHASES.indexOf(a as (typeof PHASES)[number]) - PHASES.indexOf(b as (typeof PHASES)[number]),
   );
   const boundCount = PHASES.filter((phase) => detail.llm_bindings[phase] !== undefined).length;
+  const mode = runMode(detail.pipeline_config);
+  const jevOn = hasCapability(detail.pipeline_config, CAPABILITIES.find((c) => c.key === "jev")!);
 
   function statusFor(field: string) {
     if (savingField === field) return <span className={styles.saving}>Saving…</span>;
@@ -537,12 +597,40 @@ export function ConfigTab() {
         <header className={styles.sheetHead}>
           <h3>Phases</h3>
           <span className={styles.sub}>
-            {boundCount} of {PHASES.length} models pinned
+            {mode === "single" ? "single model" : `${boundCount} of ${PHASES.length} models pinned`}
           </span>
         </header>
+        {/* A choice between two, both always visible: which one is on, and
+            what the other would cost, are the whole decision. */}
+        <div className={styles.modes} role="radiogroup" aria-label="Run mode">
+          {RUN_MODES.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={mode === option.value}
+              className={styles.mode}
+              disabled={savingField === "pipeline_mode"}
+              onClick={() => {
+                if (mode === option.value) return;
+                // pipeline_config replaces wholesale, so every capability
+                // and reasoning choice rides along unchanged.
+                void save("pipeline_mode", {
+                  pipeline_config: { ...detail.pipeline_config, pipeline_mode: option.value },
+                });
+              }}
+            >
+              <span className={styles.modeLabel}>{option.label}</span>
+              <span className={styles.modeHelp}>{option.help}</span>
+            </button>
+          ))}
+        </div>
         {/* "in order" is no longer worth saying — the rail shows it. */}
         <p className={styles.sheetNote}>
-          Reasoning is per phase, and it is where a run spends its time.
+          {mode === "single"
+            ? "Every model call in a run goes to the execute model below."
+            : "Reasoning is per phase, and it is where a run spends its time."}{" "}
+          {statusFor("pipeline_mode")}
         </p>
         {/* A rail, not a table: the numbers are the run's actual order — the
             single most useful thing to know about these five rows, and what a
@@ -556,8 +644,9 @@ export function ConfigTab() {
               datasources.find((entry) => entry.id === detail.datasource_id),
             );
             const field = `binding-${phase}`;
+            const singleRole = mode === "single" ? singleModelRole(phase, jevOn) : null;
             return (
-              <li key={phase} className={styles.step}>
+              <li key={phase} className={styles.step} data-idle={singleRole !== null}>
                 {/* Empty on purpose — the digit is drawn by a CSS counter (see
                     the module's own comment). The <ol> carries the ordinal for
                     assistive tech, so a text node here would be redundant to a
@@ -571,95 +660,106 @@ export function ConfigTab() {
                   )}
                 </div>
 
-                <div className={styles.stepControls}>
-                  <select
-                    className={styles.select}
-                    aria-label={`Model for the ${phase} phase`}
-                    value={bound === undefined ? "" : String(bound)}
-                    disabled={savingField === field}
-                    onChange={(event) => {
-                      const raw = event.target.value;
-                      // llm_bindings replaces wholesale, so every other
-                      // phase is sent back unchanged; a merge-shaped
-                      // patch here would silently unbind the rest.
-                      const next = { ...detail.llm_bindings };
-                      if (raw === "") delete next[phase];
-                      else next[phase] = Number(raw);
-                      void save(field, { llm_bindings: next });
-                    }}
-                  >
-                    <option value="">Tenant default</option>
-                    {groupLlmConfigsByProvider(llmConfigs).map(([provider, configs]) => (
-                      <optgroup key={provider} label={provider}>
-                        {configs.map((config) => (
-                          <option key={config.id} value={config.id}>
-                            {config.name} · {config.model}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-
-                  {bound !== undefined && llmConfigs.every((config) => config.id !== bound) && (
-                    <span className={styles.dangling}>{llmConfigLabel(bound, llmConfigs)}</span>
-                  )}
-
-                  {PHASE_REASONING[phase] === undefined ? (
-                    // The guardrail phase runs fixed checks, not a model
-                    // reasoning about anything.
-                    <span className={styles.notApplicable}>no reasoning step</span>
-                  ) : lock !== null ? (
-                    // Not a disabled dropdown: a disabled control still
-                    // reads as "your setting", and this is not the
-                    // operator's setting — it is a consequence of one
-                    // they made elsewhere. Showing the value with the
-                    // cause beside it says which control to go and change.
+                {singleRole !== null ? (
+                  // The phase's own model and reasoning are not in play, so
+                  // no control for them — only what the phase does instead.
+                  <div className={styles.stepControls}>
                     <div className={styles.locked}>
-                      <span className={styles.lockedValue}>
-                        {REASONING_MODULES[lock.module]?.short ?? lock.module}
-                      </span>
-                      <span className={styles.lockedWhy}>Required by {lock.because}</span>
+                      <span className={styles.lockedValue}>{singleRole.value}</span>
+                      <span className={styles.lockedWhy}>{singleRole.because}</span>
                     </div>
-                  ) : (
-                    <div className={styles.reasoning}>
-                      <span className={styles.bindLabel}>Reasoning</span>
-                      <select
-                        className={styles.select}
-                        aria-label={`Reasoning for the ${phase} phase`}
-                        value={phaseReasoning(detail.pipeline_config, phase)}
-                        disabled={savingField === `reasoning-${phase}`}
-                        onChange={(event) => {
-                          // pipeline_config replaces wholesale, so the
-                          // other capabilities and the other phases are
-                          // all sent back with it.
-                          const current = detail.pipeline_config.reasoning_modules;
-                          const modules =
-                            typeof current === "object" && current !== null
-                              ? { ...(current as Record<string, unknown>) }
-                              : {};
-                          modules[phase] = event.target.value;
-                          void save(`reasoning-${phase}`, {
-                            pipeline_config: {
-                              ...detail.pipeline_config,
-                              reasoning_modules: modules,
-                            },
-                          });
-                        }}
-                      >
-                        {PHASE_REASONING[phase]!.choices.map((value) => (
-                          <option key={value} value={value}>
-                            {REASONING_MODULES[value]?.short ?? value}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  </div>
+                ) : (
+                  <div className={styles.stepControls}>
+                    <select
+                      className={styles.select}
+                      aria-label={`Model for the ${phase} phase`}
+                      value={bound === undefined ? "" : String(bound)}
+                      disabled={savingField === field}
+                      onChange={(event) => {
+                        const raw = event.target.value;
+                        // llm_bindings replaces wholesale, so every other
+                        // phase is sent back unchanged; a merge-shaped
+                        // patch here would silently unbind the rest.
+                        const next = { ...detail.llm_bindings };
+                        if (raw === "") delete next[phase];
+                        else next[phase] = Number(raw);
+                        void save(field, { llm_bindings: next });
+                      }}
+                    >
+                      <option value="">Tenant default</option>
+                      {groupLlmConfigsByProvider(llmConfigs).map(([provider, configs]) => (
+                        <optgroup key={provider} label={provider}>
+                          {configs.map((config) => (
+                            <option key={config.id} value={config.id}>
+                              {config.name} · {config.model}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
 
-                  <span className={styles.statusCell}>
-                    {statusFor(field)}
-                    {statusFor(`reasoning-${phase}`)}
-                  </span>
-                </div>
+                    {bound !== undefined && llmConfigs.every((config) => config.id !== bound) && (
+                      <span className={styles.dangling}>{llmConfigLabel(bound, llmConfigs)}</span>
+                    )}
+
+                    {PHASE_REASONING[phase] === undefined ? (
+                      // The guardrail phase runs fixed checks, not a model
+                      // reasoning about anything.
+                      <span className={styles.notApplicable}>no reasoning step</span>
+                    ) : lock !== null ? (
+                      // Not a disabled dropdown: a disabled control still
+                      // reads as "your setting", and this is not the
+                      // operator's setting — it is a consequence of one
+                      // they made elsewhere. Showing the value with the
+                      // cause beside it says which control to go and change.
+                      <div className={styles.locked}>
+                        <span className={styles.lockedValue}>
+                          {REASONING_MODULES[lock.module]?.short ?? lock.module}
+                        </span>
+                        <span className={styles.lockedWhy}>Required by {lock.because}</span>
+                      </div>
+                    ) : (
+                      <div className={styles.reasoning}>
+                        <span className={styles.bindLabel}>Reasoning</span>
+                        <select
+                          className={styles.select}
+                          aria-label={`Reasoning for the ${phase} phase`}
+                          value={phaseReasoning(detail.pipeline_config, phase)}
+                          disabled={savingField === `reasoning-${phase}`}
+                          onChange={(event) => {
+                            // pipeline_config replaces wholesale, so the
+                            // other capabilities and the other phases are
+                            // all sent back with it.
+                            const current = detail.pipeline_config.reasoning_modules;
+                            const modules =
+                              typeof current === "object" && current !== null
+                                ? { ...(current as Record<string, unknown>) }
+                                : {};
+                            modules[phase] = event.target.value;
+                            void save(`reasoning-${phase}`, {
+                              pipeline_config: {
+                                ...detail.pipeline_config,
+                                reasoning_modules: modules,
+                              },
+                            });
+                          }}
+                        >
+                          {PHASE_REASONING[phase]!.choices.map((value) => (
+                            <option key={value} value={value}>
+                              {REASONING_MODULES[value]?.short ?? value}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <span className={styles.statusCell}>
+                      {statusFor(field)}
+                      {statusFor(`reasoning-${phase}`)}
+                    </span>
+                  </div>
+                )}
               </li>
             );
           })}

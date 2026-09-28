@@ -101,6 +101,67 @@
   font-size: 13px;
 }
 
+/* ── Run mode ───────────────────────────────────────────────────────────── */
+
+/* Two cards rather than a select: both options stay readable, so the cost of
+   the one not chosen is on screen at the moment of choosing. */
+.modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: stretch;
+  gap: 10px;
+  padding: 14px 18px 0;
+}
+
+.mode {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    background-color 120ms ease;
+}
+
+.mode:hover:not(:disabled) {
+  border-color: var(--fg-faint);
+}
+
+.mode[aria-checked="true"] {
+  border-color: var(--signal);
+  background: var(--signal-soft);
+  cursor: default;
+}
+
+.mode:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.modeLabel {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.modeHelp {
+  color: var(--fg-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* A phase single-model mode does not call a model for: still listed, so the
+   order stays legible, but receded behind the one that answers. */
+.step[data-idle="true"] .stepMarker,
+.step[data-idle="true"] .stepMain {
+  opacity: 0.55;
+}
+
 /* ── Fields ─────────────────────────────────────────────────────────────── */
 
 .controlGrid {

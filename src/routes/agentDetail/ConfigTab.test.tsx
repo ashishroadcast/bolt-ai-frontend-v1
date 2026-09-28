@@ -406,6 +406,90 @@ describe("ConfigTab", () => {
       screen.queryByText(/Plan and execute run as ReAct/),
     ).not.toBeInTheDocument();
   });
+
+  // --- run mode --------------------------------------------------------------
+  //
+  // The phased walk waits on a model call per phase; single-model mode makes
+  // one. `pipeline_config.pipeline_mode`, read the way the server reads it.
+
+  it("runs phased when nothing is configured", async () => {
+    await renderConfig();
+
+    expect(screen.getByRole("radio", { name: /^Phased/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: /^Single model/ })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  });
+
+  it("switching to single model sends the whole config with the mode", async () => {
+    const { writes } = await renderConfig({ agent: { pipeline_config: { vision: true } } });
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Single model/ }));
+
+    await waitFor(() => expect(writes.some((w) => w.method === "PATCH")).toBe(true));
+    const patch = writes.find((w) => w.method === "PATCH")!;
+    expect(patch.body?.pipeline_config).toEqual({ vision: true, pipeline_mode: "single" });
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: /^Single model/ })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+  });
+
+  it("clicking the mode already on sends nothing", async () => {
+    const { writes } = await renderConfig();
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Phased/ }));
+
+    expect(writes).toEqual([]);
+  });
+
+  it("reads an unknown mode as phased, as the server does", async () => {
+    await renderConfig({ agent: { pipeline_config: { pipeline_mode: "singel" } } });
+
+    expect(screen.getByRole("radio", { name: /^Phased/ })).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("in single-model mode only execute keeps its model and reasoning", async () => {
+    await renderConfig({ agent: { pipeline_config: { pipeline_mode: "single" } } });
+
+    expect(screen.getByLabelText("Model for the execute phase")).toBeInTheDocument();
+    for (const phase of ["research", "plan", "validate", "guardrail"]) {
+      expect(screen.queryByLabelText(`Model for the ${phase} phase`)).not.toBeInTheDocument();
+    }
+    expect(screen.queryByLabelText("Reasoning for the plan phase")).not.toBeInTheDocument();
+    expect(screen.getByText("Skipped")).toBeInTheDocument();
+    expect(screen.getByText("Jev only")).toBeInTheDocument();
+  });
+
+  it("says a single-model answer goes unchecked when Jev is off", async () => {
+    await renderConfig({ agent: { pipeline_config: { pipeline_mode: "single", jev: false } } });
+
+    expect(screen.getByText("Unchecked")).toBeInTheDocument();
+    expect(screen.queryByText("Jev only")).not.toBeInTheDocument();
+  });
+
+  it("keeps every binding when switching mode, so phased gets them back", async () => {
+    const { writes } = await renderConfig();
+
+    fireEvent.click(screen.getByRole("radio", { name: /^Single model/ }));
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].body).not.toHaveProperty("llm_bindings");
+  });
+
+  it("shows Jev on by default and turns it off with a real false", async () => {
+    const { writes } = await renderConfig();
+
+    const jev = screen.getByRole("switch", { name: "Jev decisions" });
+    expect(jev).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(jev);
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].body?.pipeline_config).toEqual({ jev: false });
+  });
 });
 
 describe("the second datasource", () => {
