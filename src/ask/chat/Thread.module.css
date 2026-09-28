@@ -260,3 +260,10 @@
     max-width: 88%;
   }
 }
+
+/* The Rerun a `.failure` tile carries (Thread.tsx's TurnNotice), pushed to
+   the tile's far edge so the sentence keeps the width it needs. */
+.noticeAction {
+  margin-left: auto;
+  flex: none;
+}

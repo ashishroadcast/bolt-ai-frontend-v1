@@ -1,8 +1,9 @@
 import { Copy } from "lucide-react";
-import { useState, type ReactElement, type ReactNode } from "react";
+import { useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { AgentIcon } from "../AgentIcon.tsx";
 import { useAgents } from "./useAskAgents.ts";
 import { renderUIPart, type UIPart } from "../parts/catalog.tsx";
+import { PartBoundary } from "../parts/PartBoundary.tsx";
 import { AnswerText } from "./AnswerText.tsx";
 import { motionIsWelcome, useTypewriter } from "./typewriter.ts";
 import { useStickToBottom } from "./useStickToBottom.ts";
@@ -10,17 +11,17 @@ import { useAskClient, useAskInspector } from "../config.tsx";
 import type { GatewayClient } from "../http/gatewayClient.ts";
 import { CopyButton } from "./CopyButton.tsx";
 import { useChatContext } from "./ChatContext.tsx";
-import { arrangeParts } from "./partLayout.ts";
+import { arrangeParts, hasComposedAnswer } from "./partLayout.ts";
 import type { PhaseSegment } from "./phaseTimeline.ts";
 import { answerQuestion, forgetCachedPlan } from "./feedbackApi.ts";
 import { ReasoningCard } from "./ReasoningCard.tsx";
 import { Thinking } from "./Thinking.tsx";
-import { useAskDisclosure } from "./useDisclosure.ts";
+import { AskDisclosureProvider, useAskDisclosure } from "./useDisclosure.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { RunDebug } from "./RunDebug.tsx";
-import { RerunButton, RunMeta } from "./RunMeta.tsx";
-import { EMPTY_TRACE, formatDuration, type RunTrace } from "./runTrace.ts";
+import { RerunButton, RunMeta, type RunStatus } from "./RunMeta.tsx";
+import { EMPTY_TRACE, type RunTrace } from "./runTrace.ts";
 import styles from "./Thread.module.css";
 import type { ChatMessage } from "./types.ts";
 
@@ -61,9 +62,18 @@ function formatTime(ms: number): string {
  * once styled and once as a markdown restatement under the evidence. The
  * panel is the rendering; the prose stays in `message.content`, where Copy
  * and the judge read it.
+ *
+ * Only a summary with a headline counts. `wireParts.adaptSummary` already
+ * drops one without, and this checks again because the cost of getting it
+ * wrong is the whole answer: a summary that hides the prose while showing
+ * nothing leaves the reader with a blank turn.
  */
 function rendersItsOwnProse(parts: UIPart[]): boolean {
-  return parts.some((part) => part.intent === "data-summary");
+  return parts.some((part) => {
+    if (part.intent !== "data-summary") return false;
+    const { headline } = (part.data ?? {}) as { headline?: unknown };
+    return typeof headline === "string" && headline.trim() !== "";
+  });
 }
 
 /**
@@ -74,18 +84,26 @@ function rendersItsOwnProse(parts: UIPart[]): boolean {
  * for it. Only those tables are working. Every composed panel (summary,
  * stats, chart, comparison), every draft and every question IS the answer.
  *
+ * **A table is working only when something composed an answer from it.**
+ * The same rule `partLayout.arrangeParts` folds tables away by, and for
+ * the same reason: "top 10 stores" has no composed part, and its table is
+ * the answer. Dropping every table here left that turn reading "Here are
+ * the top 10 stores:" with nothing under it — under every tenant's default,
+ * since the setting is off unless someone turns it on.
+ *
  * This used to hide everything but drafts, one exempted intent at a time,
  * and the summary was never exempted. A run that writes its reading with
  * `show_summary` hides its prose in favour of that panel
- * (`rendersItsOwnProse`), so with the setting off — every tenant's default
- * — the turn rendered nothing at all: a question, a footer, and no answer.
+ * (`rendersItsOwnProse`), so with the setting off the turn rendered nothing
+ * at all: a question, a footer, and no answer.
  *
  * One `Sheets` over the visible set, not an answer group and a separate
  * evidence group: `arrangeParts` can only fold a long table under the
  * composed answer when it sees both.
  */
 function visibleParts(parts: UIPart[], showQueryResults: boolean): UIPart[] {
-  return showQueryResults ? parts : parts.filter((part) => part.intent !== "data-table");
+  if (showQueryResults || !hasComposedAnswer(parts)) return parts;
+  return parts.filter((part) => part.intent !== "data-table");
 }
 
 function withAnswering(
@@ -107,6 +125,10 @@ function withAnswering(
   );
 }
 
+/**
+ * Each part inside its own `PartBoundary`, so one that throws costs that
+ * sheet and not the screen — see `PartBoundary` for the parts that did.
+ */
 function PartList({ parts }: { parts: UIPart[] }): ReactElement {
   return (
     <>
@@ -115,7 +137,9 @@ function PartList({ parts }: { parts: UIPart[] }): ReactElement {
         // (catalog.tsx's UIPart.data is intent-specific, not a keyed
         // entity list) — the same convention DataTable's own row map uses.
         // eslint-disable-next-line react/no-array-index-key
-        <div key={index}>{renderUIPart(part)}</div>
+        <div key={index}>
+          <PartBoundary part={part}>{renderUIPart(part)}</PartBoundary>
+        </div>
       ))}
     </>
   );
@@ -301,12 +325,113 @@ function usedCachedPlan(message: ChatMessage): boolean {
   return phases.some((phase) => phase.phase === "plan" && phase.state === "cached");
 }
 
-/** The actual client-measured elapsed time for this live run. Historical
- * usage.duration_ms is provider model time, so it must not be presented as
- * end-to-end time in the "Worked For" header. */
+/**
+ * The client-measured elapsed time for a run this session watched, which
+ * RunMeta's strip reports as "Worked for 12.3s". Historical
+ * `usage.duration_ms` is provider model time, so it must not be presented
+ * as end-to-end time. None for a failed run: how long it took to fail is
+ * not something a reader acts on.
+ *
+ * Reported once, in the strip. Figma's "Worked For" header above the prose
+ * said the same figure a second time, a few lines up, and in a different
+ * format from the strip's.
+ */
 function workedForMs(message: ChatMessage): number | null {
   if (message.runSummary?.status === "error") return null;
   return message.runSummary?.totalMs ?? null;
+}
+
+/**
+ * How this turn ended, as far as a reader is concerned.
+ *
+ * A run this session watched says so on `runSummary`; a reopened one says
+ * so on `runStatus`, when the backend recorded it. When nothing recorded a
+ * failure, what is on screen decides: a turn with no text and no part is
+ * not an answer. A run this session watched finished and simply produced
+ * none. A reopened row with nothing in it is the placeholder agent-service
+ * saves before a run starts, which a run that died never filled in — and
+ * every such row older than `run_status` reopens exactly like that.
+ */
+function turnStatus(message: ChatMessage, visible: UIPart[]): RunStatus {
+  if (message.runSummary?.status === "error" || message.runStatus === "error") return "error";
+  if (message.runStatus === "cancelled") return "cancelled";
+  if (visible.length > 0 || message.content.trim() !== "") return "done";
+  return message.runSummary !== undefined ? "empty" : "unfinished";
+}
+
+/**
+ * A failure's own text as a sentence of its own. It used to have "Try
+ * asking again." appended straight after it, which read "Failed to fetch
+ * Try asking again." — the Rerun beside it now says that, as a control.
+ */
+function asSentence(text: string | null | undefined): string | null {
+  const trimmed = text?.trim() ?? "";
+  if (trimmed === "") return null;
+  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+interface TurnNoticeCopy {
+  title: string;
+  detail: string | null;
+}
+
+/** What a turn that did not end in an answer says instead, or `null` for
+ * one that did. */
+function noticeFor(status: RunStatus, message: ChatMessage): TurnNoticeCopy | null {
+  const partial = message.content.trim() !== "";
+  switch (status) {
+    case "error":
+      return {
+        title: "Something went wrong",
+        detail:
+          asSentence(message.runSummary?.errorText ?? message.errorText) ??
+          "The run stopped before it finished.",
+      };
+    case "cancelled":
+      return {
+        title: "This answer didn't finish.",
+        detail: partial ? "What it wrote before it stopped is below." : null,
+      };
+    case "unfinished":
+      return { title: "This answer didn't finish.", detail: null };
+    case "empty":
+      return { title: "No answer was produced.", detail: null };
+    case "done":
+      return null;
+  }
+}
+
+interface TurnNoticeProps extends TurnNoticeCopy {
+  /** Announced the moment it appears — only for a run that failed while
+   * the reader watched, never for one reopened from history. */
+  alert: boolean;
+  onRerun?: () => void;
+  rerunDisabled: boolean;
+}
+
+/**
+ * A turn that did not end in an answer, styled after Figma's "Can't find
+ * anything" tile (see `.failure`), with the one thing to do about it
+ * beside it. The strip under the turn then carries no Rerun of its own —
+ * two in one turn would ask the reader which to press.
+ */
+function TurnNotice({ title, detail, alert, onRerun, rerunDisabled }: TurnNoticeProps): ReactElement {
+  return (
+    <div role={alert ? "alert" : undefined} className={styles.failure}>
+      <span className={styles.failureIcon} aria-hidden="true">
+        <AgentIcon size={16} />
+      </span>
+      <span className={styles.failureBody}>
+        <span className={styles.failureTitle}>{title}</span>
+        {detail !== null && <span className={styles.failureDetail}>{detail}</span>}
+      </span>
+      {onRerun && (
+        <span className={styles.noticeAction}>
+          <RerunButton onRerun={onRerun} disabled={rerunDisabled} />
+        </span>
+      )}
+    </div>
+  );
 }
 
 function AnsweredTurn({
@@ -326,20 +451,27 @@ function AnsweredTurn({
   const visible = visibleParts(message.parts, disclosure.showQueryResults);
   const agentName = summary?.agentName ?? hydratedAgentName;
   const trace: RunTrace = summary?.trace ?? EMPTY_TRACE;
-  const hasDebug = trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null;
+  // The drawer holds the SQL, every tool's input and the raw rows run_sql
+  // returned — the most detailed machinery there is — so it follows the
+  // same setting as the reasoning card, not merely whether a trace exists.
+  const canDebug =
+    disclosure.showReasoning &&
+    (trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null);
+  const status = turnStatus(message, visible);
+  const notice = noticeFor(status, message);
 
   return (
     <AgentTurn>
-      {summary !== undefined && summary.status === "error" && (
-        <div role="alert" className={styles.failure}>
-          <span className={styles.failureIcon} aria-hidden="true">
-            <AgentIcon size={16} />
-          </span>
-          <span className={styles.failureBody}>
-            <span className={styles.failureTitle}>Something went wrong</span>
-            <span className={styles.failureDetail}>{summary.errorText} Try asking again.</span>
-          </span>
-        </div>
+      {/* Above the reasoning card, because "this did not finish" outranks
+          "here is how far it got". An empty turn used to render nothing
+          here at all: a footer, thumbs, and a Copy that copied nothing. */}
+      {notice !== null && (
+        <TurnNotice
+          {...notice}
+          alert={summary !== undefined && status === "error"}
+          onRerun={onRerun}
+          rerunDisabled={rerunDisabled}
+        />
       )}
 
       {disclosure.showReasoning && trace.steps.length > 0 && summary !== undefined && (
@@ -363,15 +495,6 @@ function AnsweredTurn({
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
       <Sheets parts={visible} />
-      {/* Figma's "Worked For 12m" — the same duration RunMeta's facts strip
-          reports below, surfaced again here because Figma places it as the
-          answer's own header rather than only in the measurements strip. */}
-      {workedForMs(message) !== null && (
-        <p className={styles.answerHeader}>
-          <span className={styles.answerHeaderLead}>Worked For </span>
-          <span className={styles.answerHeaderValue}>{formatDuration(workedForMs(message)!)}</span>
-        </p>
-      )}
       {/* Hidden only when the summary that replaces it is itself on screen. */}
       {!rendersItsOwnProse(visible) && (
         <RevealedAnswer
@@ -388,15 +511,17 @@ function AnsweredTurn({
         toolCount={summary !== undefined ? trace.tools.length : null}
         score={trace.score}
         usage={message.usage ?? null}
-        observedMs={summary?.totalMs ?? null}
-        onRerun={onRerun}
+        observedMs={workedForMs(message)}
+        runStatus={status}
+        onRerun={notice === null ? onRerun : undefined}
         onRetryFresh={onRetryFresh}
         rerunDisabled={rerunDisabled}
         isDebugOpen={isDebugOpen}
-        onToggleDebug={hasDebug ? () => setIsDebugOpen((open) => !open) : undefined}
+        onToggleDebug={canDebug ? () => setIsDebugOpen((open) => !open) : undefined}
+        showRunDetails={disclosure.showReasoning}
       />
 
-      {isDebugOpen && hasDebug && <RunDebug trace={trace} />}
+      {isDebugOpen && canDebug && <RunDebug trace={trace} />}
     </AgentTurn>
   );
 }
@@ -414,14 +539,22 @@ function LiveTurn(): ReactElement | null {
   const { selection, selectPhase } = useAskInspector();
   const disclosure = useAskDisclosure();
   const isOnline = useOnlineStatus();
+  // Memoised on the parts array, which changes only when a part arrives:
+  // `withAnswering` rebuilds each question it touches, and a fresh object
+  // on every text delta would make `PartBoundary` re-try a part that threw
+  // sixty times a second.
+  const runParts = activeRun?.parts;
+  const answerable = useMemo(
+    () => (runParts === undefined ? [] : withAnswering(client, runParts, true)),
+    [client, runParts],
+  );
 
   if (activeRun === null) return null;
 
-  const isWaiting = activeRun.text === "";
-  const liveVisible = visibleParts(
-    withAnswering(client, activeRun.parts, true),
-    disclosure.showQueryResults,
-  );
+  // Trimmed: a run that has streamed only whitespace has still said nothing,
+  // and dropping the wait indicator for it left a blank turn mid-run.
+  const isWaiting = activeRun.text.trim() === "";
+  const liveVisible = visibleParts(answerable, disclosure.showQueryResults);
 
   return (
     <AgentTurn>
@@ -485,7 +618,12 @@ export function Thread(): ReactElement {
   // run to finish before asking again") — disabling Rerun while one is in
   // flight surfaces that rule at the point someone would hit it, instead
   // of a click that silently turns into `error` text elsewhere.
-  const rerunDisabled = status === "streaming";
+  //
+  // And while the browser is offline, the same way Composer disables
+  // itself: a rerun then cannot even be sent, and each click only added a
+  // failed turn to the thread.
+  const isOnline = useOnlineStatus();
+  const rerunDisabled = status === "streaming" || !isOnline;
   // Follows its own tail as an answer streams and its sheets lay out —
   // without this the thing being waited for arrives below the fold and
   // stays there. Dropped the moment a reader scrolls up.
@@ -496,66 +634,71 @@ export function Thread(): ReactElement {
   }
 
   return (
-    <div className={styles.thread} ref={threadRef}>
-      {messages.map((message, index) => {
-        if (message.role === "user") {
+    // One disclosure for the whole list — see AskDisclosureProvider for the
+    // request per answer this replaced. Inside `Thread` rather than in
+    // `Ask.tsx` so every host that renders a thread gets it.
+    <AskDisclosureProvider>
+      <div className={styles.thread} ref={threadRef}>
+        {messages.map((message, index) => {
+          if (message.role === "user") {
+            return (
+              <AskedBubble
+                key={message.id}
+                message={message}
+                onRerun={() => rerun(message.content)}
+                rerunDisabled={rerunDisabled}
+              />
+            );
+          }
+
+          // Messages strictly alternate user -> assistant, one pair per ask
+          // (useChat.ts's runTurn appends the user turn immediately, the
+          // assistant turn only on finish; conversation.hydrateMessages
+          // preserves the same order from the wire) — so the turn this
+          // answer belongs to is always the message right before it.
+          const question = messages[index - 1];
+          const questionText = question?.role === "user" ? question.content : null;
+          // Prefer the agent this run actually used (RunSummary.agentName,
+          // set for anything streamed this session) over whatever's
+          // currently selected in the picker — a rerun should ask the same
+          // agent the original answer came from, not whichever one the
+          // operator has since switched to. A reopened, hydrated message has
+          // no runSummary at all (types.ts's own docstring), so it falls
+          // through to `rerun`'s own `selectedAgent` fallback instead.
           return (
-            <AskedBubble
+            <AnsweredTurn
               key={message.id}
               message={message}
-              onRerun={() => rerun(message.content)}
+              onRerun={
+                questionText !== null
+                  ? () => rerun(questionText, message.runSummary?.agentName ?? undefined)
+                  : undefined
+              }
+              onRetryFresh={
+                questionText !== null && usedCachedPlan(message)
+                  ? () => {
+                      const agent = message.runSummary?.agentName ?? selectedAgent ?? null;
+                      // Forget first, then re-ask — the re-ask must land AFTER
+                      // the plan is gone or it just serves the same cache again.
+                      // A forget that fails (nothing cached, a network blip)
+                      // must not swallow the retry, so rerun runs regardless.
+                      void forgetCachedPlan(client, agent, questionText).finally(() =>
+                        rerun(questionText, agent ?? undefined),
+                      );
+                    }
+                  : undefined
+              }
               rerunDisabled={rerunDisabled}
+              hydratedAgentName={
+                message.agentId === null || message.agentId === undefined
+                  ? null
+                  : (agentNameById.get(message.agentId) ?? null)
+              }
             />
           );
-        }
-
-        // Messages strictly alternate user -> assistant, one pair per ask
-        // (useChat.ts's runTurn appends the user turn immediately, the
-        // assistant turn only on finish; conversation.hydrateMessages
-        // preserves the same order from the wire) — so the turn this
-        // answer belongs to is always the message right before it.
-        const question = messages[index - 1];
-        const questionText = question?.role === "user" ? question.content : null;
-        // Prefer the agent this run actually used (RunSummary.agentName,
-        // set for anything streamed this session) over whatever's
-        // currently selected in the picker — a rerun should ask the same
-        // agent the original answer came from, not whichever one the
-        // operator has since switched to. A reopened, hydrated message has
-        // no runSummary at all (types.ts's own docstring), so it falls
-        // through to `rerun`'s own `selectedAgent` fallback instead.
-        return (
-          <AnsweredTurn
-            key={message.id}
-            message={message}
-            onRerun={
-              questionText !== null
-                ? () => rerun(questionText, message.runSummary?.agentName ?? undefined)
-                : undefined
-            }
-            onRetryFresh={
-              questionText !== null && usedCachedPlan(message)
-                ? () => {
-                    const agent = message.runSummary?.agentName ?? selectedAgent ?? null;
-                    // Forget first, then re-ask — the re-ask must land AFTER
-                    // the plan is gone or it just serves the same cache again.
-                    // A forget that fails (nothing cached, a network blip)
-                    // must not swallow the retry, so rerun runs regardless.
-                    void forgetCachedPlan(client, agent, questionText).finally(() =>
-                      rerun(questionText, agent ?? undefined),
-                    );
-                  }
-                : undefined
-            }
-            rerunDisabled={rerunDisabled}
-            hydratedAgentName={
-              message.agentId === null || message.agentId === undefined
-                ? null
-                : (agentNameById.get(message.agentId) ?? null)
-            }
-          />
-        );
-      })}
-      <LiveTurn />
-    </div>
+        })}
+        <LiveTurn />
+      </div>
+    </AskDisclosureProvider>
   );
 }

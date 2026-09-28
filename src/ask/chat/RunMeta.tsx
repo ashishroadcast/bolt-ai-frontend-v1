@@ -118,12 +118,26 @@ function RatingButtons({ messageId }: { messageId: number }): ReactElement {
   );
 }
 
+/**
+ * How the turn this strip sits under ended — see `Thread.turnStatus`.
+ * `empty` finished with nothing on screen; `unfinished` is a reopened row
+ * the run never filled in.
+ */
+export type RunStatus = "done" | "empty" | "unfinished" | "cancelled" | "error";
+
 export interface RunMetaProps {
   /** `ChatMessage.id` — a real row id enables the rating controls. */
   messageId: string;
   /** The answer text a Copy click writes, or `""` for an answer that
    * produced none (an errored run). */
   answerText: string;
+  /**
+   * Only a turn that ended in an answer can be rated. "Was this helpful?"
+   * under a failure or a blank turn asks about an answer that does not
+   * exist, and the vote would still be recorded against the run's plan.
+   * Defaults to `"done"`.
+   */
+  runStatus?: RunStatus;
   agentName: string | null;
   toolCount: number | null;
   score: number | null;
@@ -142,6 +156,18 @@ export interface RunMetaProps {
    * empty drawer. */
   isDebugOpen?: boolean;
   onToggleDebug?: () => void;
+  /**
+   * Whether the tenant lets this reader see how the run worked
+   * (`AskDisclosure.showReasoning`). Off, the strip keeps what any reader
+   * can use — Copy, Rerun, the rating, who answered and how long it took —
+   * and drops the tool count, the judge's score, the model ids, the dollar
+   * cost, the tokens and the debug toggle. Those are the same machinery the
+   * setting hides from the reasoning card, and leaving them here meant a
+   * reader the tenant chose to spare it could still open the SQL.
+   *
+   * Required rather than defaulted, so a new caller has to decide.
+   */
+  showRunDetails: boolean;
 }
 
 /**
@@ -165,6 +191,7 @@ export interface RunMetaProps {
 export function RunMeta({
   messageId,
   answerText,
+  runStatus = "done",
   agentName,
   toolCount,
   score,
@@ -175,6 +202,7 @@ export function RunMeta({
   rerunDisabled,
   isDebugOpen,
   onToggleDebug,
+  showRunDetails,
 }: RunMetaProps): ReactElement {
   const rowId = messageRowId(messageId);
   const models = modelsFromUsage(usage);
@@ -182,7 +210,9 @@ export function RunMeta({
 
   return (
     <div className={styles.strip}>
-      {answerText !== "" && (
+      {/* Trimmed: an answer of only whitespace offered a Copy that
+          copied whitespace. */}
+      {answerText.trim() !== "" && (
         <CopyButton text={answerText} icon={Copy} idleLabel="Copy" ariaLabel="Copy answer" />
       )}
       {onRerun && <RerunButton onRerun={onRerun} disabled={rerunDisabled} />}
@@ -198,7 +228,7 @@ export function RunMeta({
           <span>Retry without cache</span>
         </button>
       )}
-      {rowId !== null && <RatingButtons messageId={rowId} />}
+      {rowId !== null && runStatus === "done" && <RatingButtons messageId={rowId} />}
 
       <span className={styles.facts}>
         {agentName !== null && (
@@ -207,17 +237,17 @@ export function RunMeta({
             {agentName}
           </span>
         )}
-        {toolCount !== null && (
+        {showRunDetails && toolCount !== null && (
           <span className={styles.fact}>
             {toolCount} tool{toolCount === 1 ? "" : "s"}
           </span>
         )}
-        {score !== null && (
+        {showRunDetails && score !== null && (
           <span className={styles.fact} data-tone={score >= PASS_SCORE ? "good" : "weak"}>
             score {score.toFixed(2)}
           </span>
         )}
-        {models.map((model) => (
+        {showRunDetails && models.map((model) => (
           <span key={model} className={styles.fact} title={model}>
             {model}
           </span>
@@ -227,18 +257,18 @@ export function RunMeta({
             className={styles.fact}
             title="Total elapsed time from submitting the question to receiving the answer"
           >
-            {formatDuration(durationMs)}
+            Worked for {formatDuration(durationMs)}
           </span>
         )}
-        {usage !== null && usage.cost_usd > 0 && (
+        {showRunDetails && usage !== null && usage.cost_usd > 0 && (
           <span className={styles.fact}>{formatCost(usage.cost_usd)}</span>
         )}
-        {usage !== null && usage.total_tokens > 0 && (
+        {showRunDetails && usage !== null && usage.total_tokens > 0 && (
           <span className={styles.fact}>{formatCount(usage.total_tokens)} tok</span>
         )}
       </span>
 
-      {onToggleDebug && (
+      {showRunDetails && onToggleDebug && (
         <button type="button" className={styles.debugToggle} onClick={onToggleDebug} aria-expanded={isDebugOpen}>
           {isDebugOpen ? "Hide debug" : "Show debug"}
         </button>

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AskInspectorProvider, type AskConfig } from "../config.tsx";
 import { ChatProvider, useChatContext } from "./ChatContext.tsx";
@@ -177,6 +177,42 @@ describe("Thread", () => {
     expect(screen.getByText("SELECT item FROM sales")).toBeInTheDocument();
     expect(screen.getByText("Every figure appears in the evidence.")).toBeInTheDocument();
     expect(screen.getByText(/passed · 0\.82/)).toBeInTheDocument();
+  });
+
+  it("keeps the SQL, the score, the models and the cost from a reader the tenant hides reasoning from", async () => {
+    // "Show debug" and the footer ignored the setting: with reasoning off a
+    // reader could still open the SQL and the raw run_sql rows, and read the
+    // judge's score and the run's dollar cost under every answer.
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: true } });
+
+    act(() => chatRef.current!.sendMessage("top items last week", { agent: "Sales-Analyst" }));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Show debug" })).not.toBeInTheDocument();
+    expect(screen.queryByText("SELECT item FROM sales")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 tool")).not.toBeInTheDocument();
+    expect(screen.queryByText(/score 0\.82/)).not.toBeInTheDocument();
+    expect(screen.queryByText("$0.0005")).not.toBeInTheDocument();
+    expect(screen.queryByText("120 tok")).not.toBeInTheDocument();
+    // Who answered, how long it took, and Copy are for every reader.
+    expect(screen.getByText("Sales-Analyst")).toBeInTheDocument();
+    expect(screen.getByText(/worked for/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
+  });
+
+  it("says how long the run worked once, in the strip under the answer", async () => {
+    // It was said twice: a "Worked For" header above the prose and the same
+    // figure in the strip, and the two were not even formatted alike.
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getAllByText(/worked for/i)).toHaveLength(1);
+    expect(screen.getByText(/^Worked for \d+\.\ds$/)).toBeInTheDocument();
   });
 
   it("reopening a conversation renders sheets but never the expanded rail", async () => {
@@ -415,6 +451,39 @@ describe("Thread", () => {
     expect(screen.getByText("May")).toBeInTheDocument();
   });
 
+  it("costs one sheet, not the screen, when a part cannot render", async () => {
+    // A chart point with no `values` threw inside DataChart, and with no
+    // error boundary anywhere it blanked the whole Ask screen.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-5"}`,
+          `data: {"type":"data-chart","data":{"title":"Net sales","series":[{"key":"net","label":"Net","color":"red"}],"data":[{"label":"May"}]}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Bandra led."}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("month on month net sales"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText(/Couldn.t display this part of the answer\./)).toBeInTheDocument();
+    expect(screen.getByText("Bandra led.")).toBeInTheDocument();
+    expect(screen.getByText("month on month net sales")).toBeInTheDocument();
+    expect(consoleError).toHaveBeenCalledWith(
+      'Ask could not render a "data-chart" part.',
+      expect.anything(),
+      expect.anything(),
+    );
+    consoleError.mockRestore();
+  });
+
   it("leaves a legible error line, not a stuck rail, when a run fails mid-stream", async () => {
     fetchMock.mockImplementation(
       routeFetch(() =>
@@ -431,9 +500,103 @@ describe("Thread", () => {
     act(() => chatRef.current!.sendMessage("hello"));
     await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
 
-    expect(screen.getByText(/the run failed unexpectedly \(ref: abc123\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Try asking again\./)).toBeInTheDocument();
+    // Its own sentence, and a Rerun to act on it — not "…abc123) Try asking
+    // again." run together, which read "Failed to fetch Try asking again."
+    const alert = screen.getByRole("alert");
+    expect(within(alert).getByText("the run failed unexpectedly (ref: abc123).")).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Rerun this question" })).toBeInTheDocument();
+    expect(screen.queryByText(/Try asking again/)).not.toBeInTheDocument();
     expect(screen.queryByText(/sorry/i)).not.toBeInTheDocument();
+  });
+
+  it("asks nobody whether a failed run was helpful", async () => {
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          // A real row id, so only the failure can be what hides the rating.
+          `data: {"type":"start","messageId":"400084"}`,
+          `data: {"type":"error","errorText":"Failed to fetch"}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("hello"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Failed to fetch.")).toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Rate this answer/ })).not.toBeInTheDocument();
+    // One Rerun on the answer — the tile's — plus the question's own.
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+  });
+
+  it("says no answer was produced when a run finishes with only whitespace", async () => {
+    // It showed "Worked for 12.3s", thumbs, and a Copy that copied spaces.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"400085"}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"  \\n  "}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("No answer was produced.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Copy answer" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+  });
+
+  it("still offers the rating and Copy on an answer that did produce one", async () => {
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse(GOLDEN_FRAMES.map((frame) => frame.replace('"messageId":"msg-1"', '"messageId":"400086"'))),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Was this helpful?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy answer" })).toBeInTheDocument();
+    expect(screen.queryByText("No answer was produced.")).not.toBeInTheDocument();
+  });
+
+
+  it("disables Rerun while the browser is offline, since it could only fail", async () => {
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeEnabled();
+    }
+
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeDisabled();
+    }
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeEnabled();
+    }
   });
 
   it("copies the question's own text from its own Copy button, not the answer's", async () => {
@@ -619,6 +782,32 @@ describe("an answer that laid itself out", () => {
     expect(screen.getAllByText(/Chicken Biryani led the week/)).toHaveLength(1);
   });
 
+  it("shows the prose when the summary arrived empty or malformed", async () => {
+    // The summary is what hides the prose. One with nothing in it hid the
+    // whole answer behind an empty panel.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-1"}`,
+          `data: {"type":"data-summary","data":{"headline":"","points":[]}}`,
+          `data: {"type":"data-summary","data":{"points":"not a list"}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Chicken Biryani led the week."}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "What this shows" })).not.toBeInTheDocument();
+  });
+
   it("still renders prose when nothing laid itself out", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
     const { chatRef } = renderThread();
@@ -672,6 +861,33 @@ describe("query result tables and the composed answer", () => {
     expect(screen.queryByText("North depot")).not.toBeInTheDocument();
   });
 
+  it("keeps a table-only answer's table when query results are off, because it is the answer", async () => {
+    // "top 3 stores" composes nothing: the prose only introduces the table.
+    // Hiding the table as working left "Here are the top 3 stores:" with
+    // nothing under it, under every tenant's default.
+    fetchMock.mockImplementation(
+      routeFetch(() =>
+        sseResponse([
+          `data: {"type":"start","messageId":"msg-1"}`,
+          `data: {"type":"data-table","data":{"columns":["store_name"],"rows":[["Bandra"],["Andheri"],["Powai"]]}}`,
+          `data: {"type":"text-start","id":"answer"}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Here are the top 3 stores:"}`,
+          `data: {"type":"text-end","id":"answer"}`,
+          `data: {"type":"finish","messageMetadata":{}}`,
+          `data: [DONE]`,
+        ]),
+      ),
+    );
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: false } });
+
+    act(() => chatRef.current!.sendMessage("top 3 stores"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("Here are the top 3 stores:")).toBeInTheDocument();
+    expect(screen.getByText("Bandra")).toBeInTheDocument();
+    expect(screen.getByText("Powai")).toBeInTheDocument();
+  });
+
   it("adds the raw rows, without repeating the answer, when query results are on", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(TABLE_AND_SUMMARY_FRAMES)));
     const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: true } });
@@ -684,3 +900,179 @@ describe("query result tables and the composed answer", () => {
   });
 });
 
+
+// --- the tenant's disclosure is asked once per thread -----------------------
+//
+// `useAskDisclosure` used to fetch per answer on screen: a 30-turn thread made
+// 31 requests, and every new answer started hidden until its own came back,
+// so the reasoning and the tables vanished and popped back as a run finished.
+
+describe("the tenant's disclosure setting", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function turnsOf(count: number) {
+    return Array.from({ length: count }, (_, turn) => [
+      {
+        id: turn * 2 + 1,
+        role: "user",
+        content: `question ${turn}`,
+        agent_id: null,
+        trace_id: null,
+        meta: null,
+        created_at: "2026-08-20T10:41:00Z",
+      },
+      {
+        id: turn * 2 + 2,
+        role: "assistant",
+        content: `Answer ${turn}.`,
+        agent_id: null,
+        trace_id: null,
+        meta: {
+          ui_parts: [
+            { type: "data-table", data: { columns: ["store"], rows: [[`Store ${turn}`]] } },
+            { type: "data-summary", data: { headline: `Reading ${turn}`, points: [] } },
+          ],
+        },
+        created_at: "2026-08-20T10:41:05Z",
+      },
+    ]).flat();
+  }
+
+  it("is fetched once for the whole thread, and every answer reads it", async () => {
+    let settingsCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = urlOf(input);
+        const json = (body: unknown) =>
+          Promise.resolve(
+            new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }),
+          );
+        if (url.includes("/agent/settings/ask")) {
+          settingsCalls += 1;
+          // Only the first request is ever answered: an answer that asked
+          // for itself would sit hidden for good.
+          return settingsCalls === 1
+            ? json({ show_reasoning: true, show_query_results: true })
+            : new Promise<Response>(() => {});
+        }
+        if (url.includes("/agent/agents")) return json([]);
+        if (url.includes("/agent/conversations/")) {
+          return json({ id: 9, title: null, created_at: "", updated_at: "", messages: turnsOf(5) });
+        }
+        return Promise.resolve(sseResponse(TABLE_AND_SUMMARY_FRAMES));
+      }),
+    );
+    // Not pinned: the setting comes from the tenant, as it does in production.
+    const { chatRef } = renderThread({ disclosure: undefined });
+    await act(() => chatRef.current!.loadConversation(9));
+
+    await waitFor(() => expect(screen.getByText("Store 4")).toBeInTheDocument());
+    expect(screen.getByText("Store 0")).toBeInTheDocument();
+
+    // A new run's answer replaces the live turn with the value already known.
+    act(() => chatRef.current!.sendMessage("how many devices are in each group"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    expect(screen.getByText("North depot")).toBeInTheDocument();
+
+    expect(settingsCalls).toBe(1);
+  });
+});
+
+// --- a reopened run that never finished ---------------------------------------
+//
+// agent-service saves an empty assistant row before a run starts, and a run that
+// failed or was cancelled never recorded that it had: reopened, it was a blank
+// answer. The backend now writes `meta.run_status`/`meta.error_text` on such a
+// row; every older row still has neither.
+
+describe("a reopened run that did not end in an answer", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function reopen(assistant: Record<string, unknown>) {
+    vi.stubGlobal(
+      "fetch",
+      routeFetch(
+        () =>
+          new Response(
+            JSON.stringify({
+              id: 9,
+              title: null,
+              created_at: "2026-08-20T10:41:00Z",
+              updated_at: "2026-08-20T10:41:05Z",
+              messages: [
+                {
+                  id: 1,
+                  role: "user",
+                  content: "top items last week",
+                  agent_id: null,
+                  trace_id: null,
+                  meta: null,
+                  created_at: "2026-08-20T10:41:00Z",
+                },
+                {
+                  id: 2,
+                  role: "assistant",
+                  content: "",
+                  agent_id: null,
+                  trace_id: null,
+                  meta: null,
+                  created_at: "2026-08-20T10:41:05Z",
+                  ...assistant,
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    const utils = renderThread();
+    return { ...utils, load: () => act(() => utils.chatRef.current!.loadConversation(9)) };
+  }
+
+  it("says an empty row with no recorded status didn't finish, and offers Rerun", async () => {
+    const { load } = reopen({});
+    await load();
+
+    expect(screen.getByText("This answer didn't finish.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Rerun this question" })).toHaveLength(2);
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy answer" })).not.toBeInTheDocument();
+    // History, not a live failure: nothing to announce.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows a recorded failure's own text, and the partial answer it got to", async () => {
+    const { load } = reopen({
+      content: "Chicken Biryani led",
+      meta: { run_status: "error", error_text: "The model took too long to answer" },
+    });
+    await load();
+
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.getByText("The model took too long to answer.")).toBeInTheDocument();
+    expect(screen.getByText("Chicken Biryani led")).toBeInTheDocument();
+    expect(screen.queryByText("Was this helpful?")).not.toBeInTheDocument();
+  });
+
+  it("says a cancelled run didn't finish, above what it wrote before it stopped", async () => {
+    const { load } = reopen({ content: "Chicken Biryani led", meta: { run_status: "cancelled" } });
+    await load();
+
+    expect(screen.getByText("This answer didn't finish.")).toBeInTheDocument();
+    expect(screen.getByText("What it wrote before it stopped is below.")).toBeInTheDocument();
+    expect(screen.getByText("Chicken Biryani led")).toBeInTheDocument();
+  });
+
+  it("reopens a row whose ui_parts is not a list instead of failing the conversation", async () => {
+    const { load } = reopen({ content: "Chicken Biryani led the week.", meta: { ui_parts: { oops: true } } });
+    await load();
+
+    expect(screen.getByText("Chicken Biryani led the week.")).toBeInTheDocument();
+    expect(screen.queryByText("This answer didn't finish.")).not.toBeInTheDocument();
+  });
+});

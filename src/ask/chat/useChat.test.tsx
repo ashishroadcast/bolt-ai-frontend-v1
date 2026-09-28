@@ -123,8 +123,10 @@ describe("useChat", () => {
           subLabel: "1 row",
           // Typed numeric off the column's own values, which is what
           // right-aligns it and gives it tabular figures (wireParts.ts).
-          columns: [{ key: "n", header: "N", type: "number" }],
-          rows: [{ n: 1 }],
+          // Keyed by position, so two columns sharing a name cannot collide;
+          // a string, because wireParts decides digit grouping, not DataTable.
+          columns: [{ key: "c0", header: "N", type: "number" }],
+          rows: [{ c0: "1" }],
         },
       },
     ]);

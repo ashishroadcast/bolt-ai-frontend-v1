@@ -6,7 +6,11 @@ import styles from "./DataTable.module.css";
 export type DataTableColumnType = "text" | "number" | "currency" | "percent" | "share";
 
 export interface DataTableColumn {
-  /** Row key this column reads. */
+  /**
+   * Row key this column reads, unique within the table. Not the column's
+   * name: a join selects two columns called `name`, and keyed by name the
+   * second overwrote the first. `wireParts.adaptTable` keys by position.
+   */
   key: string;
   /** Header label — what the column is, not how it's typed. */
   header: string;
@@ -46,6 +50,16 @@ function isNumeric(type: DataTableColumnType): boolean {
   return NUMERIC_TYPES.has(type);
 }
 
+/**
+ * A cell as the reader sees it. Strings pass through untouched; only a JS
+ * number is formatted, and a plain one is digit-grouped.
+ *
+ * That makes handing over a number a claim that it is a quantity. A wire
+ * table never does: `wireParts.adaptTable` decides per column whether an
+ * integer is a count or an identifier, and hands every cell over as the
+ * string it should read as — store 12345 reached the screen as "12,345"
+ * while it still handed ids through as numbers.
+ */
 function formatCell(value: DataTableCellValue, type: DataTableColumnType): string {
   if (typeof value !== "number") return value;
   switch (type) {
@@ -78,6 +92,15 @@ function shareColumnMax(rows: DataTableRow[], key: string): number {
 }
 
 const COUNT = new Intl.NumberFormat("en-IN");
+
+/**
+ * A row count, grouped the way the pager writes it. Exported so the
+ * "12,345 rows" a table's header carries (`wireParts.adaptTable`) cannot
+ * drift from the "of 12,345" under it.
+ */
+export function formatRowCount(count: number): string {
+  return COUNT.format(count);
+}
 
 interface PagerProps {
   page: number;

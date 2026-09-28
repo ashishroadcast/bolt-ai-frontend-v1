@@ -23,6 +23,9 @@ const FRAMES = [
   `data: {"type":"tool-input-available","toolCallId":"c1","toolName":"redis_read","input":{"pattern":"device:*"}}`,
   `data: {"type":"tool-output-available","toolCallId":"c1","output":"235 row(s) matched"}`,
   `data: {"type":"data-table","data":{"columns":["key"],"rows":[["device:abc"]]}}`,
+  // The composed answer the table was worked into. Without one the table IS
+  // the answer and stays on screen whatever the setting (see below).
+  `data: {"type":"data-stats","data":{"title":"Moving vehicles","figures":[{"label":"Moving","value":"235"}]}}`,
   `data: {"type":"text-start","id":"answer"}`,
   `data: {"type":"text-delta","id":"answer","delta":"235 vehicles are moving."}`,
   `data: {"type":"text-end","id":"answer"}`,
@@ -100,6 +103,27 @@ describe("Ask disclosure", () => {
     expect(screen.getByText(/235 vehicles are moving/)).toBeInTheDocument();
     // …without the row the table would have rendered.
     expect(screen.queryByText("device:abc")).not.toBeInTheDocument();
+  });
+
+  it("keeps the table when it is the whole answer, even by default", async () => {
+    // Nothing composed an answer from these rows, so they are not working:
+    // hiding them left the prose introducing a table that never arrived.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        Promise.resolve(
+          urlOf(input).includes("/agent/agents")
+            ? new Response("[]", { status: 200, headers: { "Content-Type": "application/json" } })
+            : sseResponse(FRAMES.filter((frame) => !frame.includes("data-stats"))),
+        ),
+      ),
+    );
+    const { chatRef } = renderThread({ showReasoning: false, showQueryResults: false });
+
+    act(() => chatRef.current!.sendMessage("which devices are moving?"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getByText("device:abc")).toBeInTheDocument();
   });
 
   it("shows the result table once the tenant turns it on", async () => {
