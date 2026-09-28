@@ -98,8 +98,10 @@ describe("AgentPicker armed chip", () => {
     act(() => arm("Retired-Agent"));
     expect(armed).toBe("Retired-Agent");
 
-    await waitFor(() => expect(screen.queryByText("Finding agents…")).toBeNull());
-    expect(armed).toBeNull();
+    // Waited for itself, not for the list: the disarm is an effect, and it
+    // runs a beat after the render that took "Finding agents…" away.
+    await waitFor(() => expect(armed).toBeNull());
+    expect(screen.queryByText("Finding agents…")).toBeNull();
 
     // Present but deactivated counts as gone too.
     act(() => arm("Old"));
