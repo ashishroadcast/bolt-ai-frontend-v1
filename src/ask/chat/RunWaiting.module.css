@@ -53,8 +53,9 @@
 }
 
 /* Tabular so the seconds column does not shuffle the label sideways every
-   time the count crosses a digit width. */
+   time the count crosses a digit width. Pushed to the END edge, which is
+   the left one under dir="rtl". */
 .elapsed {
   font-variant-numeric: tabular-nums;
-  margin-left: auto;
+  margin-inline-start: auto;
 }

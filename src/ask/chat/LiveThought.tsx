@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { useAskStrings } from "../i18n/AskLocale.tsx";
 import styles from "./LiveThought.module.css";
 
 /**
@@ -45,6 +46,7 @@ import styles from "./LiveThought.module.css";
 const TAIL_CHARS = 900;
 
 export function LiveThought({ text }: { text: string }): ReactElement | null {
+  const strings = useAskStrings();
   // trim, not trimEnd: a stream that has so far produced only whitespace
   // would otherwise render a bordered block with nothing in it, which
   // reads as something that failed to load rather than as nothing yet.
@@ -67,7 +69,7 @@ export function LiveThought({ text }: { text: string }): ReactElement | null {
     <div
       className={styles.window}
       role="group"
-      aria-label="What the agent is working on"
+      aria-label={strings.agentThoughtLabel}
       aria-live="off"
     >
       <p className={styles.thought}>

@@ -1,6 +1,7 @@
 import { Bot } from "lucide-react";
 import { useEffect, useState, type ReactElement } from "react";
 import type { RunStep } from "./runTrace.ts";
+import { useAskStrings } from "../i18n/AskLocale.tsx";
 import styles from "./Thinking.module.css";
 import { WaitAnnouncement } from "./WaitAnnouncement.tsx";
 
@@ -43,6 +44,7 @@ export interface ThinkingProps {
  * the same card shape).
  */
 export function Thinking({ steps, startedAt }: ThinkingProps): ReactElement {
+  const strings = useAskStrings();
   const current = steps.length > 0 ? steps[steps.length - 1] : null;
   const elapsedMs = useElapsedMs(startedAt);
   const elapsed = elapsedMs === null ? null : formatElapsed(elapsedMs);
@@ -55,7 +57,7 @@ export function Thinking({ steps, startedAt }: ThinkingProps): ReactElement {
       {/* Keyed on the label so React remounts it and the crossfade replays;
           without the key the text swaps in place with no transition at all. */}
       <span className={styles.label} key={current?.label ?? "thinking"}>
-        {current?.label ?? "Thinking..."}
+        {current?.label ?? strings.thinking}
       </span>
       <span className={styles.dots} aria-hidden="true">
         <span className={styles.dot} />

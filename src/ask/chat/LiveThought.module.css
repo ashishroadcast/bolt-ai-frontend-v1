@@ -33,8 +33,9 @@
 
 .thought {
   margin: 0;
-  padding-left: 11px;
-  border-left: 2px solid var(--rule);
+  /* Start edge, not left, so the rule follows the text under dir="rtl". */
+  padding-inline-start: 11px;
+  border-inline-start: 2px solid var(--rule);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   line-height: 1.6;
@@ -57,7 +58,7 @@
   display: inline-block;
   width: 2px;
   height: 1em;
-  margin-left: 2px;
+  margin-inline-start: 2px;
   vertical-align: text-bottom;
   background: var(--fg-faint);
 }

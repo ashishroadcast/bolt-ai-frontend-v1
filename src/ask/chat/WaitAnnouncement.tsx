@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import a11y from "../a11y.module.css";
+import { useAskStrings } from "../i18n/AskLocale.tsx";
 
 /**
  * When a wait stops being an ordinary one and starts sounding like a hang.
@@ -30,6 +31,7 @@ export const SLOW_RUN_MS = 60_000;
  * failed.
  */
 export function WaitAnnouncement({ elapsedMs }: { elapsedMs: number }): ReactElement {
+  const strings = useAskStrings();
   const [armed, setArmed] = useState(false);
 
   useEffect(() => {
@@ -39,8 +41,8 @@ export function WaitAnnouncement({ elapsedMs }: { elapsedMs: number }): ReactEle
   const message = !armed
     ? ""
     : elapsedMs >= SLOW_RUN_MS
-      ? "Still working, this is taking longer than usual"
-      : "Working on your question";
+      ? strings.stillWorking
+      : strings.workingOnYourQuestion;
 
   return (
     <span className={a11y.visuallyHidden} role="status" aria-live="polite">

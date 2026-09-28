@@ -1,5 +1,6 @@
 import { useState, type ReactElement } from "react";
 import a11y from "../a11y.module.css";
+import { useAskStrings } from "../i18n/AskLocale.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import type { ChatMessage } from "./types.ts";
 
@@ -25,6 +26,7 @@ import type { ChatMessage } from "./types.ts";
  */
 export function AnswerAnnouncer(): ReactElement {
   const { status, messages } = useChatContext();
+  const strings = useAskStrings();
   const [seenStatus, setSeenStatus] = useState(status);
   const [announcement, setAnnouncement] = useState("");
 
@@ -33,7 +35,9 @@ export function AnswerAnnouncer(): ReactElement {
   // painting a frame with the stale announcement first.
   if (status !== seenStatus) {
     setSeenStatus(status);
-    setAnnouncement(status === "streaming" ? "" : outcomeOf(messages));
+    setAnnouncement(
+      status === "streaming" ? "" : runFailed(messages) ? strings.answerFailed : strings.answerReady,
+    );
   }
 
   return (
@@ -44,13 +48,11 @@ export function AnswerAnnouncer(): ReactElement {
 }
 
 /**
- * How the run that just ended went. `useChat` appends the finished turn
- * before it sets `status` back to idle, a failed run included, so the last
- * message is always that run's.
+ * Whether the run that just ended failed. `useChat` appends the finished
+ * turn before it sets `status` back to idle, a failed run included, so the
+ * last message is always that run's.
  */
-function outcomeOf(messages: ChatMessage[]): string {
+function runFailed(messages: ChatMessage[]): boolean {
   const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
-  return last?.role === "assistant" && last.runSummary?.status === "error"
-    ? "The answer failed."
-    : "Answer ready.";
+  return last?.role === "assistant" && last.runSummary?.status === "error";
 }

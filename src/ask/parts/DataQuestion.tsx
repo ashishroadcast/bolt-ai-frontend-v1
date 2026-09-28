@@ -6,6 +6,7 @@ import {
   type ReactElement,
 } from "react";
 import { recordAnswer, recordedAnswer, subscribeToAnswers } from "../chat/questionAnswers.ts";
+import { useAskStrings } from "../i18n/AskLocale.tsx";
 import styles from "./DataQuestion.module.css";
 
 /**
@@ -122,6 +123,7 @@ export function DataQuestion({
   const [failed, setFailed] = useState<string | null>(null);
   const [expired, setExpired] = useState(false);
   const recorded = useSyncExternalStore(subscribeToAnswers, () => recordedAnswer(questionId));
+  const strings = useAskStrings();
 
   // Counts from the moment the question reaches the screen, which is as
   // close to the run's own deadline as this side can get.
@@ -187,10 +189,10 @@ export function DataQuestion({
   // moment the run finishes and the saved message replaces the live turn.
   if (outcome.kind === "answered") {
     return (
-      <section className={styles.question} aria-label="Answered">
+      <section className={styles.question} aria-label={strings.questionAnsweredLabel}>
         <p className={styles.prompt}>{question}</p>
         <p className={styles.sent}>
-          <span className={styles.sentLabel}>You answered:</span> {outcome.answer}
+          <span className={styles.sentLabel}>{strings.questionYouAnswered}</span> {outcome.answer}
         </p>
       </section>
     );
@@ -204,13 +206,11 @@ export function DataQuestion({
     return (
       <section
         className={styles.closed}
-        aria-label={timedOut ? "Unanswered question" : "Earlier question"}
+        aria-label={timedOut ? strings.questionTimedOutLabel : strings.questionEarlierLabel}
       >
         <p className={styles.closedPrompt}>{question}</p>
         <p className={styles.closedNote}>
-          {timedOut
-            ? "Answered on its own. The run went with its best reading."
-            : "This question was asked during the run."}
+          {timedOut ? strings.questionTimedOut : strings.questionAskedDuringRun}
         </p>
       </section>
     );
@@ -241,21 +241,23 @@ export function DataQuestion({
           {allowOther && (
             <label className={styles.other}>
               <span className={styles.otherLabel}>
-                {options.length > 0 ? "Something else" : "Your answer"}
+                {options.length > 0 ? strings.questionSomethingElse : strings.questionYourAnswer}
               </span>
               <input
                 type="text"
                 className={styles.otherInput}
                 value={other}
                 onChange={(event) => setOther(event.target.value)}
-                placeholder={options.length > 0 ? "Or type an answer" : "Type an answer"}
+                placeholder={
+                  options.length > 0 ? strings.questionOrTypeAnswer : strings.questionTypeAnswer
+                }
               />
             </label>
           )}
 
           {(allowOther || allowMultiple) && (
             <button type="submit" className={styles.submit}>
-              {sending ? "Sending…" : "Answer"}
+              {sending ? strings.questionSending : strings.questionSubmit}
             </button>
           )}
         </fieldset>
