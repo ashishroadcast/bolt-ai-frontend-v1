@@ -1010,8 +1010,10 @@ export function SettingsRoute() {
                 <span>
                   <strong>Query result tables</strong>
                   <span className={styles.sub}>
-                    Every row a tool returned, rendered above the answer. A fleet-wide read is
-                    hundreds of rows, which is why this is off by default.
+                    The raw rows a query returned, shown with the answer. A fleet-wide read is
+                    hundreds of rows, which is why this is off by default. Charts, stats and
+                    summaries are the answer and always show; whether an agent draws them is its
+                    own Generative UI setting.
                   </span>
                 </span>
               </label>

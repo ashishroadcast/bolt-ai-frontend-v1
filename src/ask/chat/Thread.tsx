@@ -67,32 +67,25 @@ function rendersItsOwnProse(parts: UIPart[]): boolean {
 }
 
 /**
- * Parts that are the ANSWER, and so are never hidden by a disclosure
- * setting.
+ * The parts this reader sees, under the tenant's disclosure setting.
  *
- * `showQueryResults` exists to keep the working — the tables a run scanned
- * on its way to a figure — off a screen whose reader did not ask for it.
- * That is the right default for evidence. It is the wrong default for a
- * drafted form: the card *is* what was asked for, and it carries the only
- * control on the turn. Observed on a live run against the real widget — the
- * answer read "Here is a draft of the Vehicle Registration Record form" and
- * there was no form anywhere on screen, because a tenant setting about SQL
- * tables had swallowed it.
+ * `showQueryResults` exists to keep the working — the raw tables a run
+ * queried on its way to a figure — off a screen whose reader did not ask
+ * for it. Only those tables are working. Every composed panel (summary,
+ * stats, chart, comparison), every draft and every question IS the answer.
+ *
+ * This used to hide everything but drafts, one exempted intent at a time,
+ * and the summary was never exempted. A run that writes its reading with
+ * `show_summary` hides its prose in favour of that panel
+ * (`rendersItsOwnProse`), so with the setting off — every tenant's default
+ * — the turn rendered nothing at all: a question, a footer, and no answer.
+ *
+ * One `Sheets` over the visible set, not an answer group and a separate
+ * evidence group: `arrangeParts` can only fold a long table under the
+ * composed answer when it sees both.
  */
-const NEVER_HIDDEN = new Set([
-  "data-form-draft",
-  // The same bug waiting to happen twice more: a drafted View or widget is
-  // the answer and carries the turn's only controls ("Open in builder",
-  // "Edit Widget"), so a tenant setting about SQL tables must not hide it.
-  "data-dashboard-draft",
-  "data-widget-draft",
-]);
-
-function splitByDisclosure(parts: UIPart[]): { answer: UIPart[]; evidence: UIPart[] } {
-  return {
-    answer: parts.filter((part) => NEVER_HIDDEN.has(part.intent)),
-    evidence: parts.filter((part) => !NEVER_HIDDEN.has(part.intent)),
-  };
+function visibleParts(parts: UIPart[], showQueryResults: boolean): UIPart[] {
+  return showQueryResults ? parts : parts.filter((part) => part.intent !== "data-table");
 }
 
 function withAnswering(
@@ -330,6 +323,7 @@ function AnsweredTurn({
   // The run's own record first (this session watched it), the persisted
   // agent_id second. Never the current picker selection.
   const disclosure = useAskDisclosure();
+  const visible = visibleParts(message.parts, disclosure.showQueryResults);
   const agentName = summary?.agentName ?? hydratedAgentName;
   const trace: RunTrace = summary?.trace ?? EMPTY_TRACE;
   const hasDebug = trace.tools.length > 0 || trace.executedSql !== null || trace.reasoning !== null;
@@ -368,10 +362,7 @@ function AnsweredTurn({
           it reads has to restate it to make sense. Putting them this way
           round is also the chronological order: the sheets come from tool
           calls made during execute, while the answer is written last. */}
-      <Sheets parts={splitByDisclosure(message.parts).answer} />
-      {disclosure.showQueryResults && (
-        <Sheets parts={splitByDisclosure(message.parts).evidence} />
-      )}
+      <Sheets parts={visible} />
       {/* Figma's "Worked For 12m" — the same duration RunMeta's facts strip
           reports below, surfaced again here because Figma places it as the
           answer's own header rather than only in the measurements strip. */}
@@ -381,7 +372,8 @@ function AnsweredTurn({
           <span className={styles.answerHeaderValue}>{formatDuration(workedForMs(message)!)}</span>
         </p>
       )}
-      {!rendersItsOwnProse(message.parts) && (
+      {/* Hidden only when the summary that replaces it is itself on screen. */}
+      {!rendersItsOwnProse(visible) && (
         <RevealedAnswer
           messageId={message.id}
           text={message.content}
@@ -426,6 +418,10 @@ function LiveTurn(): ReactElement | null {
   if (activeRun === null) return null;
 
   const isWaiting = activeRun.text === "";
+  const liveVisible = visibleParts(
+    withAnswering(client, activeRun.parts, true),
+    disclosure.showQueryResults,
+  );
 
   return (
     <AgentTurn>
@@ -469,11 +465,8 @@ function LiveTurn(): ReactElement | null {
           rather than an identifier. It used to hand over the run's MESSAGE
           id, which the endpoint accepted only because it never read the
           run segment at all. */}
-      <Sheets parts={splitByDisclosure(withAnswering(client, activeRun.parts, true)).answer} />
-      {disclosure.showQueryResults && (
-        <Sheets parts={splitByDisclosure(withAnswering(client, activeRun.parts, true)).evidence} />
-      )}
-      {!rendersItsOwnProse(activeRun.parts) && (
+      <Sheets parts={liveVisible} />
+      {!rendersItsOwnProse(liveVisible) && (
         <RevealedAnswer messageId={activeRun.messageId} text={activeRun.text} animate />
       )}
     </AgentTurn>

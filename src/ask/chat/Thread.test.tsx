@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AskInspectorProvider } from "../config.tsx";
+import { AskInspectorProvider, type AskConfig } from "../config.tsx";
 import { ChatProvider, useChatContext } from "./ChatContext.tsx";
 import { Thread } from "./Thread.tsx";
 import type { UseChatResult } from "./useChat.ts";
@@ -60,7 +60,7 @@ const GOLDEN_FRAMES = [
   `data: [DONE]`,
 ];
 
-function renderThread() {
+function renderThread(config?: Partial<AskConfig>) {
   const chatRef: { current: UseChatResult | null } = { current: null };
   function Capture() {
     chatRef.current = useChatContext();
@@ -73,7 +73,7 @@ function renderThread() {
   // these tests care about.
   const selected: unknown[] = [];
   const utils = render(
-    <TestAskProvider>
+    <TestAskProvider config={config}>
       <AskInspectorProvider
         inspector={{ selection: null, selectPhase: (segment) => selected.push(segment) }}
       >
@@ -629,3 +629,58 @@ describe("an answer that laid itself out", () => {
     expect(screen.getByText(/Chicken Biryani led the week\./)).toBeInTheDocument();
   });
 });
+
+// --- query result tables are separate from the composed answer --------------
+//
+// `showQueryResults` hides the raw rows a query returned, and nothing else:
+// charts, stats, comparisons and summaries are the answer. With it off (every
+// tenant's default) a show_summary answer used to render nothing at all — the
+// prose is suppressed in favour of the summary panel, and the panel was hidden
+// along with the tables.
+
+const TABLE_AND_SUMMARY_FRAMES = [
+  `data: {"type":"start","messageId":"msg-1"}`,
+  `data: {"type":"data-table","data":{"columns":["device_group"],"rows":[["North depot"]]}}`,
+  `data: {"type":"data-summary","data":{"headline":"Every device group holds exactly 1 device","points":["All 5 groups hold one device each."]}}`,
+  `data: {"type":"text-start","id":"answer"}`,
+  `data: {"type":"text-delta","id":"answer","delta":"Every device group holds exactly 1 device."}`,
+  `data: {"type":"text-end","id":"answer"}`,
+  `data: {"type":"finish","messageMetadata":{}}`,
+  `data: [DONE]`,
+];
+
+describe("query result tables and the composed answer", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the summary but not the raw rows when query results are off", async () => {
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(TABLE_AND_SUMMARY_FRAMES)));
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: false } });
+
+    act(() => chatRef.current!.sendMessage("how many devices are in each group"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getAllByText(/Every device group holds exactly 1 device/)).toHaveLength(1);
+    expect(screen.queryByText("North depot")).not.toBeInTheDocument();
+  });
+
+  it("adds the raw rows, without repeating the answer, when query results are on", async () => {
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(TABLE_AND_SUMMARY_FRAMES)));
+    const { chatRef } = renderThread({ disclosure: { showReasoning: false, showQueryResults: true } });
+
+    act(() => chatRef.current!.sendMessage("how many devices are in each group"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+
+    expect(screen.getAllByText(/Every device group holds exactly 1 device/)).toHaveLength(1);
+    expect(screen.getByText("North depot")).toBeInTheDocument();
+  });
+});
+
