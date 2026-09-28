@@ -215,3 +215,190 @@ describe("<bolt-ai-ask> keyboard containment", () => {
     cleanup();
   });
 });
+
+describe("<bolt-ai-ask> conversation and scope", () => {
+  const CONVERSATION = {
+    id: 42,
+    title: "Trips",
+    created_at: "2026-09-28T09:00:00Z",
+    updated_at: "2026-09-28T09:01:00Z",
+    messages: [
+      {
+        id: 1,
+        role: "user",
+        content: "How many trips ran late yesterday?",
+        agent_id: null,
+        trace_id: null,
+        meta: null,
+        created_at: "2026-09-28T09:00:00Z",
+      },
+    ],
+  };
+
+  /** Answers by path; anything unlisted is a 404. Records every request. */
+  function routes(table: Record<string, unknown>) {
+    const requests: Request[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const request = input as Request;
+        requests.push(request);
+        const path = new URL(request.url).pathname;
+        if (!(path in table)) return new Response(JSON.stringify({ detail: "not found" }), { status: 404 });
+        return new Response(JSON.stringify(table[path]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }),
+    );
+    return requests;
+  }
+
+  function mountElement(configure?: (element: BoltAiAskElement) => void) {
+    const element = create();
+    const announced: (number | null)[] = [];
+    element.addEventListener("conversationchange", (event) => {
+      announced.push((event as CustomEvent<{ conversationId: number | null }>).detail.conversationId);
+    });
+    element.credentialProvider = () => "boltai_test";
+    configure?.(element);
+    document.body.appendChild(element);
+    element.baseUrl = "http://ask.test";
+    return { element, announced };
+  }
+
+  const text = (element: BoltAiAskElement) => element.shadowRoot?.textContent ?? "";
+  const armedName = (element: BoltAiAskElement) =>
+    Array.from(element.shadowRoot?.querySelectorAll("span") ?? []).some(
+      (span) => span.textContent === "Dashboard-Builder",
+    );
+
+  const TABLE = {
+    "/agent/agents": AGENTS,
+    "/agent/settings/ask": {},
+    "/agent/conversations/42": CONVERSATION,
+  };
+
+  it("opens the conversation named by conversation-id, and announces it", async () => {
+    const requests = routes(TABLE);
+    const { element, announced } = mountElement((el) => el.setAttribute("conversation-id", "42"));
+
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+    expect(announced).toEqual([42]);
+    expect(requests.filter((r) => r.url.endsWith("/agent/conversations/42"))).toHaveLength(1);
+  });
+
+  it("opens another one when the attribute changes, and ignores an echo of the current one", async () => {
+    const requests = routes(TABLE);
+    const { element, announced } = mountElement();
+    await waitFor(() => expect(requests.some((r) => r.url.endsWith("/agent/agents"))).toBe(true));
+
+    element.setAttribute("conversation-id", "42");
+    await waitFor(() => expect(announced).toEqual([42]));
+    // A host binding the attribute to what it was just told.
+    element.setAttribute("conversation-id", "42");
+    element.removeAttribute("conversation-id");
+    element.setAttribute("conversation-id", "42");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(requests.filter((r) => r.url.endsWith("/agent/conversations/42"))).toHaveLength(1);
+  });
+
+  it("newConversation() clears the thread and disarms, like the header button, and says so", async () => {
+    routes(TABLE);
+    const { element, announced } = mountElement((el) => el.setAttribute("conversation-id", "42"));
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+    element.selectAgent("dashboard");
+    await waitFor(() => expect(armedName(element)).toBe(true));
+
+    element.newConversation();
+
+    await waitFor(() => expect(text(element)).not.toContain("How many trips ran late yesterday?"));
+    expect(armedName(element)).toBe(false);
+    expect(announced).toEqual([42, null]);
+  });
+
+  it("clearAgent() disarms but keeps the thread, and cancels a selectAgent still waiting", async () => {
+    routes(TABLE);
+    const { element } = mountElement((el) => {
+      el.setAttribute("conversation-id", "42");
+      // Before the list has loaded: remembered…
+      expect(el.selectAgent("dashboard")).toBe(true);
+      // …and forgotten again.
+      el.clearAgent();
+    });
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(armedName(element)).toBe(false);
+
+    element.selectAgent("dashboard");
+    await waitFor(() => expect(armedName(element)).toBe(true));
+    element.clearAgent();
+    await waitFor(() => expect(armedName(element)).toBe(false));
+    expect(text(element)).toContain("How many trips ran late yesterday?");
+  });
+
+  it("reopens the conversation that was on screen when the host moves the node", async () => {
+    routes(TABLE);
+    const { element, announced } = mountElement((el) => el.setAttribute("conversation-id", "42"));
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+
+    // Angular re-parenting the panel: disconnect, then connect again.
+    element.remove();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(text(element)).not.toContain("How many trips ran late yesterday?");
+    document.body.appendChild(element);
+
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+    expect(announced).toEqual([42]);
+    // One mount point, not the old empty one stacked above the new tree.
+    expect(Array.from(element.shadowRoot!.children).filter((child) => child.tagName === "DIV")).toHaveLength(1);
+  });
+
+  it("announces null for a conversation-id that cannot be opened, so the host forgets it", async () => {
+    routes({ "/agent/agents": AGENTS, "/agent/settings/ask": {} });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { announced } = mountElement((el) => el.setAttribute("conversation-id", "7"));
+
+    await waitFor(() => expect(announced).toEqual([null]));
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("starts over — thread, armed agent, agent list — when organisation-id changes", async () => {
+    const requests = routes(TABLE);
+    const { element, announced } = mountElement((el) => {
+      el.setAttribute("organisation-id", "org-1");
+      el.setAttribute("conversation-id", "42");
+    });
+    await waitFor(() => expect(text(element)).toContain("How many trips ran late yesterday?"));
+    element.selectAgent("dashboard");
+    await waitFor(() => expect(armedName(element)).toBe(true));
+    const agentLists = () => requests.filter((r) => r.url.endsWith("/agent/agents"));
+    expect(agentLists()).toHaveLength(1);
+
+    element.setAttribute("organisation-id", "org-2");
+
+    await waitFor(() => expect(agentLists()).toHaveLength(2));
+    expect(agentLists()[1]!.headers.get("Organisation")).toBe("org-2");
+    await waitFor(() => expect(text(element)).not.toContain("How many trips ran late yesterday?"));
+    expect(armedName(element)).toBe(false);
+    expect(announced).toEqual([42, null]);
+    // The old scope's conversation is not reopened in the new one.
+    expect(requests.filter((r) => r.url.endsWith("/agent/conversations/42"))).toHaveLength(1);
+  });
+
+  it("resetScope() does the same for a host that uses organisationProvider", async () => {
+    const requests = routes(TABLE);
+    let org = "org-1";
+    const { element } = mountElement((el) => {
+      el.organisationProvider = () => org;
+    });
+    await waitFor(() => expect(requests.filter((r) => r.url.endsWith("/agent/agents"))).toHaveLength(1));
+
+    org = "org-2";
+    element.resetScope();
+
+    await waitFor(() => expect(requests.filter((r) => r.url.endsWith("/agent/agents"))).toHaveLength(2));
+    expect(requests.at(-1)!.headers.get("Organisation")).toBe("org-2");
+  });
+});
