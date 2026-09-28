@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useChat } from "./useChat.ts";
+import { isAskRunInFlight, useChat } from "./useChat.ts";
 import { TestAskProvider } from "../testing.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -377,6 +377,29 @@ describe("useChat", () => {
     // Not an error: the reader asked for this.
     expect(assistant.runSummary).toMatchObject({ status: "stopped", errorText: null });
     expect(result.current.error).toBeNull();
+  });
+
+  it("warns before the tab closes mid-run, and only mid-run", async () => {
+    fetchMock.mockImplementation((request: Request) => Promise.resolve(openEndedResponse(request.signal)));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    const closeTab = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(closeTab()).toBe(false);
+    expect(isAskRunInFlight()).toBe(false);
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    expect(closeTab()).toBe(true);
+    expect(isAskRunInFlight()).toBe(true);
+
+    act(() => result.current.stop());
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(closeTab()).toBe(false);
+    expect(isAskRunInFlight()).toBe(false);
   });
 
   it("stop() between runs does nothing", () => {

@@ -131,6 +131,34 @@ type EndReason = "stopped" | "stalled";
 
 interface InFlightRun {
   end: (reason: EndReason) => void;
+  /** Takes this run out of `runsInFlight`. Idempotent: the run's own
+   * `finally` and `discardRun` may both call it. */
+  release: () => void;
+}
+
+/**
+ * Runs streaming right now, across every `useChat` on the page.
+ *
+ * Module state, on purpose, and read only through the two functions below:
+ * the console's organisation switch reloads the page, and it sits in the top
+ * bar, nowhere near a `ChatProvider` it could ask. A counter rather than a
+ * flag because a page can hold more than one Ask.
+ */
+let runsInFlight = 0;
+let unloadConfirmed = false;
+
+/** Whether a reload now would cut off an answer still being written. */
+export function isAskRunInFlight(): boolean {
+  return runsInFlight > 0;
+}
+
+/**
+ * For a caller that has already asked the reader, in its own words, whether
+ * to leave mid-run and been told yes — so the browser's generic "Leave site?"
+ * prompt does not ask them a second time on the reload that follows.
+ */
+export function confirmUnloadDuringAskRun(): void {
+  unloadConfirmed = true;
 }
 
 /**
@@ -188,6 +216,22 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   // The same idea for `loadConversation`, whose fetch can resolve after the
   // reader has already moved on — to another conversation, or a new one.
   const loadTokenRef = useRef(0);
+
+  // Closing the tab, or reloading it, mid-run cuts the answer off — the run
+  // is cancelled server-side the moment the connection closes, and nothing
+  // is saved. Only while streaming: a prompt on every close would train
+  // people to click through it.
+  useEffect(() => {
+    if (status !== "streaming") return;
+    const warn = (event: BeforeUnloadEvent) => {
+      if (unloadConfirmed) return;
+      event.preventDefault();
+      // Still required by browsers that predate preventDefault() here.
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [status]);
 
   useEffect(() => {
     // Sets the ref back to true on every (re)mount — not just once at
@@ -314,7 +358,14 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       endReason = reason;
       controller.abort();
     };
-    inFlightRef.current = { end };
+    runsInFlight += 1;
+    let counted = true;
+    const release = () => {
+      if (!counted) return;
+      counted = false;
+      runsInFlight -= 1;
+    };
+    inFlightRef.current = { end, release };
 
     // Armed only once the response has arrived: agent-service routes the
     // question before it sends headers, and that can legitimately take
@@ -500,6 +551,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       }
     } finally {
       if (stallTimer !== null) clearTimeout(stallTimer);
+      release();
       if (inFlightRef.current?.end === end) inFlightRef.current = null;
       // A stale run leaves these alone: they belong to whatever run the new
       // thread may already have started.
@@ -519,6 +571,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
    */
   const discardRun = useCallback(() => {
     generationRef.current += 1;
+    inFlightRef.current?.release();
     inFlightRef.current = null;
     abortRef.current?.abort();
     abortRef.current = null;
