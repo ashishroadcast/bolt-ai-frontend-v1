@@ -42,6 +42,46 @@
   border-bottom: 1px solid var(--rule-soft);
 }
 
+/*
+ * Text cells wrap; figures never do.
+ *
+ * Every cell used to be `nowrap`, so one long note — a remark, an address,
+ * a list of IMEIs — set the width of its whole column and pushed every
+ * figure beside it out of the panel. A text cell now wraps and grows the
+ * row instead; `--row-h` above is a floor for a table cell, not a fixed
+ * height. `anywhere`, so an unbroken token (a 64-character hash) breaks too
+ * rather than holding the column open. The floor on the width keeps a short
+ * label from being squeezed to a letter a line when the table is crowded.
+ * Numeric cells (`.num`, which DataTable.tsx sets on every figure column)
+ * keep the nowrap above: a figure broken across two lines reads as two
+ * figures.
+ */
+.table td:not(.num):not(.emptyCell) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 12ch;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.45;
+}
+
+/*
+ * The measure and the three-line clamp, on the cell's CONTENT. Both have
+ * to sit on an element inside the <td>: a table cell ignores `max-width`,
+ * and `-webkit-line-clamp` needs a `-webkit-box`, which a cell cannot be
+ * without falling out of its row. Applies once DataTable.tsx wraps a text
+ * cell's value in `<span className={styles.cellText} title={…}>` — the
+ * title is what keeps a clamped note readable in full.
+ */
+.cellText {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  max-width: 36ch;
+}
+
 .table tbody tr:last-child td {
   border-bottom: 0;
 }

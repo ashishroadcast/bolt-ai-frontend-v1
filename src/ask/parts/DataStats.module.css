@@ -47,6 +47,26 @@
 }
 
 /*
+ * Five or more. `show_stats` caps at four, but nothing upstream of this
+ * component enforces it, and five tiles at basis zero squeezed each to a
+ * hundred pixels in a narrow panel — every label and figure cut to "…".
+ * Past four, a tile takes a floor width and the row wraps onto another
+ * line instead, which lets a figure stay near the four-tile size rather
+ * than shrinking with every tile added.
+ *
+ * `:where()` keeps this at the specificity of the rules below it, so the
+ * narrow-width stacking under `@container` still wins over the floor.
+ */
+.row:where(:not([data-count="1"], [data-count="2"], [data-count="3"], [data-count="4"])) {
+  --stat-max: 18px;
+  --stat-fit: 4cqi;
+}
+
+.row:where(:not([data-count="1"], [data-count="2"], [data-count="3"], [data-count="4"])) > .figure {
+  flex-basis: 9rem;
+}
+
+/*
  * Below the width its count needs, the row stacks rather than shrinking
  * further. Past this point the alternative is a rupee figure cut off
  * mid-number — "₹12,10,30…" — which is worse than no figure at all,
@@ -84,6 +104,11 @@
   min-width: 0;
   background: var(--surface);
   padding: var(--pad-cell-y) var(--pad-sheet-x) var(--pad-sheet-y);
+  /* A column, so the figure can sit on the tile's floor: with a label on
+     one line beside a label on two, the figures would otherwise land at
+     two different heights across one row. */
+  display: flex;
+  flex-direction: column;
 }
 
 /* Deliberately identical to a table column header (DataTable.module.css
@@ -96,21 +121,29 @@
   text-transform: uppercase;
   color: var(--on-sheet-dim);
   margin: 0 0 4px;
-  white-space: nowrap;
+  /* Two lines, then an ellipsis — and the whole label in the title. One
+     line cut "MEDIAN NET SALES PER STORE…" to "MEDIAN NET SALES P…", which
+     no longer said what the figure was. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .value {
-  margin: 0;
+  margin: auto 0 0;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   letter-spacing: -0.015em;
   color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Wraps rather than ellipsizing. "₹9,44,…" still reads as a number —
+     the wrong one — so a figure that does not fit its tile breaks onto a
+     second line instead; the sizing above keeps that the rare case. */
+  white-space: normal;
+  overflow-wrap: anywhere;
   /* The fallback comes first on purpose: a browser without container query
      units drops the line below as invalid and keeps this one, rather than
      falling back to the inherited body size. */
