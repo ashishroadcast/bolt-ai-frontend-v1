@@ -124,7 +124,8 @@ describe("useChat", () => {
           // Typed numeric off the column's own values, which is what
           // right-aligns it and gives it tabular figures (wireParts.ts).
           columns: [{ key: "n", header: "N", type: "number" }],
-          rows: [{ n: 1 }],
+          // A string: wireParts decides digit grouping, never DataTable.
+          rows: [{ n: "1" }],
         },
       },
     ]);

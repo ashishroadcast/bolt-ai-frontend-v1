@@ -127,7 +127,7 @@ function headerLabel(column: string): string {
 }
 
 /**
- * A plain number, at no more than two decimals.
+ * A count or a measure, grouped Indian-style at no more than two decimals.
  *
  * A computed column arrives from Postgres as the float it really is:
  * `distance_from_median` reached the screen as `44.71000000007916`, which
@@ -135,15 +135,44 @@ function headerLabel(column: string): string {
  * rupees". Currency and percent already had this; every other numeric
  * column did not.
  */
-function formatPlainNumber(value: string | number): string | number {
+function formatGroupedNumber(value: string | number): string | number {
   const text = String(value).trim();
+  // `Number("")` is 0, and a missing figure is not a zero.
+  if (text === "") return value;
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) return value;
-  // A bare integer is returned exactly as it arrived. The integers in
-  // these tables are overwhelmingly identifiers, and grouping an id into
-  // "12,345" states something false about it.
-  if (Number.isInteger(parsed)) return value;
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(parsed);
+}
+
+function isIntegerColumn(rows: readonly (string | number)[][], index: number): boolean {
+  return rows.every((row) => {
+    const value = row[index];
+    return value === undefined || value === "" || Number.isInteger(Number(String(value).trim()));
+  });
+}
+
+/**
+ * Whether a numeric column's figures are grouped ("12,345") or written
+ * exactly as they arrived ("12345"). Decided once per column, so one cell
+ * cannot read differently from the one above it.
+ *
+ * **An integer is grouped only when the server says it is a quantity.**
+ * The integers in these tables are overwhelmingly identifiers, years and
+ * phone numbers, and "12,345" states something false about each of them:
+ * store 12,345 is not store 12345, and nobody writes the year 2,026. So
+ * `column_kinds` has to say `integer` (the server's word for a count,
+ * `app.stream.columns`) or `measure` before one is grouped. The server's
+ * `number` does not qualify: it is its fallthrough for any name it does
+ * not recognise, `year` and `phone` included.
+ *
+ * A column holding a fraction is a measure whatever it is called — no
+ * identifier has a decimal point — so it is grouped, integers and all.
+ * `text` is the server saying outright that this is not a quantity.
+ */
+function groupsDigits(kind: string | undefined, rows: readonly (string | number)[][], index: number): boolean {
+  if (kind === "integer" || kind === "measure") return true;
+  if (kind === "text") return false;
+  return !isIntegerColumn(rows, index);
 }
 
 /**
@@ -271,15 +300,18 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
         kinds[index] === "integer" ||
         isNumericColumn(cells, index)),
   );
+  const grouped = columns.map(
+    (_name, index) => numeric[index] === true && groupsDigits(kinds[index], cells, index),
+  );
 
   return {
     title: "Query results",
     subLabel: `${rowCount} row${rowCount === 1 ? "" : "s"}${truncated ? " · truncated" : ""}`,
     // `"number"` is what puts DataTable's own `.num` rule on the cell —
-    // right-aligned, mono, `font-variant-numeric: tabular-nums`. The value
-    // stays a string, which DataTable's `formatCell` passes through
-    // untouched, so the alignment is gained without handing a Decimal
-    // through a float.
+    // right-aligned, mono, `font-variant-numeric: tabular-nums`. Every
+    // value is already a string, which DataTable's `formatCell` passes
+    // through untouched, so the alignment is gained without handing a
+    // Decimal through a float or an id through digit grouping.
     columns: columns.map((name, index) => ({
       key: name,
       header: headerLabel(name),
@@ -295,7 +327,10 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
           if (kind === "currency" || kind === "percent") {
             return [name, formatByKind(row[index]!, kind)];
           }
-          return [name, numeric[index] === true ? formatPlainNumber(row[index]!) : row[index]!];
+          if (numeric[index] !== true) return [name, row[index]!];
+          // A string either way. DataTable groups any JS number it is
+          // handed, and whether this column is grouped was decided above.
+          return [name, grouped[index] ? String(formatGroupedNumber(row[index]!)) : String(row[index]!)];
         }),
       ),
     ),

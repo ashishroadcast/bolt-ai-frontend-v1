@@ -47,8 +47,9 @@ describe("toUIPart / data-table", () => {
       row_count: 1,
     });
 
-    // 12,345 would state something false about an identifier.
-    expect(props.rows[0]!.store_id).toBe(12345);
+    // 12,345 would state something false about an identifier. A string,
+    // too: DataTable groups any JS number it is handed.
+    expect(props.rows[0]!.store_id).toBe("12345");
     expect(props.rows[0]!.net_sales_sum).toBe("2,90,82,789.84");
   });
 
@@ -72,6 +73,42 @@ describe("toUIPart / data-table", () => {
     const props = tableProps({ columns: ["store_id"], rows: [["12345"]], row_count: 1 });
 
     expect(props.rows[0]!.store_id).toBe("12345");
+  });
+
+  it("groups an integer only when the server says it is a count", () => {
+    const props = tableProps({
+      columns: ["order_count", "year", "phone", "store_id"],
+      column_kinds: ["integer", "number", "number", "text"],
+      rows: [[12345, 2026, 9876543210, 12345]],
+      row_count: 1,
+    });
+
+    expect(props.rows[0]).toEqual({
+      order_count: "12,345",
+      year: "2026",
+      phone: "9876543210",
+      store_id: "12345",
+    });
+    // Still figures, still right-aligned.
+    expect(props.columns.map((column) => column.type)).toEqual(["number", "number", "number", "number"]);
+  });
+
+  it("groups every figure in a column that holds a fraction, whole ones included", () => {
+    // No identifier has a decimal point, so this column is a measure.
+    const props = tableProps({ columns: ["distance_km"], rows: [["12345.5"], [12000]], row_count: 2 });
+
+    expect(props.rows.map((row) => row.distance_km)).toEqual(["12,345.5", "12,000"]);
+  });
+
+  it("leaves a blank cell blank rather than calling it zero", () => {
+    const props = tableProps({
+      columns: ["order_count"],
+      column_kinds: ["integer"],
+      rows: [[null], [4200]],
+      row_count: 2,
+    });
+
+    expect(props.rows.map((row) => row.order_count)).toEqual(["", "4,200"]);
   });
 
   it("writes a column name the way a person would", () => {
