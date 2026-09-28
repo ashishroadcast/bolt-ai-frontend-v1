@@ -254,6 +254,14 @@ export declare class BoltAiAskElement extends HTMLElement {
    * clearing it re-renders.
    */
   onDashboardDraft: ((d: AskDashboardDraft) => void) | null;
+  /**
+   * Which drafts this reader may create, from the host's own access control
+   * (bolt-v2 RBAC: `dashboards.create`, `forms.create`). `false` replaces
+   * that kind's draft with a "You can't create …" notice, hides its quick
+   * action and answers its slash command with the notice instead of a run.
+   * `null` (the default) changes nothing.
+   */
+  draftAccess: { dashboard?: boolean; form?: boolean } | null;
 
   /**
    * Inserts a drafted widget into the builder's UNSAVED canvas and says what

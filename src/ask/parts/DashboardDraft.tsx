@@ -1,6 +1,7 @@
 import { ArrowUpRight, LayoutDashboard } from "lucide-react";
 import { useId, type CSSProperties, type ReactElement } from "react";
 import { useAskConfig, type AskDashboardDraft, type AskDashboardDraftWidget } from "../config.tsx";
+import { DraftNotAllowed } from "./DraftNotAllowed.tsx";
 import {
   sizeLabel,
   timeRangeLabel,
@@ -391,8 +392,10 @@ function handoff({ draftId, name, description, widgets }: DashboardDraftProps): 
  */
 export function DashboardDraft(props: DashboardDraftProps): ReactElement {
   const { name, description, widgets } = props;
-  const { onDashboardDraft } = useAskConfig();
+  const { onDashboardDraft, draftAccess } = useAskConfig();
   const count = `${widgets.length} widget${widgets.length === 1 ? "" : "s"}`;
+
+  if (draftAccess?.dashboard === false) return <DraftNotAllowed kind="dashboard" />;
 
   return (
     <section className={styles.draft} aria-label={`Draft view: ${name}`}>

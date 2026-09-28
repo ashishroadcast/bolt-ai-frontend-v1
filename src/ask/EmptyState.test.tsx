@@ -62,6 +62,22 @@ describe("EmptyState quick actions", () => {
     vi.unstubAllGlobals();
   });
 
+  it("leaves out the cards for drafts the reader may not create", async () => {
+    vi.stubGlobal("fetch", routed([AGENT]));
+    render(
+      <TestAskProvider config={{ draftAccess: { dashboard: false, form: true } }}>
+        <ChatProvider>
+          <AskAgentsProvider>
+            <EmptyState title="Hi" body="body" />
+          </AskAgentsProvider>
+        </ChatProvider>
+      </TestAskProvider>,
+    );
+
+    expect(await screen.findByRole("button", { name: /Create Forms/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Create Dashboard/ })).not.toBeInTheDocument();
+  });
+
   it("is clickable once the agent list loads, with no agent armed", async () => {
     const fetchMock = routed([AGENT]);
     vi.stubGlobal("fetch", fetchMock);

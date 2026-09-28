@@ -13,6 +13,7 @@ import { useAskLocale } from "../i18n/AskLocale.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
+import { draftNotAllowedText, type DraftKind } from "../parts/DraftNotAllowed.tsx";
 import styles from "./Composer.module.css";
 
 /*
@@ -171,6 +172,14 @@ interface SlashCommand {
   agent: AskAgent;
 }
 
+/** Which kind of draft a slash command makes, by its name. */
+function draftKindOf(command: string): DraftKind | null {
+  const name = command.toLowerCase();
+  if (name === "dashboard" || name === "dashboards") return "dashboard";
+  if (name === "form" || name === "forms") return "form";
+  return null;
+}
+
 function slashCommands(agents: AskAgent[]): SlashCommand[] {
   return agents
     .filter((agent) => agent.is_active && typeof agent.slash_command === "string")
@@ -299,7 +308,7 @@ export function Composer() {
   // dismissed cannot be dismissed at all.
   const [dismissed, setDismissed] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const { copy, hostContextProvider } = useAskConfig();
+  const { copy, hostContextProvider, draftAccess } = useAskConfig();
   const { locale } = useAskLocale();
   const { agents } = useAskAgents();
   const selectedWidget = useSelectedWidget(hostContextProvider, status);
@@ -380,7 +389,29 @@ export function Composer() {
   const menuOpen = !dismissed && canType && matches.length > 0;
   const active = matches[Math.min(highlight, matches.length - 1)];
 
+  /**
+   * The notice for a command whose drafts the host says this reader may not
+   * create (`AskConfig.draftAccess`), or `null`. Keyed on the command's name
+   * because that is how the drafting agents are addressed (`/dashboard`,
+   * `/form`); a run that ends in a draft the reader cannot open is a minute
+   * spent on nothing.
+   */
+  function refusedCommand(entry: SlashCommand): string | null {
+    const kind = draftKindOf(entry.command);
+    if (kind === null || draftAccess?.[kind] !== false) return null;
+    return draftNotAllowedText(kind);
+  }
+
   function choose(entry: SlashCommand) {
+    const refused = refusedCommand(entry);
+    if (refused !== null) {
+      setCommandHint(refused);
+      setValue("");
+      setDismissed(false);
+      setHighlight(0);
+      inputRef.current?.focus();
+      return;
+    }
     // Arms the agent through ChatContext rather than through state of its
     // own, so it outlives this one turn: follow-ups ("make that field
     // optional") keep reaching the agent that drafted the thing being
@@ -559,6 +590,11 @@ export function Composer() {
       return;
     }
     if (typed?.kind === "known") {
+      const refused = refusedCommand(typed.entry);
+      if (refused !== null) {
+        setCommandHint(refused);
+        return;
+      }
       // Armed exactly as choosing it from the menu would, so follow-ups keep
       // reaching it (see `choose`); whatever followed the command is the
       // question.

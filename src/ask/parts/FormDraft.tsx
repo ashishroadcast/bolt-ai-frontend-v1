@@ -5,6 +5,7 @@ import {
   type FormDraftHandoff,
   type FormDraftHandoffField,
 } from "../config.tsx";
+import { DraftNotAllowed } from "./DraftNotAllowed.tsx";
 import styles from "./FormDraft.module.css";
 
 /**
@@ -126,7 +127,7 @@ export function FormDraft({
   triggerEvent,
   fields,
 }: FormDraftProps): ReactElement {
-  const { onFormDraft } = useAskConfig();
+  const { onFormDraft, draftAccess } = useAskConfig();
   const [expanded, setExpanded] = useState(false);
 
   const ordered = [...fields].sort((first, second) => first.order - second.order);
@@ -136,6 +137,9 @@ export function FormDraft({
 
   const trigger = triggerLine(triggerModule, triggerEvent);
   const count = `${ordered.length} field${ordered.length === 1 ? "" : "s"}`;
+
+  // After the hooks above, which must run on every render either way.
+  if (draftAccess?.form === false) return <DraftNotAllowed kind="form" />;
 
   return (
     <section className={styles.draft} aria-label={`Draft form: ${name}`}>

@@ -1,6 +1,8 @@
 import { FileSpreadsheet, LayoutDashboard, Radio, Sparkles, type LucideIcon } from "lucide-react";
 import type { ReactElement } from "react";
 import { AgentIcon } from "./AgentIcon.tsx";
+import { useAskConfig } from "./config.tsx";
+import type { DraftKind } from "./parts/DraftNotAllowed.tsx";
 import { useChatContext } from "./chat/ChatContext.tsx";
 import { useAskAgents } from "./chat/useAskAgents.ts";
 import { useOnlineStatus } from "./chat/useOnlineStatus.ts";
@@ -14,6 +16,9 @@ interface QuickAction {
    * copy is a label ("Summarize Report"), not necessarily a well-formed
   * question, so the two are kept separate. */
   prompt: string;
+  /** The draft this card asks for, so it can be left out for a reader the
+   * host says may not create one (`AskConfig.draftAccess`). */
+  draft?: DraftKind;
 }
 
 /** The four starter cards, first drafted from Figma's ai-agent-welcome-panel
@@ -28,12 +33,14 @@ const QUICK_ACTIONS: QuickAction[] = [
     title: "Create Dashboard",
     body: "Daily vehicle usage, drafted for you",
     prompt: "Create a dashboard to show daily usage of vehicles.",
+    draft: "dashboard",
   },
   {
     icon: FileSpreadsheet,
     title: "Create Forms",
     body: "Generate a ready-to-use form from a simple prompt",
     prompt: "Create a form for collecting daily sales figures.",
+    draft: "form",
   },
   {
     icon: Sparkles,
@@ -57,6 +64,12 @@ export interface EmptyStateProps {
 export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
   const { status, sendMessage, selectedAgent } = useChatContext();
   const { agents } = useAskAgents();
+  const { draftAccess } = useAskConfig();
+  // A card for a draft the reader may not create would start a run that ends
+  // in a notice saying so; leaving it out says the same thing sooner.
+  const actions = QUICK_ACTIONS.filter(
+    (action) => action.draft === undefined || draftAccess?.[action.draft] !== false,
+  );
   const isOnline = useOnlineStatus();
   // Not `selectedAgent !== null` — matches Composer.tsx's own gate (see
   // its docstring): a question with no agent armed is the ordinary case
@@ -96,7 +109,7 @@ export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
       <div className={styles.suggestions}>
         <p className={styles.suggestionsLabel}>Suggested Quick Actions</p>
         <div className={styles.grid}>
-          {QUICK_ACTIONS.map((action) => (
+          {actions.map((action) => (
             <button
               key={action.title}
               type="button"

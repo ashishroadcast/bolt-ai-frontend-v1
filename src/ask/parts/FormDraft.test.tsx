@@ -39,6 +39,16 @@ function show(props: FormDraftProps, onFormDraft?: (draft: FormDraftProps) => vo
 }
 
 describe("FormDraft", () => {
+  it("says the reader may not create forms instead of drawing a draft they cannot open", () => {
+    render(
+      <TestAskProvider config={{ draftAccess: { form: false }, onFormDraft: vi.fn() }}>
+        <FormDraft {...draft()} />
+      </TestAskProvider>,
+    );
+    expect(screen.getByText("You can't create forms")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Open in builder/ })).not.toBeInTheDocument();
+  });
+
   it("shows what the form is, how big it is and when it appears", () => {
     show(draft());
 

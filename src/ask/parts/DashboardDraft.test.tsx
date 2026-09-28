@@ -33,6 +33,18 @@ function show(props: DashboardDraftProps, onDashboardDraft?: (d: AskDashboardDra
 }
 
 describe("DashboardDraft", () => {
+  it("says the reader may not create dashboards instead of drawing a draft they cannot open", () => {
+    render(
+      <TestAskProvider config={{ draftAccess: { dashboard: false }, onDashboardDraft: vi.fn() }}>
+        <DashboardDraft {...draft()} />
+      </TestAskProvider>,
+    );
+    expect(screen.getByText("You can't create dashboards")).toBeInTheDocument();
+    expect(screen.getByText(/doesn't include permission to create dashboards/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Operations Overview" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Open in builder/ })).not.toBeInTheDocument();
+  });
+
   it("shows the view's name, size and description", () => {
     show(draft());
     expect(screen.getByRole("heading", { name: "Operations Overview" })).toBeInTheDocument();

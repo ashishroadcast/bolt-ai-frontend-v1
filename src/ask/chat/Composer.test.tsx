@@ -570,6 +570,28 @@ describe("Composer slash commands", () => {
     return screen.getByRole("listbox", { name: "Commands" });
   }
 
+  it("answers a draft command the reader may not use with the notice, and sends nothing", async () => {
+    fetchMock = routed([SALES, FORMS, FLEET]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <TestAskProvider config={{ draftAccess: { form: false } }}>
+        <ChatProvider>
+          <AskAgentsProvider>
+            <Composer />
+          </AskAgentsProvider>
+        </ChatProvider>
+      </TestAskProvider>,
+    );
+    await waitFor(() => expect(screen.getByLabelText("Show commands")).toBeInTheDocument());
+
+    type("/form a vehicle inspection checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(await screen.findByText(/doesn't include permission to create forms/)).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
   it("opens on a leading slash and lists only agents an operator gave a command", async () => {
     const menu = await typeSlash();
 

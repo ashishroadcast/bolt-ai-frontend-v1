@@ -30,6 +30,12 @@ import { GatewayClient } from "./http/gatewayClient.ts";
  * it had already worked out the right seams against the same backend: the
  * host owns the credential, the widget owns the conversation.
  */
+/** See `AskConfig.draftAccess`. */
+export interface AskDraftAccess {
+  dashboard?: boolean;
+  form?: boolean;
+}
+
 export interface AskConfig {
   /**
    * agent-service's origin, e.g. `https://ai.restrologic.com`. No trailing
@@ -111,6 +117,18 @@ export interface AskConfig {
    * without its "Open in builder" button.
    */
   onDashboardDraft?: (draft: AskDashboardDraft) => void;
+  /**
+   * Whether the reader may create each kind of draft, as the host's own
+   * access control decides it (bolt-v2's RBAC: `dashboards.create`,
+   * `forms.create`).
+   *
+   * `false` replaces that kind's draft card with a plain notice, hides its
+   * quick action, and answers its slash command with the same notice
+   * instead of starting a run: a draft the reader can never open is a
+   * minute of waiting for something they cannot use. Absent (or `true`)
+   * changes nothing, which is every host that has no such rule — the console.
+   */
+  draftAccess?: AskDraftAccess;
   /**
    * Inserts one drafted widget into the builder's UNSAVED canvas.
    *

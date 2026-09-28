@@ -9,6 +9,7 @@ import {
   AskProvider,
   type AskConfig,
   type AskDashboardDraft,
+  type AskDraftAccess,
   type AskHostContext,
   type AskWidgetDraft,
   type FormDraftHandoff,
@@ -495,8 +496,23 @@ export class BoltAiAskElement extends HTMLElement {
     this.render();
   }
 
+  /**
+   * `AskConfig.draftAccess`: which drafts this reader may create, from the
+   * host's own access control. A property, not an attribute — it is an
+   * object, and the host already holds it as one.
+   */
+  get draftAccess(): AskDraftAccess | null {
+    return this.draftAccessValue;
+  }
+
+  set draftAccess(value: AskDraftAccess | null) {
+    this.draftAccessValue = value;
+    this.render();
+  }
+
   private baseUrlValue: string | null = null;
   private setupAgentsHrefValue: string | null = null;
+  private draftAccessValue: AskDraftAccess | null = null;
 
   /**
    * Stops a key typed into one of the widget's own fields at the shadow root.
@@ -631,6 +647,7 @@ export class BoltAiAskElement extends HTMLElement {
       clientType,
       copy,
       ...(setupAgentsHref === null ? {} : { setupAgentsHref }),
+      ...(this.draftAccessValue === null ? {} : { draftAccess: this.draftAccessValue }),
       // Read at call time like the auth providers below, so a host that
       // assigns it after append is honoured. Left out entirely when the host
       // has set nothing: `AskConfig.onFormDraft` being undefined is what the
