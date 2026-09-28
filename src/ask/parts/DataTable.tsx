@@ -6,7 +6,11 @@ import styles from "./DataTable.module.css";
 export type DataTableColumnType = "text" | "number" | "currency" | "percent" | "share";
 
 export interface DataTableColumn {
-  /** Row key this column reads. */
+  /**
+   * Row key this column reads, unique within the table. Not the column's
+   * name: a join selects two columns called `name`, and keyed by name the
+   * second overwrote the first. `wireParts.adaptTable` keys by position.
+   */
   key: string;
   /** Header label — what the column is, not how it's typed. */
   header: string;

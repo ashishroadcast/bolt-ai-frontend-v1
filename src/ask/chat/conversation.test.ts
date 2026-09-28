@@ -46,8 +46,8 @@ describe("hydrateMessages", () => {
             // Headers are written the way a person would (wireParts.headerLabel):
             // the raw column name is how the database spells it, not how the
             // operator reading the table does.
-            columns: [{ key: "item", header: "Item" }],
-            rows: [{ item: "Chicken Biryani" }],
+            columns: [{ key: "c0", header: "Item" }],
+            rows: [{ c0: "Chicken Biryani" }],
           },
         },
       ],

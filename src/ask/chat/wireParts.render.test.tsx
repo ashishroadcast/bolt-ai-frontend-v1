@@ -50,4 +50,18 @@ describe("a wire table, rendered", () => {
 
     expect(cellTexts()).toEqual(["280", "12345"]);
   });
+
+  it("shows each of two same-named columns' own values, under headers that differ", () => {
+    renderWireTable({
+      columns: ["name", "name"],
+      rows: [["Bandra", "Asha"], ["Powai", "Ravi"]],
+      row_count: 2,
+    });
+
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "Name",
+      "Name (2)",
+    ]);
+    expect(cellTexts()).toEqual(["Bandra", "Asha", "Powai", "Ravi"]);
+  });
 });

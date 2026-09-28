@@ -22,22 +22,38 @@ const CAPTURED_TABLE = {
   truncated: false,
 };
 
+/**
+ * A table part's props, plus its rows read back by WIRE column name.
+ *
+ * Columns are keyed by position (`c0`, `c1`…), so that two columns sharing a
+ * name cannot collide. Most assertions here are about one named column's
+ * cells, which `named` and `typeOf` give them without restating positions.
+ */
 function tableProps(data: Record<string, unknown>) {
-  return toUIPart("data-table", data).data as {
+  const props = toUIPart("data-table", data).data as {
     columns: { key: string; header: string; type?: string }[];
     rows: Record<string, string | number>[];
     subLabel: string;
+  };
+  const wire = Array.isArray(data.columns) ? data.columns.map(String) : [];
+  const nameOf = (key: string): string => wire[Number(key.slice(1))] ?? key;
+  return {
+    ...props,
+    named: props.rows.map((row) =>
+      Object.fromEntries(Object.entries(row).map(([key, value]) => [nameOf(key), value])),
+    ),
+    names: props.columns.map((column) => nameOf(column.key)),
+    typeOf: (name: string) => props.columns.find((column) => nameOf(column.key) === name)?.type,
   };
 }
 
 describe("toUIPart / data-table", () => {
   it("types a string-encoded Decimal column as numeric, which is what right-aligns it", () => {
     const props = tableProps(CAPTURED_TABLE);
-    const byKey = Object.fromEntries(props.columns.map((column) => [column.key, column.type]));
 
-    expect(byKey.net_sales_sum).toBe("number");
-    expect(byKey.store_id).toBe("number");
-    expect(byKey.store_name).toBeUndefined();
+    expect(props.typeOf("net_sales_sum")).toBe("number");
+    expect(props.typeOf("store_id")).toBe("number");
+    expect(props.typeOf("store_name")).toBeUndefined();
   });
 
   it("groups a decimal measure but leaves an integer id exactly as it arrived", () => {
@@ -49,8 +65,8 @@ describe("toUIPart / data-table", () => {
 
     // 12,345 would state something false about an identifier. A string,
     // too: DataTable groups any JS number it is handed.
-    expect(props.rows[0]!.store_id).toBe("12345");
-    expect(props.rows[0]!.net_sales_sum).toBe("2,90,82,789.84");
+    expect(props.named[0]!.store_id).toBe("12345");
+    expect(props.named[0]!.net_sales_sum).toBe("2,90,82,789.84");
   });
 
   it("rounds a plain measure to two decimals rather than showing float noise", () => {
@@ -64,7 +80,7 @@ describe("toUIPart / data-table", () => {
       row_count: 1,
     });
 
-    expect(props.rows[0]!.distance_from_median).toBe("44.71");
+    expect(props.named[0]!.distance_from_median).toBe("44.71");
   });
 
   it("leaves a bare integer exactly as it arrived", () => {
@@ -72,7 +88,7 @@ describe("toUIPart / data-table", () => {
     // "12,345" states something false about it.
     const props = tableProps({ columns: ["store_id"], rows: [["12345"]], row_count: 1 });
 
-    expect(props.rows[0]!.store_id).toBe("12345");
+    expect(props.named[0]!.store_id).toBe("12345");
   });
 
   it("groups an integer only when the server says it is a count", () => {
@@ -83,7 +99,7 @@ describe("toUIPart / data-table", () => {
       row_count: 1,
     });
 
-    expect(props.rows[0]).toEqual({
+    expect(props.named[0]).toEqual({
       order_count: "12,345",
       year: "2026",
       phone: "9876543210",
@@ -97,7 +113,7 @@ describe("toUIPart / data-table", () => {
     // No identifier has a decimal point, so this column is a measure.
     const props = tableProps({ columns: ["distance_km"], rows: [["12345.5"], [12000]], row_count: 2 });
 
-    expect(props.rows.map((row) => row.distance_km)).toEqual(["12,345.5", "12,000"]);
+    expect(props.named.map((row) => row.distance_km)).toEqual(["12,345.5", "12,000"]);
   });
 
   it("leaves a blank cell blank rather than calling it zero", () => {
@@ -108,7 +124,21 @@ describe("toUIPart / data-table", () => {
       row_count: 2,
     });
 
-    expect(props.rows.map((row) => row.order_count)).toEqual(["", "4,200"]);
+    expect(props.named.map((row) => row.order_count)).toEqual(["", "4,200"]);
+  });
+
+  it("keeps two columns that share a name apart, numbering the second header", () => {
+    // `SELECT s.name, c.name` — keyed by name, the second column's values
+    // overwrote the first's, and both headers read "Name".
+    const props = tableProps({
+      columns: ["name", "name", "city", "name"],
+      rows: [["Bandra", "Asha", "Mumbai", "North"]],
+      row_count: 1,
+    });
+
+    expect(props.columns.map((column) => column.key)).toEqual(["c0", "c1", "c2", "c3"]);
+    expect(props.columns.map((column) => column.header)).toEqual(["Name", "Name (2)", "City", "Name (3)"]);
+    expect(props.rows[0]).toEqual({ c0: "Bandra", c1: "Asha", c2: "Mumbai", c3: "North" });
   });
 
   it("writes a column name the way a person would", () => {
@@ -133,7 +163,7 @@ describe("toUIPart / data-table", () => {
     });
 
     expect(props.columns[0]!.type).toBeUndefined();
-    expect(props.rows[1]!.value).toBe("n/a");
+    expect(props.named[1]!.value).toBe("n/a");
   });
 
   it("does not call an all-blank column numeric on a vacuous truth", () => {
@@ -155,13 +185,13 @@ describe("currency and percent columns", () => {
   // "Rs 1,012,406.24", and a growth column reached the screen as
   // 2,119.9706005879884000.
   function table(kinds: string[], rows: unknown[][]) {
-    return toUIPart("data-table", {
+    return tableProps({
       columns: ["store_name", "total_net_sales", "mom_growth_pct"],
       column_kinds: kinds,
       rows,
       row_count: rows.length,
       truncated: false,
-    }).data as { rows: Record<string, unknown>[]; columns: { type?: string }[] };
+    });
   }
 
   it("puts a rupee sign and exactly two decimals on a currency column", () => {
@@ -170,7 +200,7 @@ describe("currency and percent columns", () => {
       [["Bombay Canteen", "12443248.6", "12.3456"]],
     );
 
-    expect(out.rows[0].total_net_sales).toBe("₹1,24,43,248.60");
+    expect(out.named[0].total_net_sales).toBe("₹1,24,43,248.60");
   });
 
   it("caps a percentage at two decimals rather than sixteen", () => {
@@ -179,7 +209,7 @@ describe("currency and percent columns", () => {
       [["Panvel", "142.86", "2119.9706005879884"]],
     );
 
-    expect(out.rows[0].mom_growth_pct).toBe("2,119.97%");
+    expect(out.named[0].mom_growth_pct).toBe("2,119.97%");
   });
 
   it("keeps paise — a currency total that loses them stops reconciling", () => {
@@ -187,7 +217,7 @@ describe("currency and percent columns", () => {
     // which would render this as ₹9,44,221.
     const out = table(["text", "currency", "percent"], [["Sinhgad", "944220.66", "0"]]);
 
-    expect(out.rows[0].total_net_sales).toBe("₹9,44,220.66");
+    expect(out.named[0].total_net_sales).toBe("₹9,44,220.66");
   });
 
   it("right-aligns a money column even when its values arrive as strings", () => {
@@ -199,27 +229,27 @@ describe("currency and percent columns", () => {
   it("adds no symbol at all when the server sent no kinds", () => {
     // An older part, or one from a path that does not classify: a wrong
     // symbol is worse than none.
-    const out = toUIPart("data-table", {
+    const out = tableProps({
       columns: ["total_net_sales"],
       rows: [["944220.66"]],
       row_count: 1,
       truncated: false,
-    }).data as { rows: Record<string, unknown>[] };
+    });
 
-    expect(out.rows[0].total_net_sales).toBe("9,44,220.66");
+    expect(out.named[0].total_net_sales).toBe("9,44,220.66");
   });
 
   it("leaves an id column alone", () => {
-    const out = toUIPart("data-table", {
+    const out = tableProps({
       columns: ["store_id"],
       column_kinds: ["text"],
       rows: [["280"]],
       row_count: 1,
       truncated: false,
-    }).data as { rows: Record<string, unknown>[] };
+    });
 
     // Never "₹280", never "2,80".
-    expect(out.rows[0].store_id).toBe("280");
+    expect(out.named[0].store_id).toBe("280");
   });
 });
 
@@ -236,7 +266,7 @@ describe("timestamp columns render in IST", () => {
       row_count: 1,
     });
 
-    expect(out.rows[0]!.lastUpdate).toBe("2026-09-09 10:06 IST");
+    expect(out.named[0]!.lastUpdate).toBe("2026-09-09 10:06 IST");
   });
 
   it("converts an explicit-offset Postgres timestamp to IST", () => {
@@ -248,7 +278,7 @@ describe("timestamp columns render in IST", () => {
       row_count: 1,
     });
 
-    expect(out.rows[0]!.last_ping).toBe("2026-01-09 17:30 IST");
+    expect(out.named[0]!.last_ping).toBe("2026-01-09 17:30 IST");
   });
 
   it("leaves a naive timestamp — no Z, no offset — unconverted", () => {
@@ -261,7 +291,7 @@ describe("timestamp columns render in IST", () => {
       row_count: 1,
     });
 
-    expect(out.rows[0]!.lastUpdate).toBe("2026-09-09T04:36:52");
+    expect(out.named[0]!.lastUpdate).toBe("2026-09-09T04:36:52");
   });
 
   it("never mistakes a device name or a UUID for a timestamp", () => {
@@ -271,8 +301,8 @@ describe("timestamp columns render in IST", () => {
       row_count: 1,
     });
 
-    expect(out.rows[0]!.name).toBe("HR55AW2045");
-    expect(out.rows[0]!.id).toBe("019ba2a1-29a7-707a-bc6f-00a6749365a8");
+    expect(out.named[0]!.name).toBe("HR55AW2045");
+    expect(out.named[0]!.id).toBe("019ba2a1-29a7-707a-bc6f-00a6749365a8");
   });
 
   it("does not right-align a timestamp column the way a number is", () => {
@@ -292,8 +322,8 @@ describe("timestamp columns render in IST", () => {
       row_count: 2,
     });
 
-    expect(out.rows[0]!.value).toBe("2026-09-09T04:36:52Z");
-    expect(out.rows[1]!.value).toBe("n/a");
+    expect(out.named[0]!.value).toBe("2026-09-09T04:36:52Z");
+    expect(out.named[1]!.value).toBe("n/a");
   });
 });
 
@@ -311,10 +341,10 @@ describe("updated_at/created_at are dropped from the generative UI table", () =>
       row_count: 1,
     });
 
-    expect(props.columns.map((c) => c.key)).toEqual(["id", "name", "last_ping"]);
-    expect(props.rows[0]!.updated_at).toBeUndefined();
-    expect(props.rows[0]!.created_at).toBeUndefined();
-    expect(props.rows[0]!.last_ping).toBe("2026-09-09 10:06 IST");
+    expect(props.names).toEqual(["id", "name", "last_ping"]);
+    expect(props.named[0]!.updated_at).toBeUndefined();
+    expect(props.named[0]!.created_at).toBeUndefined();
+    expect(props.named[0]!.last_ping).toBe("2026-09-09 10:06 IST");
   });
 
   it("matches case-insensitively and ignores surrounding whitespace", () => {
@@ -334,23 +364,24 @@ describe("updated_at/created_at are dropped from the generative UI table", () =>
       row_count: 1,
     });
 
-    expect(props.columns.map((c) => c.key)).toEqual(["last_ping", "modified_on", "lastUpdate"]);
+    expect(props.names).toEqual(["last_ping", "modified_on", "lastUpdate"]);
   });
 
   it("a hidden column never skews a kept column's own numeric/timestamp typing", () => {
     // Regression guard for the refactor: `cells`/`kinds` must be re-indexed
     // together after filtering, not just `columns` — an off-by-one here
     // would silently apply the WRONG kind/values to a kept column.
-    const out = toUIPart("data-table", {
+    const out = tableProps({
       columns: ["updated_at", "net_sales"],
       column_kinds: ["text", "currency"],
       rows: [["2026-01-09T12:00:00Z", "944220.66"]],
       row_count: 1,
       truncated: false,
-    }).data as { rows: Record<string, unknown>[]; columns: { key: string; type?: string }[] };
+    });
 
-    expect(out.columns).toEqual([{ key: "net_sales", header: "Net sales", type: "number" }]);
-    expect(out.rows[0]!.net_sales).toBe("₹9,44,220.66");
+    // Keyed by the column's place on the wire, which survives the drop.
+    expect(out.columns).toEqual([{ key: "c1", header: "Net sales", type: "number" }]);
+    expect(out.named[0]!.net_sales).toBe("₹9,44,220.66");
   });
 });
 

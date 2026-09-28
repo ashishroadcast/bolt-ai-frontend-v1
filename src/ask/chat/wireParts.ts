@@ -115,6 +115,24 @@ const HEADER_WORDS: Record<string, string> = {
   txn: "transactions",
 };
 
+/**
+ * Every column's header, with a repeat numbered: "Name", "Name (2)".
+ *
+ * A join selects two columns with one name as a matter of course
+ * (`SELECT s.name, c.name`), and two identical headers make the reader
+ * guess which is which. The number says only that they differ, which is
+ * all this module knows; the query's own aliases are the real fix.
+ */
+function uniqueHeaders(names: readonly string[]): string[] {
+  const seen = new Map<string, number>();
+  return names.map((name) => {
+    const label = headerLabel(name);
+    const count = (seen.get(label) ?? 0) + 1;
+    seen.set(label, count);
+    return count === 1 ? label : `${label} (${count})`;
+  });
+}
+
 function headerLabel(column: string): string {
   const words = column
     .trim()
@@ -286,6 +304,12 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
     .filter(({ name }) => !isHiddenColumn(name));
   const columns = visible.map(({ name }) => name);
   const kinds = visible.map(({ index }) => allKinds[index]);
+  // Keyed by the column's place on the wire, never by its name. Rows were
+  // built with `Object.fromEntries` over the names, so a join's second
+  // `name` column overwrote the first: both showed the second's values,
+  // under two headers React could not tell apart either.
+  const keys = visible.map(({ index }) => `c${index}`);
+  const headers = uniqueHeaders(columns);
 
   const cells = rawRows.map((row) => visible.map(({ index }) => toCellValue(row[index])));
   const timestamp = columns.map((_name, index) => isTimestampColumn(cells, index));
@@ -312,25 +336,25 @@ function adaptTable(data: Record<string, unknown>): Record<string, unknown> {
     // value is already a string, which DataTable's `formatCell` passes
     // through untouched, so the alignment is gained without handing a
     // Decimal through a float or an id through digit grouping.
-    columns: columns.map((name, index) => ({
-      key: name,
-      header: headerLabel(name),
+    columns: keys.map((key, index) => ({
+      key,
+      header: headers[index]!,
       ...(numeric[index] === true ? { type: "number" as const } : {}),
     })),
     rows: cells.map((row) =>
       Object.fromEntries(
-        columns.map((name, index) => {
+        keys.map((key, index) => {
           if (timestamp[index]) {
-            return [name, formatIstCell(row[index] as string)];
+            return [key, formatIstCell(row[index] as string)];
           }
           const kind = kinds[index];
           if (kind === "currency" || kind === "percent") {
-            return [name, formatByKind(row[index]!, kind)];
+            return [key, formatByKind(row[index]!, kind)];
           }
-          if (numeric[index] !== true) return [name, row[index]!];
+          if (numeric[index] !== true) return [key, row[index]!];
           // A string either way. DataTable groups any JS number it is
           // handed, and whether this column is grouped was decided above.
-          return [name, grouped[index] ? String(formatGroupedNumber(row[index]!)) : String(row[index]!)];
+          return [key, grouped[index] ? String(formatGroupedNumber(row[index]!)) : String(row[index]!)];
         }),
       ),
     ),
