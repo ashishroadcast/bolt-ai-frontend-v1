@@ -380,6 +380,44 @@ describe("HistoryPanel", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("reports a failed open on that row and keeps every other row, with a Retry that works", async () => {
+    // Deleted in another tab first, then found again: the retry is what
+    // a network blip needs, and it must not have lost the list meanwhile.
+    const onClose = vi.fn();
+    let detailCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = urlOf(input);
+      if (url.includes("/agent/conversations/4")) {
+        detailCalls += 1;
+        return Promise.resolve(
+          detailCalls === 1
+            ? jsonResponse({ detail: "conversation not found" }, 404)
+            : jsonResponse({ id: 4, title: null, created_at: "", updated_at: "", messages: [] }),
+        );
+      }
+      return Promise.resolve(
+        jsonResponse({
+          items: [...ONE_ITEM, { ...ONE_ITEM[0], id: 3, title: "Fuel spend by depot" }],
+          next_cursor: null,
+        }),
+      );
+    });
+    renderPanel(fetchMock, onClose);
+    await screen.findByText("Weekend discount spike");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open conversation: Weekend discount spike" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Couldn't open this conversation.");
+    expect(alert.closest("li")).toHaveTextContent("Weekend discount spike");
+    expect(screen.getByText("Fuel spend by depot")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry opening Weekend discount spike" }));
+
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("closes on Escape and on its own back arrow", () => {
     const onClose = vi.fn();
     const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ items: [], next_cursor: null })));

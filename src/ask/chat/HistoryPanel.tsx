@@ -136,6 +136,9 @@ interface HistoryItemProps {
   onOpen: () => void;
   onDeleted: (id: number) => void;
   disabled: boolean;
+  /** The last attempt to open THIS row failed. Reported on the row, with
+   * a retry, rather than in place of the list — see `handleOpen`. */
+  openFailed: boolean;
 }
 
 /**
@@ -145,7 +148,7 @@ interface HistoryItemProps {
  * load-bearing actions this console already has and Figma's static frame
  * simply didn't need to depict.
  */
-function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemProps) {
+function HistoryItem({ item, bucket, onOpen, onDeleted, disabled, openFailed }: HistoryItemProps) {
   const client = useAskClient();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -247,6 +250,21 @@ function HistoryItem({ item, bucket, onOpen, onDeleted, disabled }: HistoryItemP
           {deleteError}
         </p>
       )}
+
+      {openFailed && (
+        <p role="alert" className={styles.rowError}>
+          <span>Couldn't open this conversation.</span>
+          <button
+            type="button"
+            className={styles.retryBtn}
+            onClick={onOpen}
+            disabled={disabled}
+            aria-label={`Retry opening ${heading}`}
+          >
+            Retry
+          </button>
+        </p>
+      )}
     </li>
   );
 }
@@ -296,6 +314,7 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<number | null>(null);
+  const [openFailedId, setOpenFailedId] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const isFirstRun = useRef(true);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -397,13 +416,20 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
+  /**
+   * A failure is the row's, not the list's. It used to go through `error`,
+   * which replaces the whole list — so one conversation deleted in another
+   * tab, or one dropped request, took every other row off screen with it
+   * and left nothing to click but the back arrow.
+   */
   async function handleOpen(id: number) {
     setOpeningId(id);
+    setOpenFailedId(null);
     try {
       await loadConversation(id);
       onClose();
-    } catch (err) {
-      setError(errorMessage(err));
+    } catch {
+      setOpenFailedId(id);
     } finally {
       setOpeningId(null);
     }
@@ -520,6 +546,7 @@ export function HistoryPanel({ onClose, onMinimize }: HistoryPanelProps) {
                     onOpen={() => void handleOpen(item.id)}
                     onDeleted={handleDeleted}
                     disabled={openingId !== null}
+                    openFailed={openFailedId === item.id}
                   />
                 ))}
               </ul>

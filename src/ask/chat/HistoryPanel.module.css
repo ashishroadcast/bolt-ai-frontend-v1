@@ -281,9 +281,17 @@
 }
 
 .rowError {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   font-size: var(--text-micro);
   color: var(--critical);
   margin: 0 12px 8px 14px;
+}
+
+.retryBtn {
+  composes: pill from "./controls.module.css";
 }
 
 /* The end of the list when the server has more: its own centred row, so it
