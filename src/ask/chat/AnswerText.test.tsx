@@ -81,6 +81,81 @@ describe("AnswerText", () => {
   });
 });
 
+// --- numbered lists ----------------------------------------------------------
+
+describe("numbering a list the way the agent numbered it", () => {
+  const markers = (root: HTMLElement) =>
+    [...root.querySelectorAll("ol > li")].map((item) => item.getAttribute("data-marker"));
+
+  it("numbers a loose list 1, 2, 3 rather than 1, 1, 1", () => {
+    const { container } = render(<AnswerText text={"1. Bandra\n\n2. Lower Parel\n\n3. BKC"} />);
+
+    expect(container.querySelectorAll("ol")).toHaveLength(1);
+    expect(markers(container)).toEqual(["1.", "2.", "3."]);
+  });
+
+  it("starts a list at the number it was written with", () => {
+    const { container } = render(<AnswerText text={"3. BKC\n4. Andheri"} />);
+
+    expect(container.querySelector("ol")!.getAttribute("start")).toBe("3");
+    expect(markers(container)).toEqual(["3.", "4."]);
+  });
+
+  it("draws sub-bullets inside the numbered item they belong to", () => {
+    const { container } = render(
+      <AnswerText text={"1. Bandra\n   - up 12%\n   - best day Saturday\n2. BKC"} />,
+    );
+
+    const outer = container.querySelectorAll("ol > li");
+    expect(outer).toHaveLength(2);
+    expect(outer[0]!.querySelectorAll("ul > li")).toHaveLength(2);
+    expect(markers(container)).toEqual(["1.", "2."]);
+  });
+});
+
+// --- the markdown models write anyway ---------------------------------------
+
+describe("rendering tables, code and quotes", () => {
+  it("renders a pipe table as a real table with column headers", () => {
+    render(<AnswerText text={"| Store | Net sales |\n|---|---:|\n| Bandra | ₹10,08,942.35 |"} />);
+
+    const table = screen.getByRole("table");
+    expect(screen.getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Store",
+      "Net sales",
+    ]);
+    expect(screen.getByRole("cell", { name: "₹10,08,942.35" }).getAttribute("data-align")).toBe(
+      "right",
+    );
+    expect(table.textContent).not.toContain("|");
+  });
+
+  it("renders fenced code verbatim, with no fence and no heading made of a comment", () => {
+    const { container } = render(<AnswerText text={"```bash\n# count\n  wc -l a.csv\n```"} />);
+
+    const code = container.querySelector("pre > code")!;
+    expect(code.textContent).toBe("# count\n  wc -l a.csv");
+    expect(container.textContent).not.toContain("```");
+    expect(container.querySelector("strong")).toBeNull();
+  });
+
+  it("renders `code`, *italic* and > quotes as their own elements", () => {
+    const { container } = render(<AnswerText text={"Run `SUM` on *net*.\n\n> Excludes refunds."} />);
+
+    expect(container.querySelector("p code")!.textContent).toBe("SUM");
+    expect(container.querySelector("em")!.textContent).toBe("net");
+    expect(container.querySelector("blockquote")!.textContent).toBe("Excludes refunds.");
+  });
+
+  it("keeps a single caret while a table is still arriving", () => {
+    const text = "| Store | Sales |\n|---|---|\n| Bandra | 10 |";
+    const { container } = render(<AnswerText text={text} visibleChars={"StoreSales".length + 3} />);
+
+    expect(container.querySelectorAll("span[aria-hidden='true']")).toHaveLength(1);
+    expect(container.querySelector("td")!.textContent).toBe("Ban");
+  });
+});
+
 // --- the three voices in an answer ----------------------------------------
 //
 // The prompt asks for one line carrying the answer, then observations, then

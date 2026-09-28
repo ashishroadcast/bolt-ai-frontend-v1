@@ -1,38 +1,218 @@
-import { Fragment, useMemo, type ReactElement } from "react";
-import { countChars, parseAnswer, takeChars, type InlineSpan } from "./answerMarkup.ts";
+import { Fragment, useMemo, type ReactElement, type ReactNode } from "react";
+import {
+  countChars,
+  parseAnswer,
+  takeChars,
+  type AnswerBlock,
+  type InlineSpan,
+  type ListBlock,
+  type TableBlock,
+} from "./answerMarkup.ts";
 import styles from "./AnswerText.module.css";
 
 /**
- * One line's worth of spans. Bold is a `<strong>` rather than a styled
- * span so the emphasis the agent wrote survives a screen reader and a
+ * One span. Bold is a `<strong>` and italic an `<em>` rather than styled
+ * spans so the emphasis the agent wrote survives a screen reader and a
  * copy-paste into anything else, not only this stylesheet.
  */
+function Span({ span }: { span: InlineSpan }): ReactNode {
+  let node: ReactNode = span.text;
+  if (span.code === true) node = <code className={styles.code}>{node}</code>;
+  if (span.href !== undefined) {
+    // Only ever an http(s) URL (`answerMarkup`'s LINK); the label is a
+    // text node like everything else here.
+    node = (
+      <a className={styles.link} href={span.href} target="_blank" rel="noopener noreferrer">
+        {node}
+      </a>
+    );
+  }
+  if (span.italic === true) node = <em>{node}</em>;
+  if (span.bold) node = <strong>{node}</strong>;
+  return node;
+}
+
 function Spans({ spans }: { spans: InlineSpan[] }): ReactElement {
   return (
     <>
-      {spans.map((span, index) =>
-        span.href !== undefined ? (
-          // Only ever an http(s) URL (`answerMarkup`'s LINK); the label is a
-          // text node like everything else here.
-          // eslint-disable-next-line react/no-array-index-key
-          <a key={index} className={styles.link} href={span.href} target="_blank" rel="noopener noreferrer">
-            {span.text}
-          </a>
-        ) : span.bold ? (
-          // Positional keys: these are a parse of one string, re-derived
-          // whole on every render, never a reorderable list of entities —
-          // the same convention Thread's own PartList uses.
-          // eslint-disable-next-line react/no-array-index-key
-          <strong key={index}>{span.text}</strong>
-        ) : (
-          // eslint-disable-next-line react/no-array-index-key
-          <Fragment key={index}>{span.text}</Fragment>
-        ),
-      )}
+      {spans.map((span, index) => (
+        // Positional keys: these are a parse of one string, re-derived
+        // whole on every render, never a reorderable list of entities —
+        // the same convention Thread's own PartList uses.
+        // eslint-disable-next-line react/no-array-index-key
+        <Fragment key={index}>
+          <Span span={span} />
+        </Fragment>
+      ))}
     </>
   );
 }
 
+/** Where the reveal has got to. Only ever one on the page. */
+function Caret(): ReactElement {
+  return <span className={styles.caret} aria-hidden="true" />;
+}
+
+/** A block's lines, each break kept, with the caret after the last one
+ * when the reveal is still inside this block. */
+function Lines({ lines, caret }: { lines: InlineSpan[][]; caret: boolean }): ReactElement {
+  return (
+    <>
+      {lines.map((spans, lineIndex) => (
+        // eslint-disable-next-line react/no-array-index-key
+        <Fragment key={lineIndex}>
+          {lineIndex > 0 && <br />}
+          <Spans spans={spans} />
+          {caret && lineIndex === lines.length - 1 && <Caret />}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A list, numbered from wherever the source numbered it.
+ *
+ * The marker is drawn from `data-marker` rather than a CSS counter. A
+ * counter reset per `<ol>` is exactly what made "3." render as "1." — and
+ * a list the parser had to split in two, or nest under an item, restarted
+ * from one each time. The number the agent wrote is the one it meant.
+ */
+function List({ block, caret }: { block: ListBlock; caret: boolean }): ReactElement {
+  const last = block.items.length - 1;
+  const items = block.items.map((item, itemIndex) => {
+    const isLast = caret && itemIndex === last;
+    const lastChild = item.children.length - 1;
+    return (
+      <li
+        // eslint-disable-next-line react/no-array-index-key
+        key={itemIndex}
+        className={styles.item}
+        data-marker={block.ordered ? `${block.start + itemIndex}.` : undefined}
+      >
+        {/* One wrapper, so the item's two-column grid (marker, text) has
+            exactly two items whatever the text holds — a nested list
+            included. */}
+        <div className={styles.itemBody}>
+          <Lines lines={item.lines} caret={isLast && item.children.length === 0} />
+          {item.children.map((child, childIndex) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <Block key={childIndex} block={child} caret={isLast && childIndex === lastChild} />
+          ))}
+        </div>
+      </li>
+    );
+  });
+  if (!block.ordered) return <ul className={styles.bullets}>{items}</ul>;
+  return (
+    <ol
+      className={styles.ordered}
+      start={block.start === 1 ? undefined : block.start}
+      // How wide the number column has to be: "10." does not fit where "9."
+      // did, and a marker overlapping its own text reads as a typo.
+      data-digits={String(block.start + last).length}
+    >
+      {items}
+    </ol>
+  );
+}
+
+/** The last cell with any text in it yet, or -1. */
+function lastFilled(cells: InlineSpan[][]): number {
+  for (let index = cells.length - 1; index >= 0; index -= 1) {
+    if (cells[index]!.length > 0) return index;
+  }
+  return -1;
+}
+
+/**
+ * A table the agent wrote in markdown, as a real one.
+ *
+ * It scrolls sideways inside its own wrapper rather than widening the
+ * answer: a six-column table in a 420px panel otherwise pushes the whole
+ * conversation off the side of it.
+ */
+function Table({ block, caret }: { block: TableBlock; caret: boolean }): ReactElement {
+  // The caret belongs after the last cell that has anything in it yet.
+  const lastRow = block.rows.length - 1;
+  const caretRow = caret ? (lastRow >= 0 ? lastRow : -1) : null;
+  const caretCol = caretRow === null ? -1 : lastFilled(caretRow === -1 ? block.header : block.rows[lastRow]!);
+  return (
+    <div className={styles.tableScroll}>
+      <table className={styles.table}>
+        <thead>
+          <tr>
+            {block.header.map((cell, col) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <th key={col} scope="col" data-align={block.align[col] ?? undefined}>
+                <Spans spans={cell} />
+                {caretRow === -1 && col === caretCol && <Caret />}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {block.rows.length > 0 && (
+          <tbody>
+            {block.rows.map((row, rowIndex) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <tr key={rowIndex}>
+                {row.map((cell, col) => (
+                  // eslint-disable-next-line react/no-array-index-key
+                  <td key={col} data-align={block.align[col] ?? undefined}>
+                    <Spans spans={cell} />
+                    {caretRow === rowIndex && col === caretCol && <Caret />}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        )}
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Any block below the top level — inside a list item or a quote. The top
+ * level is the one place position means something (the finding, the
+ * closing line), so it is laid out by `AnswerText` itself.
+ */
+function Block({ block, caret }: { block: AnswerBlock; caret: boolean }): ReactElement {
+  switch (block.kind) {
+    case "paragraph":
+      return (
+        <p className={block.heading === true ? styles.heading : styles.paragraph}>
+          <Lines lines={block.lines} caret={caret} />
+        </p>
+      );
+    case "list":
+      return <List block={block} caret={caret} />;
+    case "table":
+      return <Table block={block} caret={caret} />;
+    case "code":
+      // Exempt from everything else in this file: no emphasis, no links, no
+      // trimming. A sample is only useful exactly as written.
+      return (
+        <pre className={styles.codeBlock} data-lang={block.lang === "" ? undefined : block.lang}>
+          <code>
+            {block.text}
+            {caret && <Caret />}
+          </code>
+        </pre>
+      );
+    case "quote": {
+      const last = block.blocks.length - 1;
+      return (
+        <blockquote className={styles.quote}>
+          {block.blocks.map((inner, index) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <Block key={index} block={inner} caret={caret && index === last} />
+          ))}
+        </blockquote>
+      );
+    }
+  }
+}
 
 /**
  * Whether a paragraph is short enough to be set as the finding.
@@ -91,34 +271,10 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
   return (
     <div className={styles.prose}>
       {shown.map((block, index) => {
-        const runs = block.kind === "paragraph" ? block.lines : block.items;
-        const lastRun = runs.length - 1;
-        const caretAfter = (runIndex: number) =>
-          isRevealing && index === lastBlock && runIndex === lastRun ? (
-            <span className={styles.caret} aria-hidden="true" />
-          ) : null;
-
-        if (block.kind === "list") {
-          const items = block.items.map((spans, itemIndex) => (
-            // eslint-disable-next-line react/no-array-index-key
-            <li key={itemIndex} className={styles.item}>
-              <span>
-                <Spans spans={spans} />
-                {caretAfter(itemIndex)}
-              </span>
-            </li>
-          ));
-          return block.ordered ? (
-            // eslint-disable-next-line react/no-array-index-key
-            <ol key={index} className={styles.ordered}>
-              {items}
-            </ol>
-          ) : (
-            // eslint-disable-next-line react/no-array-index-key
-            <ul key={index} className={styles.bullets}>
-              {items}
-            </ul>
-          );
+        const caret = isRevealing && index === lastBlock;
+        if (block.kind !== "paragraph" || block.heading === true) {
+          // eslint-disable-next-line react/no-array-index-key
+          return <Block key={index} block={block} caret={caret} />;
         }
         // The three voices in an answer, told apart by position — no
         // protocol change, because which paragraph is the headline is a
@@ -135,7 +291,7 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
         // display bold, which is what a styling rule doing the opposite of
         // containing a content failure looks like. Observed exactly once
         // and it was the ugliest thing this console has rendered.
-        const isLead = index === 0 && block.kind === "paragraph" && isHeadline(block);
+        const isLead = index === 0 && isHeadline(block);
         const isClosing =
           !isLead && index === shown.length - 1 && shown.some((b) => b.kind === "list");
         return (
@@ -149,14 +305,7 @@ export function AnswerText({ text, visibleChars }: AnswerTextProps): ReactElemen
                 <a> in the line became its own grid item and wrapped into
                 the 16px arrow column, one letter per line. */}
             <span>
-              {block.lines.map((spans, lineIndex) => (
-                // eslint-disable-next-line react/no-array-index-key
-                <Fragment key={lineIndex}>
-                  {lineIndex > 0 && <br />}
-                  <Spans spans={spans} />
-                  {caretAfter(lineIndex)}
-                </Fragment>
-              ))}
+              <Lines lines={block.lines} caret={caret} />
             </span>
           </p>
         );
