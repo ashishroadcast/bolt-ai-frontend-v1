@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -117,10 +117,13 @@ describe("the money axis", () => {
 
 describe("reading the chart without colour", () => {
   it("labels every series in the legend by text", () => {
-    render(<DataChart title="Where orders came from" kind="line" series={series} data={data} />);
+    const { container } = render(
+      <DataChart title="Where orders came from" kind="line" series={series} data={data} />,
+    );
 
+    const legend = container.querySelector("ul")!;
     for (const s of series) {
-      expect(screen.getByText(s.label)).toBeInTheDocument();
+      expect(within(legend).getByText(s.label)).toBeInTheDocument();
     }
   });
 
@@ -485,5 +488,79 @@ describe("hbarHeight", () => {
     expect(hbarHeight(3, 1)).toBe(240);
     expect(hbarHeight(40, 1)).toBe(40 * 28);
     expect(hbarHeight(20, 2)).toBe(20 * 36);
+  });
+});
+
+// --- the numbers, for a screen reader ----------------------------------------
+//
+// A screen reader heard "Weekly net sales. Series: Swiggy, Zomato, Dine-in."
+// and not one value.
+
+describe("the chart's accessible table", () => {
+  const typed: DataChartSeries[] = [
+    { key: "trips", label: "Trips", color: "var(--series-1)", format: "integer" },
+    { key: "sales", label: "Net sales", color: "var(--series-2)", format: "currency" },
+  ];
+  const points: DataChartPoint[] = [
+    { label: "Mon", values: { trips: 1204, sales: 1008942.35 } },
+    { label: "Tue", values: { trips: 988 } },
+  ];
+
+  it("gives every point and series a cell, formatted like the tooltip", () => {
+    render(<DataChart title="Weekly" subLabel="last 7 days" kind="line" series={typed} data={points} />);
+
+    const table = screen.getByRole("table", { name: "Weekly, last 7 days" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+      "Trips",
+      "Net sales",
+    ]);
+    expect(within(table).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Mon", "Tue"]);
+    const cells = within(table).getAllByRole("cell").map((cell) => cell.textContent);
+    // The corner, then each row's values in order — and a gap said as one.
+    expect(cells).toEqual(["", "1,204", "₹10,08,942.35", "988", "No data"]);
+  });
+
+  it("hides the drawing itself, so nothing is read twice", () => {
+    const { container } = render(<DataChart title="Weekly" kind="line" series={typed} data={points} />);
+
+    const svg = container.querySelector("svg.recharts-surface")!;
+    expect(svg.closest("[aria-hidden='true']")).not.toBeNull();
+    // Recharts' own keyboard layer would leave a focus stop inside it.
+    expect(svg.getAttribute("tabindex")).toBeNull();
+  });
+
+  it("lists every slice of a pie, including the ones folded into Other", () => {
+    const many: DataChartSeries[] = Array.from({ length: 10 }, (_, index) => ({
+      key: `c${index}`,
+      label: `Channel ${index + 1}`,
+      color: "var(--series-1)",
+      format: "currency",
+    }));
+    render(
+      <DataChart
+        title="Mix"
+        kind="pie"
+        series={many}
+        data={[{ label: "This month", values: Object.fromEntries(many.map((s, index) => [s.key, 100 * (index + 1)])) }]}
+      />,
+    );
+
+    const table = screen.getByRole("table", { name: "Mix" });
+    expect(within(table).getAllByRole("rowheader")).toHaveLength(10);
+    expect(within(table).getByRole("columnheader").textContent).toBe("This month");
+    expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toContain("₹1,000.00");
+  });
+
+  it("says both the figure and its share on a share chart", () => {
+    render(
+      <DataChart
+        title="Mix"
+        kind="share"
+        series={typed}
+        data={[{ label: "Mon", values: { trips: 30, sales: 10 } }]}
+      />,
+    );
+
+    expect(screen.getByRole("cell", { name: "30 (75%)" })).toBeInTheDocument();
   });
 });

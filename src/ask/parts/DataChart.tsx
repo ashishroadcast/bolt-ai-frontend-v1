@@ -478,6 +478,100 @@ function toPercentRows(rows: ChartRow[], series: DataChartSeries[]): ChartRow[] 
   });
 }
 
+interface ChartTableModel {
+  columns: { key: string; label: string }[];
+  rows: { label: string; cells: string[] }[];
+}
+
+/** What a reader hears for a value the server left out. */
+const NO_VALUE = "No data";
+
+function cellText(value: number | undefined, format?: SeriesFormat): string {
+  return typeof value === "number" && Number.isFinite(value) ? formatValue(value, format) : NO_VALUE;
+}
+
+/**
+ * The chart's numbers as rows and columns, from the props rather than from
+ * what was drawn: every slice (a folded "Other" is a drawing decision, not
+ * data), every point, and a gap said as a gap rather than as the zero a
+ * stack had to draw it at.
+ *
+ * - slices  one row per series, one column for the moment they describe
+ * - scatter one row per point, one column per measure
+ * - the rest one row per point on the x axis, one column per series
+ */
+function chartTable(kind: DataChartKind, series: readonly DataChartSeries[], data: readonly DataChartPoint[]): ChartTableModel {
+  if (SLICE_KINDS.has(kind)) {
+    const point = data[0];
+    return {
+      columns: [{ key: "value", label: point?.label ?? "Value" }],
+      rows: series.map((s) => ({ label: s.label, cells: [cellText(point?.values[s.key], s.format)] })),
+    };
+  }
+  const measures = kind === "scatter" ? series.slice(0, 2) : kind === "bubble" ? series.slice(0, 3) : series;
+  return {
+    columns: measures.map((s) => ({ key: s.key, label: s.label })),
+    rows: data.map((point) => {
+      // The share chart draws each value as its part of the column, so the
+      // table says both: the figure, and the share it was drawn as.
+      const total =
+        kind === "share" ? measures.reduce((sum, s) => sum + Math.abs(point.values[s.key] ?? 0), 0) : 0;
+      return {
+        label: point.label,
+        cells: measures.map((s) => {
+          const value = point.values[s.key];
+          const text = cellText(value, s.format);
+          return total > 0 && typeof value === "number" ? `${text} (${formatValue(value / total, "share")})` : text;
+        }),
+      };
+    }),
+  };
+}
+
+/**
+ * The chart, for a screen reader: the same numbers as a table, visually
+ * hidden.
+ *
+ * All a screen reader used to get was the image's label — "Weekly net
+ * sales. Series: Bandra, BKC." — and not one value. The plot itself is
+ * `aria-hidden` beside this, so nothing is read twice. Values go through
+ * the same `formatValue` the tooltip uses, so the table and the hover
+ * read-out can never disagree about a figure.
+ */
+function ChartTable({ caption, model }: { caption: string; model: ChartTableModel }): ReactElement {
+  return (
+    <table className={styles.visuallyHidden}>
+      <caption>{caption}</caption>
+      <thead>
+        <tr>
+          {/* The corner names nothing: the rows are named by their own
+              first cell. */}
+          <td />
+          {model.columns.map((column) => (
+            <th key={column.key} scope="col">
+              {column.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {model.rows.map((row, rowIndex) => (
+          // Points can share a label (two "Mon"s across a fortnight); the
+          // table is one render's snapshot, never reordered.
+          // eslint-disable-next-line react/no-array-index-key
+          <tr key={rowIndex}>
+            <th scope="row">{row.label}</th>
+            {row.cells.map((text, cellIndex) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <td key={cellIndex}>{text}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /**
  * A chart sheet: faint horizontal grid, an axis in Indian units, a
  * hover read-out, and a legend in the console's own voice rather than
@@ -572,13 +666,24 @@ export function DataChart({
 
   return (
     <Sheet title={title} subLabel={subLabel} icon={BarChart3}>
-      <div className={styles.body} role="img" aria-label={describedBy}>
-        <ResponsiveContainer width="100%" height={height}>
-          {renderChart(kind, rows, drawn, axis, slices)}
-        </ResponsiveContainer>
-        {legend.length > 0 && (
-          <ChartLegend entries={legend} line={kind === "line" || kind === "step"} />
-        )}
+      <div className={styles.body}>
+        {/* The picture, named as one image; everything inside it hidden
+            from assistive tech, because the table below carries the same
+            numbers in a form that can actually be read. */}
+        <div role="img" aria-label={describedBy}>
+          <div aria-hidden="true">
+            <ResponsiveContainer width="100%" height={height}>
+              {renderChart(kind, rows, drawn, axis, slices)}
+            </ResponsiveContainer>
+            {legend.length > 0 && (
+              <ChartLegend entries={legend} line={kind === "line" || kind === "step"} />
+            )}
+          </div>
+        </div>
+        <ChartTable
+          caption={`${title}${subLabel ? `, ${subLabel}` : ""}`}
+          model={chartTable(kind, drawn, data)}
+        />
       </div>
     </Sheet>
   );
@@ -589,6 +694,10 @@ export function DataChart({
  * not read as an expression, and each branch here is a different argument
  * about the data rather than a different style of the same one.
  */
+// `accessibilityLayer={false}` on every chart below: Recharts' own layer
+// makes the SVG a focusable `role="application"`, and a focusable element
+// inside the `aria-hidden` plot is a keyboard stop that announces nothing.
+// The hidden table is what a screen reader reads instead.
 function renderChart(
   kind: DataChartKind,
   rows: ChartRow[],
@@ -603,7 +712,7 @@ function renderChart(
   switch (kind) {
     case "line":
       return (
-        <LineChart data={rows} margin={margin}>
+        <LineChart data={rows} margin={margin} accessibilityLayer={false}>
           {axis}
           {series.map((s) => (
             <Line
@@ -628,7 +737,7 @@ function renderChart(
 
     case "area":
       return (
-        <AreaChart data={rows} margin={margin}>
+        <AreaChart data={rows} margin={margin} accessibilityLayer={false}>
           {axis}
           {series.map((s) => (
             <Area
@@ -659,7 +768,7 @@ function renderChart(
       // label into a series for a pie precisely so its own palette — and
       // the Swiggy/Zomato reservation inside it — applies per slice.
       return (
-        <PieChart margin={margin}>
+        <PieChart margin={margin} accessibilityLayer={false}>
           <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
           <Pie
             data={slices.map((slice) => ({ name: slice.label, value: slice.value }))}
@@ -688,7 +797,7 @@ function renderChart(
       // Two measures, one point per label: the first series is x, the
       // second y. The tool refuses anything else, so both exist here.
       return (
-        <ScatterChart margin={{ ...margin, bottom: 8 }}>
+        <ScatterChart margin={{ ...margin, bottom: 8 }} accessibilityLayer={false}>
           <CartesianGrid stroke="var(--rule)" strokeDasharray="2 4" />
           <XAxis
             type="number"
@@ -755,7 +864,7 @@ function renderChart(
       // to the next — it stayed, then changed — and a sloped line asserts
       // a journey the data never took.
       return (
-        <LineChart data={rows} margin={margin}>
+        <LineChart data={rows} margin={margin} accessibilityLayer={false}>
           {axis}
           {series.map((s) => (
             <Line
@@ -779,7 +888,7 @@ function renderChart(
       // Mango Ice Cream (Medium Fat)" is a real one — gets a full line to
       // itself instead of being rotated 45° or truncated to nothing.
       return (
-        <BarChart data={rows} layout="vertical" margin={{ ...margin, left: 8 }}>
+        <BarChart data={rows} layout="vertical" margin={{ ...margin, left: 8 }} accessibilityLayer={false}>
           <CartesianGrid stroke="var(--rule)" strokeDasharray="2 4" horizontal={false} />
           <XAxis
             type="number"
@@ -817,7 +926,7 @@ function renderChart(
       // once and does neither cleanly; this answers only the second, which
       // is what "share over time" actually asks.
       return (
-        <BarChart data={toPercentRows(rows, series)} margin={margin} stackOffset="expand">
+        <BarChart data={toPercentRows(rows, series)} margin={margin} stackOffset="expand" accessibilityLayer={false}>
           {axis}
           {series.map((s) => (
             <Bar
@@ -838,7 +947,7 @@ function renderChart(
       // thing you read against it. Both on one axis would flatten the
       // smaller to a straight line at zero.
       return (
-        <ComposedChart data={rows} margin={margin}>
+        <ComposedChart data={rows} margin={margin} accessibilityLayer={false}>
           {axis}
           <YAxis
             yAxisId="right"
@@ -877,7 +986,7 @@ function renderChart(
       // comparison, and an outlier reads as a dent rather than as a row
       // you have to find.
       return (
-        <RadarChart data={rows} margin={margin}>
+        <RadarChart data={rows} margin={margin} accessibilityLayer={false}>
           <PolarGrid stroke="var(--rule)" />
           <PolarAngleAxis dataKey="label" tick={{ fill: "var(--fg-dim)", fontSize: 11, fontFamily: "var(--font-body)" }} />
           <PolarRadiusAxis
@@ -911,7 +1020,7 @@ function renderChart(
       // narrowing IS the finding, and the gap between two stages is what a
       // reader is looking for.
       return (
-        <FunnelChart margin={margin}>
+        <FunnelChart margin={margin} accessibilityLayer={false}>
           <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
           <Funnel
             dataKey="size"
@@ -935,6 +1044,7 @@ function renderChart(
           startAngle={90}
           endAngle={-270}
           margin={margin}
+          accessibilityLayer={false}
         >
           <RadialBar dataKey="value" background={{ fill: "var(--surface-sunk)" }} isAnimationActive={false} />
           <Tooltip formatter={formatterFor(slices)} {...TOOLTIP_STYLE} />
@@ -943,7 +1053,7 @@ function renderChart(
 
     default:
       return (
-        <BarChart data={rows} margin={margin}>
+        <BarChart data={rows} margin={margin} accessibilityLayer={false}>
           {axis}
           {series.map((s) => (
             <Bar

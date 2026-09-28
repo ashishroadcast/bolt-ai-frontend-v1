@@ -97,3 +97,19 @@
   border-radius: 1px;
   transform: translateY(-3px);
 }
+
+/* The chart's numbers for a screen reader: present to assistive tech,
+   invisible on screen. The same pattern the console's own routes use
+   (DocumentsRoute.module.css) — repeated here because Ask ships without
+   them. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
