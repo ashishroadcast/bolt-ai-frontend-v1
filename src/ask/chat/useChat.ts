@@ -31,6 +31,9 @@ export interface UseChatResult {
    * between runs.
    */
   stop: () => void;
+  /** Replaces the thread with a persisted conversation. A run still in
+   * flight is let go once the conversation has loaded — its answer belonged
+   * to the thread being replaced — and any slash-armed agent is disarmed. */
   loadConversation: (conversationId: number) => Promise<void>;
   /**
    * Who the Ask screen is currently talking to (a `GET /agent/agents`
@@ -53,10 +56,11 @@ export interface UseChatResult {
    * a delete just removed is the one currently open, so it can clear the
    * thread instead of leaving it pointed at a row that no longer exists. */
   activeConversationId: number | null;
-  /** Resets the thread to the empty state without touching anything
-   * server-side — used when the conversation currently open gets deleted
-   * out from under it (`HistoryPanel.tsx`), so a stray next message
-   * doesn't get sent with a `session_id` for a conversation that's gone. */
+  /** Resets the thread to the empty state — "New conversation", and when the
+   * conversation currently open gets deleted out from under it
+   * (`HistoryPanel.tsx`), so a stray next message doesn't get sent with a
+   * `session_id` for a conversation that's gone. Nothing is deleted
+   * server-side; a run still in flight is closed and appends nothing. */
   clearConversation: () => void;
 }
 
@@ -175,6 +179,15 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   const abortRef = useRef<AbortController | null>(null);
   const inFlightRef = useRef<InFlightRun | null>(null);
   const conversationIdRef = useRef<number | null>(null);
+  // Which thread a run belongs to. Bumped whenever the thread on screen is
+  // replaced (a new conversation, or one reopened from History), and every
+  // write a run makes checks it first: without it, the previous run's answer
+  // landed in whatever thread was showing when it finished, and its
+  // `isStreamingRef` kept the new screen's composer locked until then.
+  const generationRef = useRef(0);
+  // The same idea for `loadConversation`, whose fetch can resolve after the
+  // reader has already moved on — to another conversation, or a new one.
+  const loadTokenRef = useRef(0);
 
   useEffect(() => {
     // Sets the ref back to true on every (re)mount — not just once at
@@ -203,6 +216,8 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   }, []);
 
   const runTurn = useCallback(async (text: string, options?: SendOptions) => {
+    const generation = generationRef.current;
+    const isCurrent = () => mountedRef.current && generationRef.current === generation;
     isStreamingRef.current = true;
     setStatus("streaming");
     setError(null);
@@ -258,7 +273,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     });
 
     const updateActiveRun = (patch: Partial<ActiveRun>) => {
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       setActiveRun((prev) => (prev ? { ...prev, ...patch } : prev));
     };
 
@@ -272,7 +287,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         runSummary: summary,
         usage,
       };
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       setMessages((prev) => [...prev, finalMessage]);
       setActiveRun(null);
     };
@@ -345,10 +360,14 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
             // no id until here, and without keeping it every follow-up was
             // sent with no `session_id` — a new conversation each time, so
             // "and last week?" reached the agent with none of the earlier turns.
+            //
+            // Only while this run's thread is still the one on screen: a
+            // stale run naming its conversation would point the NEW thread's
+            // follow-ups at the old one.
             const sessionId = chunk.messageMetadata?.session_id;
-            if (typeof sessionId === "number" && Number.isInteger(sessionId)) {
+            if (typeof sessionId === "number" && Number.isInteger(sessionId) && isCurrent()) {
               conversationIdRef.current = sessionId;
-              if (mountedRef.current) setActiveConversationId(sessionId);
+              setActiveConversationId(sessionId);
             }
             updateActiveRun({ messageId, agentName });
             break;
@@ -461,9 +480,10 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         // reject with whatever the platform chose, and it was this hook that
         // pulled the plug either way.
         if (endReason === null) {
-          // A deliberate cancel (provider unmount) — not a failure the
-          // operator caused, so nothing renders and nothing needs undoing:
-          // the assistant message simply never gets appended.
+          // A deliberate cancel (provider unmount, or the thread replaced
+          // under it) — not a failure the operator caused, so nothing
+          // renders and nothing needs undoing: the assistant message simply
+          // never gets appended.
           return;
         }
         events.push({ kind: "run-end", at: Date.now() });
@@ -474,17 +494,37 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
         return;
       }
       const message = err instanceof Error ? err.message : "Asking failed unexpectedly.";
-      if (mountedRef.current) {
+      if (isCurrent()) {
         finalize(summaryFrom("error", message), null);
         setError(message);
       }
     } finally {
       if (stallTimer !== null) clearTimeout(stallTimer);
       if (inFlightRef.current?.end === end) inFlightRef.current = null;
-      abortRef.current = null;
-      isStreamingRef.current = false;
-      if (mountedRef.current) setStatus("idle");
+      // A stale run leaves these alone: they belong to whatever run the new
+      // thread may already have started.
+      if (generationRef.current === generation) {
+        abortRef.current = null;
+        isStreamingRef.current = false;
+        if (mountedRef.current) setStatus("idle");
+      }
     }
+  }, []);
+
+  /**
+   * Lets go of the run in flight, if any, because the thread it was writing
+   * into is about to be replaced. Silent — `endReason` stays null, so the run
+   * appends nothing — and immediate: the composer unlocks now, not whenever
+   * the abort finishes unwinding.
+   */
+  const discardRun = useCallback(() => {
+    generationRef.current += 1;
+    inFlightRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    isStreamingRef.current = false;
+    setStatus("idle");
+    setActiveRun(null);
   }, []);
 
   const stop = useCallback(() => {
@@ -504,25 +544,43 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     [runTurn],
   );
 
-  const loadConversation = useCallback(async (conversationId: number) => {
-    const hydrated = await fetchConversation(client, conversationId);
-    conversationIdRef.current = conversationId;
-    if (mountedRef.current) {
+  const loadConversation = useCallback(
+    async (conversationId: number) => {
+      // Picking the conversation a run is still streaming into, from History:
+      // it is already on screen and still being written, and reloading it
+      // would throw away the answer on its way.
+      if (conversationId === conversationIdRef.current && isStreamingRef.current) return;
+      const token = ++loadTokenRef.current;
+      const hydrated = await fetchConversation(client, conversationId);
+      // Superseded while it loaded — the reader opened another, or started a
+      // new one — or the provider is gone.
+      if (token !== loadTokenRef.current || !mountedRef.current) return;
+      // Only now, once there is a thread to replace it with: a load that
+      // fails leaves the current thread, and any run in it, as they were.
+      discardRun();
+      conversationIdRef.current = conversationId;
       setMessages(hydrated);
       setActiveConversationId(conversationId);
-    }
-  }, []);
+      setError(null);
+      // Same rule as `clearConversation`: an agent armed by slash command was
+      // armed for the conversation it was typed in, not for this one.
+      setSelectedAgent(null);
+    },
+    [discardRun],
+  );
 
   const clearConversation = useCallback(() => {
+    loadTokenRef.current += 1;
+    discardRun();
     conversationIdRef.current = null;
     setActiveConversationId(null);
     setMessages([]);
-    setActiveRun(null);
+    setError(null);
     // A slash command arms an agent for "the rest of this conversation", so a
     // new one starts unarmed and routes itself. Keeping it sent the next plain
     // question to the last builder used.
     setSelectedAgent(null);
-  }, []);
+  }, [discardRun]);
 
   return {
     messages,

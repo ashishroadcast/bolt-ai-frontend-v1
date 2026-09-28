@@ -546,3 +546,179 @@ describe("useChat", () => {
     expect(result.current.selectedAgent).toBeNull();
   });
 });
+
+/**
+ * A run whose stream the test finishes by hand, and which — unlike a real
+ * `fetch` body — keeps going after its request is aborted. That is the
+ * point: it proves a stale run's answer is dropped by the generation check
+ * itself, not merely because the abort happened to stop it first.
+ */
+function heldRun(sessionId: number) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(
+          new TextEncoder().encode(
+            `data: {"type":"start","messageId":"held","messageMetadata":{"session_id":${sessionId}}}\n\n`,
+          ),
+        );
+      },
+    }),
+    { status: 200 },
+  );
+  const finish = (text: string) => {
+    controller.enqueue(
+      new TextEncoder().encode(
+        [
+          `data: {"type":"text-delta","id":"answer","delta":"${text}"}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]
+          .map((frame) => `${frame}\n\n`)
+          .join(""),
+      ),
+    );
+    controller.close();
+  };
+  return { response, finish };
+}
+
+const CONVERSATION_5 = {
+  id: 5,
+  title: null,
+  created_at: "2026-09-20T10:00:00Z",
+  updated_at: "2026-09-20T10:00:00Z",
+  messages: [
+    {
+      id: 1,
+      role: "user",
+      content: "an older question",
+      agent_id: null,
+      trace_id: null,
+      meta: null,
+      created_at: "2026-09-20T10:00:00Z",
+    },
+  ],
+};
+
+describe("useChat — replacing the thread while a run is in flight", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const runBodies = () =>
+    Promise.all(
+      fetchMock.mock.calls
+        .map((call) => call[0] as Request)
+        .filter((request) => new URL(request.url).pathname === "/agent/run")
+        .map(async (request) => (await request.clone().json()) as Record<string, unknown>),
+    );
+
+  it("a new conversation unlocks at once and never receives the old run's answer", async () => {
+    const held = heldRun(11);
+    fetchMock.mockResolvedValueOnce(held.response);
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("first"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+    const firstSignal = (fetchMock.mock.calls[0]![0] as Request).signal;
+
+    act(() => result.current.clearConversation());
+
+    expect(firstSignal.aborted).toBe(true);
+    expect(result.current.status).toBe("idle");
+    expect(result.current.activeRun).toBeNull();
+    expect(result.current.messages).toHaveLength(0);
+
+    // The old run finishes anyway; its answer has nowhere to go.
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        `data: {"type":"start","messageId":"new","messageMetadata":{"session_id":12}}`,
+        `data: {"type":"text-delta","id":"answer","delta":"new answer"}`,
+        `data: {"type":"finish"}`,
+        `data: [DONE]`,
+      ]),
+    );
+    act(() => held.finish("old answer"));
+    act(() => result.current.sendMessage("second"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(result.current.messages.map((message) => message.content)).toEqual(["second", "new answer"]);
+    expect(result.current.activeConversationId).toBe(12);
+    const bodies = await runBodies();
+    expect(bodies[1]).not.toHaveProperty("session_id");
+  });
+
+  it("reopening another conversation from History drops the run and the slash-armed agent", async () => {
+    const held = heldRun(11);
+    fetchMock.mockImplementation((request: Request) => {
+      if (new URL(request.url).pathname === "/agent/conversations/5") {
+        return Promise.resolve(jsonResponse(CONVERSATION_5));
+      }
+      return Promise.resolve(held.response);
+    });
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    act(() => result.current.setSelectedAgent("Form-Builder"));
+    act(() => result.current.sendMessage("draft a form", { agent: "Form-Builder" }));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+
+    await act(() => result.current.loadConversation(5));
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.activeRun).toBeNull();
+    expect(result.current.activeConversationId).toBe(5);
+    expect(result.current.selectedAgent).toBeNull();
+
+    act(() => held.finish("old answer"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(result.current.messages.map((message) => message.content)).toEqual(["an older question"]);
+    expect(result.current.activeConversationId).toBe(5);
+  });
+
+  it("keeps the run when the conversation picked is the one it is streaming into", async () => {
+    const held = heldRun(11);
+    fetchMock.mockResolvedValueOnce(held.response);
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("first"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+
+    await act(() => result.current.loadConversation(11));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no reload of what is on screen
+    act(() => held.finish("the answer"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(result.current.messages.map((message) => message.content)).toEqual(["first", "the answer"]);
+  });
+
+  it("a load that resolves after the reader started a new conversation does not replace it", async () => {
+    let answer!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    let load!: Promise<void>;
+    act(() => {
+      load = result.current.loadConversation(5);
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    act(() => result.current.clearConversation());
+    await act(async () => {
+      answer(jsonResponse(CONVERSATION_5));
+      await load;
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.activeConversationId).toBeNull();
+  });
+});
