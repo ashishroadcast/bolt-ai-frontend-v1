@@ -574,6 +574,31 @@ describe("Thread", () => {
   });
 
 
+  it("disables Rerun while the browser is offline, since it could only fail", async () => {
+    fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
+    const { chatRef } = renderThread();
+
+    act(() => chatRef.current!.sendMessage("top items last week"));
+    await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeEnabled();
+    }
+
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeDisabled();
+    }
+
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+    for (const button of screen.getAllByRole("button", { name: "Rerun this question" })) {
+      expect(button).toBeEnabled();
+    }
+  });
+
   it("copies the question's own text from its own Copy button, not the answer's", async () => {
     fetchMock.mockImplementation(routeFetch(() => sseResponse(GOLDEN_FRAMES)));
     const writeText = vi.fn().mockResolvedValue(undefined);

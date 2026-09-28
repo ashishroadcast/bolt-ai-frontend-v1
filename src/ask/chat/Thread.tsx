@@ -618,7 +618,12 @@ export function Thread(): ReactElement {
   // run to finish before asking again") — disabling Rerun while one is in
   // flight surfaces that rule at the point someone would hit it, instead
   // of a click that silently turns into `error` text elsewhere.
-  const rerunDisabled = status === "streaming";
+  //
+  // And while the browser is offline, the same way Composer disables
+  // itself: a rerun then cannot even be sent, and each click only added a
+  // failed turn to the thread.
+  const isOnline = useOnlineStatus();
+  const rerunDisabled = status === "streaming" || !isOnline;
   // Follows its own tail as an answer streams and its sheets lay out —
   // without this the thing being waited for arrives below the fold and
   // stays there. Dropped the moment a reader scrolls up.
