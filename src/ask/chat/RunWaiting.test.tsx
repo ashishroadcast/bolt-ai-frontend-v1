@@ -3,6 +3,7 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunWaiting } from "./RunWaiting.tsx";
 import { EMPTY_TRACE, type RunTrace } from "./runTrace.ts";
+import { SLOW_RUN_MS } from "./WaitAnnouncement.tsx";
 
 const trace: RunTrace = { ...EMPTY_TRACE, phases: [], tools: [] };
 
@@ -73,12 +74,40 @@ describe("telling a reader the run is still going", () => {
     expect(screen.queryByLabelText("What the agent is working on")).not.toBeInTheDocument();
   });
 
-  it("announces changes politely rather than interrupting a screen reader", () => {
+  it("announces the wait politely rather than interrupting a screen reader", () => {
     render(<RunWaiting trace={trace} startedAt={now()} thought="" />);
 
-    expect(screen.getByText("Reading the schema").closest("p")).toHaveAttribute(
-      "aria-live",
-      "polite",
+    const status = screen.getByRole("status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+    expect(status).toHaveTextContent("Working on your question");
+  });
+
+  it("does not read the clock aloud every second", () => {
+    // The status line used to be the live region, clock and all, so a
+    // screen reader re-read it on every tick for the whole run.
+    render(<RunWaiting trace={trace} startedAt={now()} thought="" />);
+
+    act(() => {
+      vi.advanceTimersByTime(5_000);
+    });
+
+    const clock = screen.getByText("5s");
+    expect(clock.closest("[aria-live='polite'], [aria-live='assertive'], [role='status']")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("Working on your question");
+  });
+
+  it("says once when the wait runs longer than usual", () => {
+    render(<RunWaiting trace={trace} startedAt={now() - SLOW_RUN_MS} thought="" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Still working, this is taking longer than usual",
     );
+  });
+
+  it("does not stream the reasoning into a live region", () => {
+    render(<RunWaiting trace={trace} startedAt={now()} thought="Checking the daily rollups" />);
+
+    const thought = screen.getByText(/Checking the daily rollups/);
+    expect(thought.closest("[aria-live='polite'], [aria-live='assertive'], [role='status']")).toBeNull();
   });
 });

@@ -1,5 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearRecordedAnswers } from "../chat/questionAnswers.ts";
+import { toUIPart } from "../chat/wireParts.ts";
+import { renderUIPart } from "./catalog.tsx";
 import { DataQuestion } from "./DataQuestion.tsx";
 
 // The run is BLOCKED inside its ask_user tool for sixty seconds while this
@@ -13,6 +16,12 @@ const base = {
   allowMultiple: false,
   allowOther: false,
 };
+
+// The answer store is module-level on purpose (it has to outlive the
+// component), which also means it outlives a test.
+afterEach(() => {
+  clearRecordedAnswers();
+});
 
 describe("answering a question the run is waiting on", () => {
   it("sends a single choice on one click", async () => {
@@ -84,7 +93,6 @@ describe("answering a question the run is waiting on", () => {
     // control that cannot do anything.
     render(<DataQuestion {...base} />);
 
-    expect(screen.getByText(/went with its best reading/)).toBeInTheDocument();
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
   });
 
@@ -131,5 +139,99 @@ describe("answering a question the run is waiting on", () => {
     fireEvent.click(screen.getByRole("button", { name: "Answer" }));
 
     expect(onAnswer).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a closed question says about how it ended", () => {
+  it("shows the answer the saved part carries", () => {
+    render(<DataQuestion {...base} answer="Order count" timed_out={false} />);
+
+    expect(screen.getByRole("region", { name: "Answered" })).toHaveTextContent(
+      "You answered: Order count",
+    );
+    expect(screen.queryByText(/best reading/)).not.toBeInTheDocument();
+  });
+
+  it("says the run went on alone only when the part says it timed out", () => {
+    render(<DataQuestion {...base} answer={null} timed_out />);
+
+    expect(
+      screen.getByText("Answered on its own. The run went with its best reading."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/You answered/)).not.toBeInTheDocument();
+  });
+
+  it("claims nothing about a reopened question with no record either way", () => {
+    // The bug: every question reopened from history said the run had
+    // answered it on its own, including the ones the reader had answered.
+    // A part saved before answers were stored cannot say which it was.
+    render(<DataQuestion {...base} />);
+
+    expect(screen.getByText("This question was asked during the run.")).toBeInTheDocument();
+    expect(screen.queryByText(/best reading/)).not.toBeInTheDocument();
+    expect(screen.getByText("By which measure?")).toBeInTheDocument();
+  });
+
+  it("keeps the answer when the live turn becomes the saved message", async () => {
+    // Thread renders the live turn with onAnswer and the saved message
+    // without it, as a different component instance. The answer used to
+    // live in the first one's state and vanish with it the moment the run
+    // finished.
+    const onAnswer = vi.fn().mockResolvedValue(undefined);
+    const { rerender } = render(<DataQuestion key="live" {...base} onAnswer={onAnswer} />);
+
+    fireEvent.click(screen.getByLabelText("Net sales"));
+    await waitFor(() => expect(screen.getByText(/You answered/)).toBeInTheDocument());
+
+    rerender(<DataQuestion key="saved" {...base} />);
+
+    expect(screen.getByRole("region", { name: "Answered" })).toHaveTextContent(
+      "You answered: Net sales",
+    );
+    expect(screen.queryByText(/asked during the run/)).not.toBeInTheDocument();
+  });
+
+  it("does not record an answer the run never accepted", async () => {
+    const onAnswer = vi.fn().mockRejectedValue(new Error("that question is no longer waiting"));
+    const { rerender } = render(<DataQuestion key="live" {...base} onAnswer={onAnswer} />);
+
+    fireEvent.click(screen.getByLabelText("Net sales"));
+    await waitFor(() => expect(screen.getByText(/no longer waiting/)).toBeInTheDocument());
+
+    rerender(<DataQuestion key="saved" {...base} />);
+
+    expect(screen.queryByText(/You answered/)).not.toBeInTheDocument();
+  });
+
+  it("reads the saved answer through the wire adapter, not only as a prop", () => {
+    // The fields ride the persisted part as the backend writes them;
+    // adaptQuestion must hand them through to the component untouched.
+    const part = toUIPart("data-question", {
+      questionId: "q7",
+      question: "Which week?",
+      options: ["This week", "Last week"],
+      answer: "Last week",
+      answered_at: "2026-09-28T10:00:00Z",
+      timed_out: false,
+    });
+
+    render(renderUIPart(part));
+
+    expect(screen.getByRole("region", { name: "Answered" })).toHaveTextContent(
+      "You answered: Last week",
+    );
+  });
+
+  it("reads a saved time-out through the wire adapter", () => {
+    const part = toUIPart("data-question", {
+      questionId: "q8",
+      question: "Which week?",
+      answer: null,
+      timed_out: true,
+    });
+
+    render(renderUIPart(part));
+
+    expect(screen.getByText(/went with its best reading/)).toBeInTheDocument();
   });
 });

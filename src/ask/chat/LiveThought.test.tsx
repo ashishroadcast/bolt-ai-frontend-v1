@@ -65,10 +65,19 @@ describe("reasoning in flight", () => {
     expect(container.querySelector("span[aria-hidden='true']")).not.toBeNull();
   });
 
-  it("announces itself as progress, not as the answer", () => {
+  it("names itself as progress, not as the answer", () => {
     render(<LiveThought text="Working on it" />);
 
-    const region = screen.getByLabelText("What the agent is working on");
-    expect(region).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("group", { name: "What the agent is working on" })).toBeInTheDocument();
+  });
+
+  it("is not read aloud as it streams", () => {
+    // As a live region, every streamed chunk of reasoning was announced
+    // for the whole run, over whatever else the reader was doing.
+    render(<LiveThought text="Working on it" />);
+
+    const group = screen.getByRole("group", { name: "What the agent is working on" });
+    expect(group).toHaveAttribute("aria-live", "off");
+    expect(screen.getByText(/Working on it/)).not.toHaveAttribute("aria-live");
   });
 });

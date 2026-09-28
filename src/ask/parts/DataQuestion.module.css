@@ -3,13 +3,19 @@
  * this is on screen. So it is the one thing in a thread allowed to look
  * like it wants something — a filled ground and a full-strength accent
  * rule, where the summary beside it uses the same rule at rest.
+ *
+ * The rule and the square corners sit on the START edge, not the left:
+ * under `dir="rtl"` the question is read from the right, and the rule
+ * belongs where reading begins.
  */
 .question {
   margin: var(--stack) 0;
   padding: 14px 16px;
   background: var(--signal-soft);
-  border-left: 2px solid var(--signal);
-  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  border-inline-start: 2px solid var(--signal);
+  border-radius: var(--radius-card);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
   max-width: 62ch;
 }
 
@@ -126,33 +132,41 @@
   font-weight: 700;
 }
 
+/* Says whose words these are. On a reopened thread the answer otherwise
+   sits under the question with nothing to tell it from an option label. */
+.sentLabel {
+  color: var(--fg-faint);
+}
+
 .failed,
-.expired {
+.closedNote {
   margin: 10px 0 0;
   font-family: var(--font-body);
   font-size: var(--text-small);
   color: var(--critical);
 }
 
-.expired {
+.closedNote {
   color: var(--fg-faint);
 }
 
 /*
- * A question nobody answered in time.
+ * A question that is over with no answer on record: one nobody answered
+ * in time, or one reopened from a run saved before answers were stored.
  *
  * The live form's whole design is to demand attention — filled ground,
  * full-strength accent rule, a column of tap targets. Left in that state
  * after the run stopped listening it dominated the thread with a control
  * that could only fail, twice over when the agent asked twice. So the
- * closed state keeps only the record: what was asked, and that the run
- * decided for itself. No ground, a hairline instead of the accent, and one
- * line of explanation.
+ * closed state keeps only the record: what was asked, and what is known of
+ * how it ended. No ground, a hairline instead of the accent, and one line
+ * of explanation.
  */
 .closed {
   margin: var(--stack) 0;
-  padding: 0 0 0 14px;
-  border-left: 1px solid var(--rule);
+  padding: 0;
+  padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--rule);
   max-width: 62ch;
 }
 
@@ -164,6 +178,6 @@
   color: var(--fg-dim);
 }
 
-.closed .expired {
+.closed .closedNote {
   margin: 3px 0 0;
 }
