@@ -153,13 +153,15 @@ describe("Composer — context chip", () => {
     );
   }
 
-  const field = () => screen.getByLabelText("Ask a question") as HTMLInputElement;
+  const field = () => screen.getByLabelText("Ask a question") as HTMLTextAreaElement;
 
   async function ask(text: string) {
     await waitFor(() => expect(field()).toBeEnabled());
     fireEvent.change(field(), { target: { value: text } });
     fireEvent.submit(field().closest("form")!);
-    await waitFor(() => expect(field()).toBeEnabled());
+    // The box stays enabled through a run now (typing is never blocked, only
+    // sending), so the run's end is read off Ask coming back in Stop's place.
+    await screen.findByRole("button", { name: "Ask" });
   }
 
   it("shows the selected widget's title and asks what to change", async () => {

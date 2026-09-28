@@ -1,5 +1,13 @@
 import { ArrowRight, Mic, Slash, Square, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { useAskConfig, type AskHostContext } from "../config.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
@@ -16,8 +24,10 @@ import styles from "./Composer.module.css";
  * Sends `selectedAgent` from `ChatContext` when a slash command has
  * explicitly armed one (`choose()` below) — otherwise omits `agent`
  * entirely, so `app.api.run._choose_agent` routes the question itself.
- * Disabled only while there is truly nothing to route to yet: no agents
- * loaded for this tenant, streaming, or offline.
+ * The box is disabled only while there is truly nothing to route to yet: no
+ * agents loaded for this tenant, or offline. A run in flight blocks sending,
+ * never typing — runs take minutes, and the next question is often composed
+ * while reading the answer to the last one.
  *
  * While a run is in flight, Ask gives way to Stop — the one action that
  * means anything then. It used to become a disabled "Asking", which named
@@ -32,6 +42,37 @@ const REFINE_PLACEHOLDER = "Please specify what you want to change";
 /** How often the chip re-reads the host's selection — see useSelectedWidget. */
 const HOST_CONTEXT_POLL_MS = 1_000;
 const VOICE_SILENCE_TIMEOUT_MS = 3_000;
+/**
+ * A soft cap: past it the question cannot be sent, but nothing is cut off.
+ * `maxlength` would silently truncate a paste, and a question that loses its
+ * last paragraph without saying so is worse than one that asks to be
+ * shortened. agent-service sets no limit of its own; this one keeps a single
+ * turn to something a person wrote rather than a document pasted whole.
+ */
+const MAX_QUESTION_LENGTH = 4_000;
+/** When the counter appears — near the cap, not all the time. */
+const SHOW_LENGTH_FROM = 3_600;
+
+/**
+ * Whether handing focus back to the box would take it from nothing the
+ * reader chose: focus is nowhere (the Stop button that had it just gave way
+ * to Ask), or already in the composer.
+ *
+ * Inside the widget's shadow root the document sees only the host element,
+ * so the root's own `activeElement` is what says where focus really is —
+ * and focus elsewhere on the HOST page is left alone, always.
+ */
+function focusIsFree(composer: HTMLElement | null): boolean {
+  if (composer === null) return false;
+  const active = document.activeElement;
+  if (active === null || active === document.body) return true;
+  if (composer.contains(active)) return true;
+  const root = composer.getRootNode();
+  if (root instanceof ShadowRoot && active === root.host) {
+    return root.activeElement === null || composer.contains(root.activeElement);
+  }
+  return false;
+}
 
 interface SpeechRecognitionAlternativeLike {
   transcript: string;
@@ -258,8 +299,14 @@ export function Composer() {
   const [dismissedWidgetId, setDismissedWidgetId] = useState<string | null>(null);
   const chip = selectedWidget !== null && selectedWidget.id !== dismissedWidgetId ? selectedWidget : null;
   const isOnline = useOnlineStatus();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const stackRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  // Held from the mic click until the recognition exists. The permission
+  // prompt in between can take seconds, and a second click in that window —
+  // a double-click is enough — used to start a second recognition over the
+  // first.
+  const startingVoiceRef = useRef(false);
   const voiceStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const voiceBaseRef = useRef("");
   const [isListening, setIsListening] = useState(false);
@@ -274,8 +321,28 @@ export function Composer() {
   // old picker never resolved a default before the list loaded, and never
   // resolved one at all for a tenant with none): still loading or truly
   // empty must still disable this, since there is nothing to route to.
-  const canSend = agents.length > 0 && !isStreaming && isOnline;
+  const canType = agents.length > 0 && isOnline;
+  const overLimit = value.length > MAX_QUESTION_LENGTH;
+  const canSend = canType && !isStreaming && !overLimit;
   const voiceSupported = speechRecognitionConstructor() !== null;
+
+  // Grows with what is typed or pasted, up to the CSS max-height, then
+  // scrolls. Measured after layout so the height never lags a keystroke.
+  useLayoutEffect(() => {
+    const field = inputRef.current;
+    if (field === null) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [value]);
+
+  // Focus back to the box when a run ends, so the next question can be typed
+  // straight away — unless the reader has since put it somewhere else.
+  const wasStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    const wasStreaming = wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    if (wasStreaming && !isStreaming && focusIsFree(stackRef.current)) inputRef.current?.focus();
+  }, [isStreaming]);
 
   useEffect(
     () => () => {
@@ -289,7 +356,7 @@ export function Composer() {
   const commands = useMemo(() => slashCommands(agents), [agents]);
   const query = commandQuery(value);
   const matches = query === null ? [] : matching(commands, query);
-  const menuOpen = !dismissed && canSend && matches.length > 0;
+  const menuOpen = !dismissed && canType && matches.length > 0;
   const active = matches[Math.min(highlight, matches.length - 1)];
 
   function choose(entry: SlashCommand) {
@@ -316,14 +383,18 @@ export function Composer() {
   }
 
   async function startListening() {
-    if (isListening) {
+    // Off the ref, not `isListening`: a click that lands before the re-render
+    // would read a stale `false` and start a second recognition.
+    if (recognitionRef.current !== null) {
       stopListening();
       return;
     }
+    if (startingVoiceRef.current) return;
 
     const Recognition = speechRecognitionConstructor();
-    if (Recognition === null || !canSend) return;
+    if (Recognition === null || !canType) return;
 
+    startingVoiceRef.current = true;
     setVoiceError(null);
     setIsStartingVoice(true);
     try {
@@ -331,16 +402,21 @@ export function Composer() {
       stream?.getTracks().forEach((track) => track.stop());
     } catch (error: unknown) {
       setVoiceError(microphoneErrorMessage(error));
-      setIsStartingVoice(false);
       return;
+    } finally {
+      // Released here, and nothing below awaits: from this line to
+      // `recognitionRef.current = recognition` no second click can interleave.
+      startingVoiceRef.current = false;
+      setIsStartingVoice(false);
     }
-    setIsStartingVoice(false);
 
     const recognition = new Recognition();
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = document.documentElement.lang || navigator.language || "en-US";
-    voiceBaseRef.current = value.trimEnd();
+    // Read now, not from this click's render: the permission prompt may have
+    // sat open while the reader kept typing.
+    voiceBaseRef.current = valueRef.current.trimEnd();
 
     recognition.onresult = (event) => {
       const parts: string[] = [];
@@ -394,8 +470,22 @@ export function Composer() {
     if (dismissed) setDismissed(false);
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (!menuOpen) return;
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter mid-composition confirms an IME candidate (Japanese, Chinese,
+    // Korean input); it is not the reader pressing send. 229 is what Safari
+    // reports for that same keydown.
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (menuOpen) handleMenuKey(event);
+    if (event.isDefaultPrevented()) return;
+    // Enter sends and Shift+Enter starts a new line — the convention every
+    // chat box follows, now that the box can hold more than one.
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submit();
+    }
+  }
+
+  function handleMenuKey(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
@@ -423,7 +513,13 @@ export function Composer() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    submit();
+  }
+
+  function submit() {
     const trimmed = value.trim();
+    // Blocked, not cleared: text typed during a run, or past the cap, stays
+    // in the box for when it can go.
     if (trimmed === "" || !canSend) return;
 
     let question = trimmed;
@@ -472,8 +568,11 @@ export function Composer() {
       ? REFINE_PLACEHOLDER
       : (copy?.placeholder ?? DEFAULT_PLACEHOLDER);
 
+  const lengthId = "ask-question-length";
+  const showLength = value.length >= SHOW_LENGTH_FROM;
+
   return (
-    <div className={styles.stack}>
+    <div className={styles.stack} ref={stackRef}>
     {chip !== null && (
       // F13's "Operation Widget ×": what the next question will be about.
       <div className={styles.context}>
@@ -501,6 +600,12 @@ export function Composer() {
       // turn just sent — "this started a new one" — and stays until the next.
       <p className={styles.notice} role="status">
         {notice}
+      </p>
+    )}
+    {showLength && (
+      <p id={lengthId} className={styles.length} data-over={overLimit || undefined}>
+        {value.length.toLocaleString()} / {MAX_QUESTION_LENGTH.toLocaleString()}
+        {overLimit && " — shorten it to send"}
       </p>
     )}
     <form className={styles.composer} onSubmit={handleSubmit} data-offline={!isOnline || undefined}>
@@ -538,12 +643,16 @@ export function Composer() {
             yet — no upload endpoint exists in agent-service's wire protocol.
             Re-add the disabled Paperclip button (see git history) when one
             does. */}
-        <input
+        {/* A textarea, not an input: a pasted question kept its line
+            breaks only as far as the paste — an <input> flattens them. */}
+        <textarea
           ref={inputRef}
-          type="text"
+          rows={1}
           className={styles.field}
           placeholder={placeholder}
           aria-label="Ask a question"
+          aria-describedby={showLength ? lengthId : undefined}
+          aria-invalid={overLimit || undefined}
           role={commands.length > 0 ? "combobox" : undefined}
           aria-expanded={commands.length > 0 ? menuOpen : undefined}
           aria-controls={menuOpen ? "ask-commands" : undefined}
@@ -554,7 +663,7 @@ export function Composer() {
           value={value}
           onChange={(event) => handleChange(event.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={!canSend}
+          disabled={!canType}
         />
       </div>
       {(voiceError ?? commandHint) !== null && (
@@ -566,7 +675,7 @@ export function Composer() {
         type="button"
         className={styles.voice}
         data-listening={isListening || undefined}
-        disabled={!canSend || !voiceSupported}
+        disabled={!canType || !voiceSupported || isStartingVoice}
         aria-label={
           !voiceSupported
             ? "Voice input isn't supported in this browser"
@@ -596,7 +705,7 @@ export function Composer() {
           hint that cannot be clicked is one more thing to read and ignore.
           Only rendered once the tenant actually has a command — otherwise it
           points at a key that does nothing. */}
-      {value === "" && commands.length > 0 && canSend && (
+      {value === "" && commands.length > 0 && canType && (
         <button
           type="button"
           className={styles.hint}
