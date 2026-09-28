@@ -22,6 +22,9 @@
 export interface InlineSpan {
   text: string;
   bold: boolean;
+  /** Set only for a `[label](https://…)` link, and only ever to an http(s)
+   * URL: anything else (`javascript:`, `data:`) stays literal text. */
+  href?: string;
 }
 
 /**
@@ -47,7 +50,7 @@ const BLANK = /^\s*$/;
 const BOLD = /\*\*(.+?)\*\*/g;
 
 /**
- * `**bold**`, and nothing else.
+ * `**bold**` and `[label](https://…)` links, and nothing else.
  *
  * An unmatched `**` is left exactly as it arrived rather than swallowed:
  * mid-stream the closing pair simply has not been typed yet, and text that
@@ -56,6 +59,28 @@ const BOLD = /\*\*(.+?)\*\*/g;
  * zero-length node between the two.
  */
 function parseInline(text: string): InlineSpan[] {
+  const spans: InlineSpan[] = [];
+  let cursor = 0;
+  LINK.lastIndex = 0;
+  let match = LINK.exec(text);
+  while (match !== null) {
+    if (match.index > cursor) spans.push(...parseBold(text.slice(cursor, match.index)));
+    // The label is shown as plain text: emphasis marks inside it are dropped
+    // rather than nested, since a link already stands out.
+    spans.push({ text: match[1]!.replace(/\*\*/g, ""), bold: false, href: match[2]! });
+    cursor = match.index + match[0].length;
+    match = LINK.exec(text);
+  }
+  if (cursor < text.length) spans.push(...parseBold(text.slice(cursor)));
+  return spans.filter((span) => span.text !== "");
+}
+
+// Documentation answers cite their pages as `[Page](https://…)`, which
+// rendered as raw brackets and a wrapped URL. Only http(s) targets become
+// links; a `javascript:` or `data:` target never matches and stays text.
+const LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+
+function parseBold(text: string): InlineSpan[] {
   const spans: InlineSpan[] = [];
   let cursor = 0;
   BOLD.lastIndex = 0;
@@ -194,7 +219,7 @@ export function takeChars(blocks: AnswerBlock[], count: number): AnswerBlock[] {
         if (budget <= 0) break;
         const text = span.text.slice(0, budget);
         budget -= text.length;
-        spans.push({ text, bold: span.bold });
+        spans.push({ ...span, text });
       }
       // An empty run only ever appears when the budget ran out exactly at a
       // boundary; rendering it would add a blank line or a bare marker

@@ -11,7 +11,14 @@ function Spans({ spans }: { spans: InlineSpan[] }): ReactElement {
   return (
     <>
       {spans.map((span, index) =>
-        span.bold ? (
+        span.href !== undefined ? (
+          // Only ever an http(s) URL (`answerMarkup`'s LINK); the label is a
+          // text node like everything else here.
+          // eslint-disable-next-line react/no-array-index-key
+          <a key={index} className={styles.link} href={span.href} target="_blank" rel="noopener noreferrer">
+            {span.text}
+          </a>
+        ) : span.bold ? (
           // Positional keys: these are a parse of one string, re-derived
           // whole on every render, never a reorderable list of entities —
           // the same convention Thread's own PartList uses.

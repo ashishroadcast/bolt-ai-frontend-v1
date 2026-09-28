@@ -33,6 +33,35 @@ describe("parseAnswer", () => {
     expect(textOf(blocks[1]!)).toEqual(["A geofence is a virtual boundary."]);
   });
 
+  it("turns a cited page into a link, and only for http(s) targets", () => {
+    const [block] = parseAnswer(
+      "See [Geofence List](https://roadcast.gitbook.io/boltv2/geofence-list) and [x](javascript:alert(1)).",
+    );
+
+    const spans = block!.kind === "paragraph" ? block!.lines[0]! : [];
+    const link = spans.find((span) => span.href !== undefined);
+    expect(link).toEqual({
+      text: "Geofence List",
+      bold: false,
+      href: "https://roadcast.gitbook.io/boltv2/geofence-list",
+    });
+    // Never a link, and never lost: it stays exactly as written.
+    expect(spans.filter((span) => span.href !== undefined)).toHaveLength(1);
+    expect(spans.map((span) => span.text).join("")).toContain("[x](javascript:alert(1))");
+  });
+
+  it("keeps a link a link while the answer is still being revealed", () => {
+    const blocks = parseAnswer("[Geofence List](https://example.com/g)");
+
+    const [partial] = takeChars(blocks, 5);
+
+    expect(partial!.kind === "paragraph" && partial!.lines[0]![0]).toEqual({
+      text: "Geofe",
+      bold: false,
+      href: "https://example.com/g",
+    });
+  });
+
   it("treats a --- rule as a separator, never as text or a bullet", () => {
     const blocks = parseAnswer("First part.\n---\n* * *\nSecond part.");
 

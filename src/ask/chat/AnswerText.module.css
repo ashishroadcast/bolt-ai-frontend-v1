@@ -168,6 +168,15 @@
   color: var(--fg);
 }
 
+/* A cited page. Underlined as well as tinted, so it reads as a link in
+   greyscale too; a long URL-shaped label wraps rather than overflowing. */
+.link {
+  color: var(--signal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
 /*
  * The reveal's cursor. Present only while text is still arriving on
  * screen, and drawn in the agent's own accent so it reads as "still
