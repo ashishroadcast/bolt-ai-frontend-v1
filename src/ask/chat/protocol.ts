@@ -19,8 +19,13 @@ export interface StartChunk {
   messageId: string;
   /** `session_id`, and now `agent_name` — the only place a caller who named
    * no agent on the request learns which one `app.api.run._choose_agent`
-   * picked, since nothing else on the wire echoes that decision back. */
-  messageMetadata?: { session_id?: number; agent_name?: string };
+   * picked, since nothing else on the wire echoes that decision back.
+   *
+   * `routing_fallback` is `true` when that pick was not a confident one: the
+   * router could not tell who should answer and fell back to a default.
+   * Absent from a run that named its agent, and from an agent-service that
+   * predates the field — both mean "not a fallback". */
+  messageMetadata?: { session_id?: number; agent_name?: string; routing_fallback?: boolean };
 }
 
 export interface TextStartChunk {
@@ -163,6 +168,21 @@ export function parseChunk(body: string): StreamChunk | typeof DONE | null {
   return null;
 }
 
+export interface ReadDataStreamOptions {
+  /**
+   * Called on every read that brought bytes, before any of them are parsed —
+   * including a read that carried nothing but the server's `: keepalive`
+   * comment (`protocol.py`'s `_HEARTBEAT`, every `HEARTBEAT_SECONDS` of
+   * silence).
+   *
+   * That comment is exactly what this reader otherwise throws away, and it is
+   * the only proof a quiet run is still alive: a model thinking for a minute
+   * and a connection that died when the laptop slept look identical from the
+   * chunks alone. `useChat`'s stall watchdog resets on this.
+   */
+  onActivity?: () => void;
+}
+
 /**
  * Reads an SSE body framed exactly the way `protocol.py`'s `_sse` writes it
  * (`data: <json|"[DONE]">\n\n`), yielding parsed chunks as they arrive and
@@ -174,7 +194,10 @@ export function parseChunk(body: string): StreamChunk | typeof DONE | null {
  * middle of a `ReadableStream` chunk — `TextDecoderStream` alone does not
  * guarantee frame alignment, only valid UTF-8 boundaries.
  */
-export async function* readDataStream(body: ReadableStream<Uint8Array>): AsyncGenerator<StreamChunk> {
+export async function* readDataStream(
+  body: ReadableStream<Uint8Array>,
+  options: ReadDataStreamOptions = {},
+): AsyncGenerator<StreamChunk> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -183,6 +206,7 @@ export async function* readDataStream(body: ReadableStream<Uint8Array>): AsyncGe
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      options.onActivity?.();
       buffer += decoder.decode(value, { stream: true });
 
       let boundary = buffer.indexOf("\n\n");
@@ -192,6 +216,8 @@ export async function* readDataStream(body: ReadableStream<Uint8Array>): AsyncGe
         boundary = buffer.indexOf("\n\n");
 
         for (const line of frame.split("\n")) {
+          // `: keepalive` (and any other SSE comment) ends here. It has
+          // already done its job by arriving at all — see `onActivity`.
           if (!line.startsWith("data: ")) continue;
           const parsed = parseChunk(line.slice("data: ".length));
           if (parsed === DONE) return;

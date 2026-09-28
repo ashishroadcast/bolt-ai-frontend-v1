@@ -4,9 +4,10 @@ import type { UIPart } from "../parts/catalog.tsx";
 import { fetchConversation } from "./conversation.ts";
 import { buildPhaseTimeline, readPhaseDetail, type PhaseTimelineEvent } from "./phaseTimeline.ts";
 import { readDataStream, type DataChunk, type UsageMetadata } from "./protocol.ts";
-import { postAgentRun } from "./runStream.ts";
+import { isMissingConversationError, isUnknownAgentError, postAgentRun } from "./runStream.ts";
 import { buildRunTrace, EMPTY_TRACE, type TraceEvent } from "./runTrace.ts";
 import type { ActiveRun, ChatMessage, RunSummary } from "./types.ts";
+import type { AskAgent } from "./useAskAgents.ts";
 import { toUIPart } from "./wireParts.ts";
 
 export interface UseChatResult {
@@ -22,7 +23,26 @@ export interface UseChatResult {
    * with `runSummary.status === "error"` instead, since that failure has
    * a place in the thread and this one doesn't. */
   error: string | null;
+  /**
+   * Something the reader should know about the last send that is not a
+   * failure — today only that a follow-up could not continue its
+   * conversation and started a new one instead. Cleared by the next send,
+   * and by opening or starting a conversation. `Composer` shows it, since
+   * it is about what just happened to the question the reader sent.
+   */
+  notice: string | null;
   sendMessage: (text: string, options?: SendOptions) => void;
+  /**
+   * Ends the run in flight at the reader's request. Closing the connection
+   * is the only cancel `POST /agent/run` has (`app.api.run`'s docstring), so
+   * that is what this does; the turn then lands as `runSummary.status ===
+   * "stopped"`, keeping whatever text and parts had already arrived. A no-op
+   * between runs.
+   */
+  stop: () => void;
+  /** Replaces the thread with a persisted conversation. A run still in
+   * flight is let go once the conversation has loaded — its answer belonged
+   * to the thread being replaced — and any slash-armed agent is disarmed. */
   loadConversation: (conversationId: number) => Promise<void>;
   /**
    * Who the Ask screen is currently talking to (a `GET /agent/agents`
@@ -45,11 +65,24 @@ export interface UseChatResult {
    * a delete just removed is the one currently open, so it can clear the
    * thread instead of leaving it pointed at a row that no longer exists. */
   activeConversationId: number | null;
-  /** Resets the thread to the empty state without touching anything
-   * server-side — used when the conversation currently open gets deleted
-   * out from under it (`HistoryPanel.tsx`), so a stray next message
-   * doesn't get sent with a `session_id` for a conversation that's gone. */
+  /** Resets the thread to the empty state — "New conversation", and when the
+   * conversation currently open gets deleted out from under it
+   * (`HistoryPanel.tsx`), so a stray next message doesn't get sent with a
+   * `session_id` for a conversation that's gone. Nothing is deleted
+   * server-side; a run still in flight is closed and appends nothing. */
   clearConversation: () => void;
+  /**
+   * The question the reader had half-typed when the composer last went away —
+   * History swaps the composer out of the panel, and leaving /ask in the
+   * console unmounts it — so it can be put back when the composer returns.
+   *
+   * Lives here because this provider outlives both. `Composer` types into
+   * state of its own and hands the text over only as it unmounts: a context
+   * update per keystroke would re-render every consumer of this context,
+   * the whole thread included, on every letter.
+   */
+  draft: string;
+  setDraft: (text: string) => void;
 }
 
 export interface SendOptions {
@@ -94,6 +127,80 @@ function nextLocalId(prefix: string): string {
 }
 
 /**
+ * How long a run may say nothing at all — no chunk, and not the server's
+ * `: keepalive` either — before it is treated as gone.
+ *
+ * agent-service writes that keepalive after every five seconds of silence
+ * (`protocol.py`'s `HEARTBEAT_SECONDS`), so twenty is four missed in a row:
+ * a model thinking hard still beats every five seconds, while a connection
+ * that died with a sleeping laptop, or a proxy that half-closed it, beats
+ * never. Without this the second case showed "working" forever.
+ */
+const STALL_TIMEOUT_MS = 20_000;
+const LOST_CONNECTION = "Lost connection to the run.";
+const CONVERSATION_RESTARTED = "That conversation can't be continued, so this started a new one.";
+
+export interface UseChatOptions {
+  /** `STALL_TIMEOUT_MS`, overridable so a test can watch a run stall
+   * without waiting twenty real seconds. Nothing else should set it. */
+  stallTimeoutMs?: number;
+}
+
+/** Why this hook itself aborted a run: the reader asked, or the run went
+ * silent. An abort with no reason recorded is an unmount, which appends
+ * nothing at all. */
+type EndReason = "stopped" | "stalled";
+
+/**
+ * The agent a conversation's plain follow-ups go to: the one the server
+ * routed its last plain question to.
+ *
+ * Without it every turn was routed afresh from its own text alone, and a
+ * follow-up carries almost none — "yes", "now by city" — so it could land on
+ * a different agent from the one that asked the question being answered.
+ *
+ * By name, because that is what `RunIn.agent` takes. A conversation reopened
+ * from History knows only the id that answered (`ChatMessage.agentId`), so
+ * the name is looked up on the first follow-up that needs it.
+ */
+interface PinnedAgent {
+  name: string | null;
+  id: number | null;
+}
+
+interface InFlightRun {
+  end: (reason: EndReason) => void;
+  /** Takes this run out of `runsInFlight`. Idempotent: the run's own
+   * `finally` and `discardRun` may both call it. */
+  release: () => void;
+}
+
+/**
+ * Runs streaming right now, across every `useChat` on the page.
+ *
+ * Module state, on purpose, and read only through the two functions below:
+ * the console's organisation switch reloads the page, and it sits in the top
+ * bar, nowhere near a `ChatProvider` it could ask. A counter rather than a
+ * flag because a page can hold more than one Ask.
+ */
+let runsInFlight = 0;
+let unloadConfirmed = false;
+
+/** Whether a reload now would cut off an answer still being written. */
+export function isAskRunInFlight(): boolean {
+  return runsInFlight > 0;
+}
+
+/**
+ * For a caller that has already asked the reader, in its own words, whether
+ * to leave mid-run and been told yes — so the browser's generic "Leave site?"
+ * prompt does not ask them a second time on the reload that follows.
+ */
+export function confirmUnloadDuringAskRun(): void {
+  unloadConfirmed = true;
+}
+
+/**
  * Drives one `/agent/run` turn end to end and exposes the two-way split the
  * whole design rests on (design plan §10.1; task brief "The distinction
  * this whole design rests on"):
@@ -119,7 +226,7 @@ function nextLocalId(prefix: string): string {
  * mutually exclusive by construction, not by a flag `Thread.tsx` has to
  * check correctly.
  */
-export function useChat(): UseChatResult {
+export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = {}): UseChatResult {
   const client = useAskClient();
   const { hostContextProvider } = useAskConfig();
   // A ref, because `runTurn` is created once and must still reach the
@@ -131,13 +238,42 @@ export function useChat(): UseChatResult {
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [status, setStatus] = useState<"idle" | "streaming">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const [draft, setDraft] = useState("");
 
   const isStreamingRef = useRef(false);
   const mountedRef = useRef(true);
   const abortRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef<InFlightRun | null>(null);
   const conversationIdRef = useRef<number | null>(null);
+  const pinnedAgentRef = useRef<PinnedAgent | null>(null);
+  // Which thread a run belongs to. Bumped whenever the thread on screen is
+  // replaced (a new conversation, or one reopened from History), and every
+  // write a run makes checks it first: without it, the previous run's answer
+  // landed in whatever thread was showing when it finished, and its
+  // `isStreamingRef` kept the new screen's composer locked until then.
+  const generationRef = useRef(0);
+  // The same idea for `loadConversation`, whose fetch can resolve after the
+  // reader has already moved on — to another conversation, or a new one.
+  const loadTokenRef = useRef(0);
+
+  // Closing the tab, or reloading it, mid-run cuts the answer off — the run
+  // is cancelled server-side the moment the connection closes, and nothing
+  // is saved. Only while streaming: a prompt on every close would train
+  // people to click through it.
+  useEffect(() => {
+    if (status !== "streaming") return;
+    const warn = (event: BeforeUnloadEvent) => {
+      if (unloadConfirmed) return;
+      event.preventDefault();
+      // Still required by browsers that predate preventDefault() here.
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [status]);
 
   useEffect(() => {
     // Sets the ref back to true on every (re)mount — not just once at
@@ -165,10 +301,43 @@ export function useChat(): UseChatResult {
     };
   }, []);
 
+  /**
+   * The pinned agent's name, looking it up by id for a conversation reopened
+   * from History (which records only who answered, by id). `null` when there
+   * is no pin, or when that agent is gone or switched off — the question is
+   * then routed like any other. Only a Stop or a replaced thread (the signal)
+   * is allowed to fail the send from here; a lookup that merely fails does
+   * not stop the reader asking.
+   */
+  const resolvePinnedAgent = useCallback(
+    async (signal: AbortSignal): Promise<string | null> => {
+      const pin = pinnedAgentRef.current;
+      if (pin === null) return null;
+      if (pin.name !== null) return pin.name;
+      let found: AskAgent | undefined;
+      try {
+        const agents = await client.agentFetch<AskAgent[]>("/agent/agents", { signal });
+        found = Array.isArray(agents)
+          ? agents.find((candidate) => candidate.id === pin.id && candidate.is_active)
+          : undefined;
+      } catch (err) {
+        if (signal.aborted) throw err;
+      }
+      if (pinnedAgentRef.current === pin) {
+        pinnedAgentRef.current = found === undefined ? null : { name: found.name, id: found.id };
+      }
+      return found?.name ?? null;
+    },
+    [client],
+  );
+
   const runTurn = useCallback(async (text: string, options?: SendOptions) => {
+    const generation = generationRef.current;
+    const isCurrent = () => mountedRef.current && generationRef.current === generation;
     isStreamingRef.current = true;
     setStatus("streaming");
     setError(null);
+    setNotice(null);
 
     const runStartAt = Date.now();
     const userMessage: ChatMessage = {
@@ -207,6 +376,7 @@ export function useChat(): UseChatResult {
     // arrives, which is the server's actual decision rather than this
     // client's request.
     let agentName = options?.agent ?? null;
+    let routingFallback = false;
 
     setActiveRun({
       messageId,
@@ -218,10 +388,11 @@ export function useChat(): UseChatResult {
       thought: "",
       parts: [],
       agentName,
+      routingFallback,
     });
 
     const updateActiveRun = (patch: Partial<ActiveRun>) => {
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       setActiveRun((prev) => (prev ? { ...prev, ...patch } : prev));
     };
 
@@ -235,58 +406,168 @@ export function useChat(): UseChatResult {
         runSummary: summary,
         usage,
       };
-      if (!mountedRef.current) return;
+      if (!isCurrent()) return;
       setMessages((prev) => [...prev, finalMessage]);
       setActiveRun(null);
     };
 
-    const summaryFrom = (outcome: "done" | "error", errorText: string | null) => {
+    const summaryFrom = (outcome: RunSummary["status"], errorText: string | null) => {
       const segments = buildPhaseTimeline(events);
       // `usage.duration_ms` is the sum of provider-reported model-call
       // durations, and the phase durations are independent measurements.
       // Measure the user's actual wait directly from submit to terminal event.
       const totalMs = Math.max(0, Date.now() - runStartAt);
       const trace = buildRunTrace(traceEvents);
-      return { status: outcome, totalMs, errorText, segments, trace, agentName } satisfies RunSummary;
+      return {
+        status: outcome,
+        totalMs,
+        errorText,
+        segments,
+        trace,
+        agentName,
+        routingFallback,
+      } satisfies RunSummary;
     };
 
     const controller = new AbortController();
     abortRef.current = controller;
+    // Set just before this hook aborts the run itself, and read back in the
+    // catch below: an AbortError alone cannot say whether the reader pressed
+    // Stop, the watchdog gave up, or the provider unmounted — and those end
+    // three different ways.
+    let endReason: EndReason | null = null;
+    const end = (reason: EndReason) => {
+      if (controller.signal.aborted) return;
+      endReason = reason;
+      controller.abort();
+    };
+    runsInFlight += 1;
+    let counted = true;
+    const release = () => {
+      if (!counted) return;
+      counted = false;
+      runsInFlight -= 1;
+    };
+    inFlightRef.current = { end, release };
+
+    // Armed only once the response has arrived: agent-service routes the
+    // question before it sends headers, and that can legitimately take
+    // longer than the stall window. From then on every read resets it —
+    // keepalives included, which is the point.
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const armWatchdog = () => {
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => end("stalled"), stallTimeoutMs);
+    };
 
     try {
       const hostContext = readHostContext(
         hostContextRef.current,
         options?.omitSelectedWidget === true,
       );
-      const response = await postAgentRun(
-        client,
-        {
-          message: text,
-          agent: options?.agent,
-          session_id: conversationIdRef.current ?? undefined,
-          // Left off entirely when there is none: an embed with no
-          // dashboard beside it sends exactly the body it always did.
-          ...(hostContext === null ? {} : { host_context: hostContext }),
-        },
-        { signal: controller.signal },
-      );
+      // An agent the reader armed (a slash command, a rerun) always wins;
+      // otherwise a follow-up goes where this conversation's last plain
+      // question was routed — see PinnedAgent.
+      let agent = options?.agent;
+      let agentIsPinned = false;
+      if (agent === undefined) {
+        const pinned = await resolvePinnedAgent(controller.signal);
+        if (pinned !== null) {
+          agent = pinned;
+          agentIsPinned = true;
+        }
+      }
+      const send = () =>
+        postAgentRun(
+          client,
+          {
+            message: text,
+            agent,
+            session_id: conversationIdRef.current ?? undefined,
+            // Left off entirely when there is none: an embed with no
+            // dashboard beside it sends exactly the body it always did.
+            ...(hostContext === null ? {} : { host_context: hostContext }),
+          },
+          { signal: controller.signal },
+        );
+      // Both recoveries below answer a refusal that comes before any run
+      // starts, so neither ever runs a question twice; each is tried once.
+      let restartedConversation = false;
+      let response: Response | null = null;
+      while (response === null) {
+        try {
+          response = await send();
+        } catch (err) {
+          if (agentIsPinned && isUnknownAgentError(err) && isCurrent()) {
+            // The agent this conversation was pinned to has been deleted or
+            // switched off since. The reader never named it, so route the
+            // question afresh rather than fail it.
+            agentIsPinned = false;
+            agent = undefined;
+            pinnedAgentRef.current = null;
+            continue;
+          }
+          if (
+            !restartedConversation &&
+            isMissingConversationError(err) &&
+            conversationIdRef.current !== null &&
+            isCurrent()
+          ) {
+            // A conversation that can be read but not continued — deleted in
+            // another tab since it was opened, or a channel transcript that
+            // was never this user's own run. The follow-up used to fail with
+            // the server's "no conversation N for this user" and nothing else
+            // to try; now it is sent once more, as the first turn of a new
+            // conversation.
+            restartedConversation = true;
+            conversationIdRef.current = null;
+            setActiveConversationId(null);
+            continue;
+          }
+          throw err;
+        }
+      }
+      if (restartedConversation && isCurrent()) setNotice(CONVERSATION_RESTARTED);
 
-      for await (const chunk of readDataStream(response.body!)) {
+      armWatchdog();
+      // Left the moment a terminal chunk lands. The server writes nothing
+      // after `finish`/`error` but `[DONE]`, and it commits the answer
+      // before it sends `finish` (`app.api.run`), so there is nothing left
+      // to wait for — and waiting is what let a connection that broke in
+      // that gap turn a delivered answer into a second, failed turn.
+      stream: for await (const chunk of readDataStream(response.body!, { onActivity: armWatchdog })) {
         switch (chunk.type) {
           case "start": {
             messageId = chunk.messageId;
             const resolvedAgent = chunk.messageMetadata?.agent_name;
             if (typeof resolvedAgent === "string") agentName = resolvedAgent;
+            routingFallback = chunk.messageMetadata?.routing_fallback === true;
+            if (isCurrent()) {
+              // Pinned only from a question nobody addressed: an agent the
+              // reader armed is carried by `selectedAgent` for as long as it
+              // stays armed, and once they disarm it they are asking for
+              // routing, not for the agent they just let go of. And never
+              // from a fallback — pinning a guess would send every follow-up
+              // to the agent the router already said it was unsure about.
+              pinnedAgentRef.current =
+                options?.agent === undefined && typeof resolvedAgent === "string" && !routingFallback
+                  ? { name: resolvedAgent, id: null }
+                  : null;
+            }
             // The conversation this run was saved under. A fresh thread has
             // no id until here, and without keeping it every follow-up was
             // sent with no `session_id` — a new conversation each time, so
             // "and last week?" reached the agent with none of the earlier turns.
+            //
+            // Only while this run's thread is still the one on screen: a
+            // stale run naming its conversation would point the NEW thread's
+            // follow-ups at the old one.
             const sessionId = chunk.messageMetadata?.session_id;
-            if (typeof sessionId === "number" && Number.isInteger(sessionId)) {
+            if (typeof sessionId === "number" && Number.isInteger(sessionId) && isCurrent()) {
               conversationIdRef.current = sessionId;
-              if (mountedRef.current) setActiveConversationId(sessionId);
+              setActiveConversationId(sessionId);
             }
-            updateActiveRun({ messageId, agentName });
+            updateActiveRun({ messageId, agentName, routingFallback });
             break;
           }
           case "text-delta": {
@@ -318,13 +599,13 @@ export function useChat(): UseChatResult {
             sawTerminal = true;
             events.push({ kind: "run-end", at: Date.now() });
             finalize(summaryFrom("done", null), chunk.messageMetadata?.usage ?? null);
-            break;
+            break stream;
           }
           case "error": {
             sawTerminal = true;
             events.push({ kind: "run-end", at: Date.now() });
             finalize(summaryFrom("error", chunk.errorText), null);
-            break;
+            break stream;
           }
           default: {
             if (!chunk.type.startsWith("data-")) break;
@@ -392,22 +673,66 @@ export function useChat(): UseChatResult {
         finalize(summaryFrom("error", "Connection closed before the run finished."), null);
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") {
-        // A deliberate cancel (provider unmount) — not a failure the
-        // operator caused, so nothing renders and nothing needs undoing:
-        // the assistant message simply never gets appended.
+      // The turn already landed. Whatever broke after that — the connection
+      // dropping before `[DONE]`, Stop pressed a beat too late — must not
+      // append a second, failed turn beneath the answer.
+      if (sawTerminal) return;
+      if (controller.signal.aborted) {
+        // Checked off the signal, not the error: `fetch` and a body read
+        // reject with whatever the platform chose, and it was this hook that
+        // pulled the plug either way.
+        if (endReason === null) {
+          // A deliberate cancel (provider unmount, or the thread replaced
+          // under it) — not a failure the operator caused, so nothing
+          // renders and nothing needs undoing: the assistant message simply
+          // never gets appended.
+          return;
+        }
+        events.push({ kind: "run-end", at: Date.now() });
+        finalize(
+          endReason === "stopped" ? summaryFrom("stopped", null) : summaryFrom("error", LOST_CONNECTION),
+          null,
+        );
         return;
       }
       const message = err instanceof Error ? err.message : "Asking failed unexpectedly.";
-      if (mountedRef.current) {
+      if (isCurrent()) {
         finalize(summaryFrom("error", message), null);
         setError(message);
       }
     } finally {
-      abortRef.current = null;
-      isStreamingRef.current = false;
-      if (mountedRef.current) setStatus("idle");
+      if (stallTimer !== null) clearTimeout(stallTimer);
+      release();
+      if (inFlightRef.current?.end === end) inFlightRef.current = null;
+      // A stale run leaves these alone: they belong to whatever run the new
+      // thread may already have started.
+      if (generationRef.current === generation) {
+        abortRef.current = null;
+        isStreamingRef.current = false;
+        if (mountedRef.current) setStatus("idle");
+      }
     }
+  }, []);
+
+  /**
+   * Lets go of the run in flight, if any, because the thread it was writing
+   * into is about to be replaced. Silent — `endReason` stays null, so the run
+   * appends nothing — and immediate: the composer unlocks now, not whenever
+   * the abort finishes unwinding.
+   */
+  const discardRun = useCallback(() => {
+    generationRef.current += 1;
+    inFlightRef.current?.release();
+    inFlightRef.current = null;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    isStreamingRef.current = false;
+    setStatus("idle");
+    setActiveRun(null);
+  }, [resolvePinnedAgent]);
+
+  const stop = useCallback(() => {
+    inFlightRef.current?.end("stopped");
   }, []);
 
   const sendMessage = useCallback(
@@ -423,36 +748,66 @@ export function useChat(): UseChatResult {
     [runTurn],
   );
 
-  const loadConversation = useCallback(async (conversationId: number) => {
-    const hydrated = await fetchConversation(client, conversationId);
-    conversationIdRef.current = conversationId;
-    if (mountedRef.current) {
+  const loadConversation = useCallback(
+    async (conversationId: number) => {
+      // Picking the conversation a run is still streaming into, from History:
+      // it is already on screen and still being written, and reloading it
+      // would throw away the answer on its way.
+      if (conversationId === conversationIdRef.current && isStreamingRef.current) return;
+      const token = ++loadTokenRef.current;
+      const hydrated = await fetchConversation(client, conversationId);
+      // Superseded while it loaded — the reader opened another, or started a
+      // new one — or the provider is gone.
+      if (token !== loadTokenRef.current || !mountedRef.current) return;
+      // Only now, once there is a thread to replace it with: a load that
+      // fails leaves the current thread, and any run in it, as they were.
+      discardRun();
+      conversationIdRef.current = conversationId;
+      // Who answered last, so a follow-up goes back to them. Resolved to a
+      // name only when one is sent (`resolvePinnedAgent`); a turn with no
+      // recorded agent leaves nothing pinned and the follow-up is routed.
+      const lastAgentId = hydrated.findLast((message) => message.role === "assistant")?.agentId;
+      pinnedAgentRef.current = typeof lastAgentId === "number" ? { name: null, id: lastAgentId } : null;
       setMessages(hydrated);
       setActiveConversationId(conversationId);
-    }
-  }, []);
+      setError(null);
+      setNotice(null);
+      // Same rule as `clearConversation`: an agent armed by slash command was
+      // armed for the conversation it was typed in, not for this one.
+      setSelectedAgent(null);
+    },
+    [discardRun],
+  );
 
   const clearConversation = useCallback(() => {
+    loadTokenRef.current += 1;
+    discardRun();
     conversationIdRef.current = null;
+    pinnedAgentRef.current = null;
     setActiveConversationId(null);
     setMessages([]);
-    setActiveRun(null);
+    setError(null);
+    setNotice(null);
     // A slash command arms an agent for "the rest of this conversation", so a
     // new one starts unarmed and routes itself. Keeping it sent the next plain
     // question to the last builder used.
     setSelectedAgent(null);
-  }, []);
+  }, [discardRun]);
 
   return {
     messages,
     activeRun,
     status,
     error,
+    notice,
     sendMessage,
+    stop,
     loadConversation,
     selectedAgent,
     setSelectedAgent,
     activeConversationId,
     clearConversation,
+    draft,
+    setDraft,
   };
 }

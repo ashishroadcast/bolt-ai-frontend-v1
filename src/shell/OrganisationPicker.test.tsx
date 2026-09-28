@@ -4,6 +4,16 @@ import { AuthProvider } from "../auth/AuthContext.tsx";
 import { getSession, setSession } from "../auth/session.ts";
 import { OrganisationPicker } from "./OrganisationPicker.tsx";
 
+// Ask's run state lives in the chat provider, which the top bar cannot see;
+// the picker reads it through useChat's module-level flag, stubbed here so a
+// test can say "a run is in flight" without streaming one.
+const askRun = vi.hoisted(() => ({ inFlight: false, unloadConfirmed: vi.fn() }));
+vi.mock("../ask/chat/useChat.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ask/chat/useChat.ts")>()),
+  isAskRunInFlight: () => askRun.inFlight,
+  confirmUnloadDuringAskRun: askRun.unloadConfirmed,
+}));
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -59,7 +69,10 @@ describe("OrganisationPicker", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     setSession(null);
+    askRun.inFlight = false;
+    askRun.unloadConfirmed.mockClear();
   });
 
   it("renders nothing at all when signed out", () => {
@@ -137,6 +150,63 @@ describe("OrganisationPicker", () => {
     // The credential is untouched — switching is local, and agent-service
     // re-validates the header against the key's own subtree anyway.
     expect(getSession()?.apiKey).toBe("boltai_test");
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it("asks before switching while Ask is still writing an answer, and stays put on No", async () => {
+    askRun.inFlight = true;
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fetchMock.mockResolvedValueOnce(
+      organisationsResponse([
+        { id: "root", name: "Root", current: true },
+        { id: "child", name: "Depot", parent: "root" },
+      ]),
+    );
+
+    renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: /organisation|root/i }));
+    fireEvent.click(await screen.findByRole("option", { name: /Depot/ }));
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm.mock.calls[0]![0]).toMatch(/still being written/);
+    // Nothing changed: the bar and the data still agree.
+    expect(getSession()?.organisationId).toBe("root");
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("switches mid-run on Yes, without the browser asking a second time on the reload", async () => {
+    askRun.inFlight = true;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    fetchMock.mockResolvedValueOnce(
+      organisationsResponse([
+        { id: "root", name: "Root", current: true },
+        { id: "child", name: "Depot", parent: "root" },
+      ]),
+    );
+
+    renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: /organisation|root/i }));
+    fireEvent.click(await screen.findByRole("option", { name: /Depot/ }));
+
+    expect(askRun.unloadConfirmed).toHaveBeenCalledOnce();
+    expect(getSession()?.organisationId).toBe("child");
+    expect(reload).toHaveBeenCalled();
+  });
+
+  it("does not ask when no run is in flight", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    fetchMock.mockResolvedValueOnce(
+      organisationsResponse([
+        { id: "root", name: "Root", current: true },
+        { id: "child", name: "Depot", parent: "root" },
+      ]),
+    );
+
+    renderPicker();
+    fireEvent.click(screen.getByRole("button", { name: /organisation|root/i }));
+    fireEvent.click(await screen.findByRole("option", { name: /Depot/ }));
+
+    expect(confirm).not.toHaveBeenCalled();
     expect(reload).toHaveBeenCalled();
   });
 

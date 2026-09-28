@@ -69,16 +69,50 @@
   outline-offset: 1px;
 }
 
+/* The length counter, shown only near the cap. Right-aligned over the send
+   button, where the reader looks when a question will not go. */
+.length {
+  margin: 0;
+  padding: 0 12px;
+  text-align: right;
+  font-family: var(--font-body);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+}
+
+.length[data-over] {
+  color: var(--danger, #b42318);
+}
+
+/* A note about the question just sent — not an error, so it reads in the
+   quiet body tint rather than the danger colour the voice bubble uses. */
+.notice {
+  margin: 0;
+  padding: 0 12px;
+  font-family: var(--font-body);
+  font-size: var(--text-small);
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
+/*
+ * One line tall — exactly the old 46px pill — until the question needs more,
+ * then it grows upward with the box. Hence `min-height` rather than
+ * `height`, controls pinned to the bottom edge (the line being typed), and a
+ * radius of half the one-line height rather than 999px: a pill that grows
+ * stays a rounded rectangle instead of turning into a lozenge.
+ */
 .composer {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   width: 100%;
-  height: 46px;
-  padding: 8px 8px 8px 12px;
+  min-height: 46px;
+  padding: 6px 8px 6px 12px;
   background: var(--surface);
   border: 1px solid var(--rule);
-  border-radius: 999px;
+  border-radius: 23px;
   /* Anchors the command menu, which is out of flow and sits above the pill.
      No overflow clipping here, deliberately — the menu has to escape. */
   position: relative;
@@ -95,20 +129,38 @@
   gap: 8px;
   flex: 1 1 auto;
   min-width: 0;
+  align-self: stretch;
 }
 
+/* Its height is set from `scrollHeight` as the text changes (Composer.tsx),
+   so the box is sized border-box and never resizable by hand; past seven
+   lines it scrolls instead of pushing the thread off the panel. */
 .field {
+  display: block;
   flex: 1 1 auto;
+  box-sizing: border-box;
   min-width: 0;
+  max-height: 152px;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  resize: none;
   background: transparent;
   border: 0;
   color: var(--fg);
   font-family: var(--font-body);
   font-size: 13px;
+  line-height: 20px;
 }
 
+/* One line, clipped, as it was on the old <input>: a textarea wraps its
+   placeholder, and "Please specify what you want to change" in a narrow
+   panel would otherwise stand two lines tall in an empty box. */
 .field::placeholder {
   color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .field:focus-visible {
@@ -209,6 +261,8 @@
 /* The affordance that says the menu exists at all. Sits between the input
    and Ask, quiet until pointed at. */
 .hint {
+  /* Centred on the 32px bottom line the send button sets. */
+  margin-bottom: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -236,6 +290,7 @@
 }
 
 .voice {
+  margin-bottom: 3px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -270,7 +325,9 @@
   outline-offset: 1px;
 }
 
-.voiceMessage {
+/* A voice failure, or a `/word` that is not a command — both about what was
+   just attempted in the box, so both float just above it. */
+.inlineMessage {
   position: absolute;
   right: 42px;
   bottom: calc(100% + 6px);
@@ -308,6 +365,34 @@
 }
 
 .send:focus-visible {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+/* Stop sits exactly where Ask was, at the same size, so the swap does not
+   shift the pill. Quieter than Ask — an outline rather than the accent fill —
+   because it is an escape hatch, not the next step. */
+.stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.stop:hover {
+  border-color: var(--fg-dim);
+  background: var(--surface-sunk);
+}
+
+.stop:focus-visible {
   outline: 2px solid var(--fg);
   outline-offset: 2px;
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatProvider } from "./chat/ChatContext.tsx";
 import { AskAgentsProvider, type AskAgent } from "./chat/useAskAgents.ts";
@@ -79,6 +79,33 @@ describe("EmptyState quick actions", () => {
     // this is sent unnamed, not blocked or defaulted to something guessed
     // client-side.
     expect(body.agent).toBeUndefined();
+  });
+
+  it("disables the cards while the browser is offline, and enables them when it reconnects", async () => {
+    const fetchMock = routed([AGENT]);
+    vi.stubGlobal("fetch", fetchMock);
+    const onLine = vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
+    try {
+      renderEmptyState();
+      const card = await screen.findByRole("button", { name: /Create Dashboard/ });
+      await waitFor(() => expect(card).toBeEnabled());
+
+      onLine.mockReturnValue(false);
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      expect(card).toBeDisabled();
+      fireEvent.click(card);
+      expect(runCalls(fetchMock)).toHaveLength(0);
+
+      onLine.mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      expect(card).toBeEnabled();
+    } finally {
+      onLine.mockRestore();
+    }
   });
 
   it("stays disabled while the tenant has no agent at all", async () => {

@@ -8,11 +8,15 @@ import { TestAskProvider } from "../testing.tsx";
 
 /** A stream that never closes — stands in for a run genuinely in flight,
  * the same helper shape useChat.test.tsx uses for its own concurrency
- * tests. */
-function openEndedResponse(): Response {
+ * tests. Errors its reader once `signal` fires, as a real `fetch` body does,
+ * so Stop is exercised for real. */
+function openEndedResponse(signal: AbortSignal): Response {
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(`data: {"type":"start","messageId":"pending"}\n\n`));
+      signal.addEventListener("abort", () =>
+        controller.error(new DOMException("The operation was aborted.", "AbortError")),
+      );
     },
   });
   return new Response(body, { status: 200 });
@@ -43,7 +47,7 @@ function routed(agents: AskAgent[]): ReturnType<typeof vi.fn> {
         }),
       );
     }
-    return Promise.resolve(openEndedResponse());
+    return Promise.resolve(openEndedResponse(request.signal));
   });
 }
 
@@ -84,6 +88,7 @@ const FLEET: AskAgent = {
 
 class FakeSpeechRecognition {
   static latest: FakeSpeechRecognition | null = null;
+  static created = 0;
 
   continuous = false;
   interimResults = false;
@@ -97,6 +102,7 @@ class FakeSpeechRecognition {
 
   constructor() {
     FakeSpeechRecognition.latest = this;
+    FakeSpeechRecognition.created += 1;
   }
 }
 
@@ -133,19 +139,67 @@ describe("Composer", () => {
     // The agent travels as a *name* on the wire (RunIn.agent), matching
     // whatever AgentPicker put into ChatContext.selectedAgent — never an id.
     expect(body).toMatchObject({ message: "top items last week", agent: "Sales Analyst" });
-    expect((field as HTMLInputElement).value).toBe("");
+    expect((field as HTMLTextAreaElement).value).toBe("");
   });
 
-  it("keeps the action's name through the flow: Ask becomes Asking while a run streams, and both the field and button disable", async () => {
+  it("puts Stop where Ask was while a run streams, and Stop ends the run", async () => {
     renderComposer("Sales Analyst");
 
     await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
     fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Asking" })).toBeInTheDocument());
-    expect(screen.getByRole("button", { name: "Asking" })).toBeDisabled();
-    expect(screen.getByLabelText("Ask a question")).toBeDisabled();
+    const stop = await screen.findByRole("button", { name: "Stop" });
+    expect(stop).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Ask" })).not.toBeInTheDocument();
+    const signal = runCalls(fetchMock)[0]!.signal;
+
+    fireEvent.click(stop, { detail: 1 });
+
+    expect(signal.aborted).toBe(true);
+    expect(await screen.findByRole("button", { name: "Ask" })).toBeInTheDocument();
+    // Two elements, not one retyped. In a real browser the run ends inside
+    // the click's own microtasks, and a reused <button> was type="submit"
+    // again before the click's default action ran — so Stop also sent what
+    // had been typed meanwhile. jsdom cannot reproduce that timing, so this
+    // pins the structure that prevents it.
+    expect(stop.isConnected).toBe(false);
+  });
+
+  it("ignores the second click of a double-click on Ask, which lands on Stop", async () => {
+    renderComposer("Sales Analyst");
+
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Ask a question"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }), { detail: 1 });
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }), { detail: 2 });
+
+    expect(runCalls(fetchMock)[0]!.signal.aborted).toBe(false);
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  });
+
+  it("keeps a half-typed question when the composer goes away and comes back", async () => {
+    // Opening History swaps the composer out of the panel; leaving /ask in
+    // the console unmounts it. The chat provider outlives both.
+    function Screen({ showComposer }: { showComposer: boolean }) {
+      return (
+        <TestAskProvider>
+          <ChatProvider>
+            <AskAgentsProvider>{showComposer && <Composer />}</AskAgentsProvider>
+          </ChatProvider>
+        </TestAskProvider>
+      );
+    }
+    const { rerender } = render(<Screen showComposer />);
+    const field = () => screen.getByLabelText("Ask a question") as HTMLTextAreaElement;
+    await waitFor(() => expect(field()).toBeEnabled());
+    fireEvent.change(field(), { target: { value: "which vehicles idled over" } });
+
+    rerender(<Screen showComposer={false} />);
+    expect(screen.queryByLabelText("Ask a question")).not.toBeInTheDocument();
+    rerender(<Screen showComposer />);
+
+    expect(field().value).toBe("which vehicles idled over");
   });
 
   it("does nothing for an empty or whitespace-only question", () => {
@@ -168,6 +222,48 @@ describe("Composer", () => {
     const body = await runCalls(fetchMock)[0]!.json();
     expect(body).toMatchObject({ message: "hello" });
     expect(body.agent).toBeUndefined();
+  });
+
+  it("says so when a follow-up had to start a new conversation", async () => {
+    const frames = (sessionId: number) =>
+      [
+        `data: {"type":"start","messageId":"m${sessionId}","messageMetadata":{"session_id":${sessionId}}}`,
+        `data: {"type":"finish"}`,
+        `data: [DONE]`,
+      ]
+        .map((frame) => `${frame}\n\n`)
+        .join("");
+    const runs = [
+      () => new Response(frames(57), { status: 200 }),
+      () =>
+        new Response(JSON.stringify({ detail: "no conversation 57 for this user" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+      () => new Response(frames(58), { status: 200 }),
+    ];
+    fetchMock = vi.fn((request: Request) => {
+      if (new URL(request.url).pathname === "/agent/agents") {
+        return Promise.resolve(
+          new Response(JSON.stringify([SALES]), { status: 200, headers: { "content-type": "application/json" } }),
+        );
+      }
+      return Promise.resolve(runs.shift()!());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderComposer(null);
+    const field = screen.getByLabelText("Ask a question");
+
+    for (const question of ["sales this week", "and by city"]) {
+      await waitFor(() => expect(screen.getByRole("button", { name: "Ask" })).toBeEnabled());
+      fireEvent.change(field, { target: { value: question } });
+      fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+      await screen.findByRole("button", { name: "Ask" });
+    }
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "That conversation can't be continued, so this started a new one.",
+    );
   });
 
   it("stays disabled while the tenant has no agent at all, so a run can never fire with nothing to route to", async () => {
@@ -197,6 +293,7 @@ describe("Composer voice input", () => {
       } as unknown as MediaDevices,
     });
     FakeSpeechRecognition.latest = null;
+    FakeSpeechRecognition.created = 0;
   });
 
   afterEach(() => {
@@ -220,7 +317,7 @@ describe("Composer voice input", () => {
       recognition?.onresult?.({ results: [{ 0: { transcript: "idle vehicles" }, length: 1 }] });
     });
 
-    expect((screen.getByLabelText("Ask a question") as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText("Ask a question") as HTMLTextAreaElement).value).toBe(
       "Show me idle vehicles",
     );
     expect(runCalls(fetchMock)).toHaveLength(0);
@@ -281,6 +378,169 @@ describe("Composer voice input", () => {
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("Chrome couldn't reach its speech service");
+  });
+});
+
+describe("Composer voice input — starting", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", routed([SALES]));
+    vi.stubGlobal("SpeechRecognition", FakeSpeechRecognition);
+    FakeSpeechRecognition.latest = null;
+    FakeSpeechRecognition.created = 0;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, "mediaDevices");
+  });
+
+  it("starts one recognition however many times the mic is clicked while permission is pending", async () => {
+    // Every prompt still open is answered at once, so a second recognition
+    // started behind the first would show up in the count below.
+    const pending: Array<() => void> = [];
+    const grant = () => pending.splice(0).forEach((resolve) => resolve());
+    const getUserMedia = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          pending.push(() => resolve({ getTracks: () => [{ stop: vi.fn() }] }));
+        }),
+    );
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia } as unknown as MediaDevices,
+    });
+    renderComposer("Sales Analyst");
+    const mic = await screen.findByLabelText("Start voice input");
+    await waitFor(() => expect(mic).toBeEnabled());
+
+    // Two clicks before React has re-rendered once — a real double-click —
+    // so it is the ref that stops the second, not the disabled button.
+    act(() => {
+      mic.click();
+      mic.click();
+    });
+    // Disabled while the browser is still asking, and says why.
+    expect(screen.getByLabelText("Requesting microphone access")).toBeDisabled();
+    fireEvent.click(screen.getByLabelText("Requesting microphone access"));
+
+    await act(async () => grant());
+
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    expect(FakeSpeechRecognition.created).toBe(1);
+    expect(FakeSpeechRecognition.latest?.start).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Stop voice input")).toBeEnabled();
+  });
+});
+
+describe("Composer — the box", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = routed([SALES]);
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function ready() {
+    renderComposer(null);
+    const field = screen.getByLabelText("Ask a question") as HTMLTextAreaElement;
+    await waitFor(() => expect(field).toBeEnabled());
+    return field;
+  }
+
+  it("is a multi-line box: Enter sends, Shift+Enter does not", async () => {
+    const field = await ready();
+    expect(field.tagName).toBe("TEXTAREA");
+
+    fireEvent.change(field, { target: { value: "first line\nsecond line" } });
+    fireEvent.keyDown(field, { key: "Enter", shiftKey: true });
+    expect(runCalls(fetchMock)).toHaveLength(0);
+
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    // The line break survives, where an <input> would have flattened it.
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ message: "first line\nsecond line" });
+  });
+
+  it("ignores Enter while an input method is still composing", async () => {
+    const field = await ready();
+    fireEvent.change(field, { target: { value: "東京の車両" } });
+
+    fireEvent.keyDown(field, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(field, { key: "Enter", keyCode: 229 });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
+  it("lets the next question be typed during a run, but not sent until it ends", async () => {
+    const field = await ready();
+    fireEvent.change(field, { target: { value: "first" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await screen.findByRole("button", { name: "Stop" });
+
+    expect(field).toBeEnabled();
+    fireEvent.change(field, { target: { value: "and the next one" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(1);
+    expect(field.value).toBe("and the next one");
+  });
+
+  it("hands focus back to the box when a run ends", async () => {
+    const field = await ready();
+    fireEvent.change(field, { target: { value: "first" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    const stop = await screen.findByRole("button", { name: "Stop" });
+    stop.focus();
+
+    fireEvent.click(stop, { detail: 1 });
+
+    await screen.findByRole("button", { name: "Ask" });
+    expect(document.activeElement).toBe(field);
+  });
+
+  it("leaves focus alone when the reader has moved it elsewhere", async () => {
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    try {
+      const field = await ready();
+      fireEvent.change(field, { target: { value: "first" } });
+      fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+      const stop = await screen.findByRole("button", { name: "Stop" });
+      outside.focus();
+
+      fireEvent.click(stop, { detail: 1 });
+
+      await screen.findByRole("button", { name: "Ask" });
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("shows a counter near the cap, and holds a question past it without cutting it", async () => {
+    const field = await ready();
+
+    fireEvent.change(field, { target: { value: "a".repeat(3_000) } });
+    expect(screen.queryByText(/\/ 4,000/)).not.toBeInTheDocument();
+
+    fireEvent.change(field, { target: { value: "a".repeat(3_800) } });
+    expect(screen.getByText("3,800 / 4,000")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask" })).toBeEnabled();
+
+    fireEvent.change(field, { target: { value: "a".repeat(4_120) } });
+    expect(screen.getByText(/4,120 \/ 4,000/)).toHaveTextContent("shorten it to send");
+    expect(screen.getByRole("button", { name: "Ask" })).toBeDisabled();
+    fireEvent.keyDown(field, { key: "Enter" });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+    expect(field.value).toHaveLength(4_120);
   });
 });
 
@@ -362,7 +622,7 @@ describe("Composer slash commands", () => {
 
     fireEvent.keyDown(field, { key: "Enter" });
 
-    expect((field as HTMLInputElement).value).toBe("");
+    expect((field as HTMLTextAreaElement).value).toBe("");
     expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
 
     fireEvent.change(field, { target: { value: "a vehicle registration form" } });
@@ -408,7 +668,7 @@ describe("Composer slash commands", () => {
     expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
     // The text is left alone — Escape dismisses the menu, it does not undo
     // what was typed.
-    expect((field as HTMLInputElement).value).toBe("/");
+    expect((field as HTMLTextAreaElement).value).toBe("/");
 
     type("/f");
     expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
@@ -420,12 +680,76 @@ describe("Composer slash commands", () => {
     fireEvent.pointerDown(screen.getByRole("option", { name: /report/ }));
 
     const field = screen.getByLabelText("Ask a question");
-    expect((field as HTMLInputElement).value).toBe("");
+    expect((field as HTMLTextAreaElement).value).toBe("");
     fireEvent.change(field, { target: { value: "anything" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask" }));
 
     await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
     expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ agent: "Fleet-Report" });
+  });
+
+  it("arms a command typed out in full, and sends only the question after it", async () => {
+    await typeSlash();
+    type("/form vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({
+      message: "vehicle checklist",
+      agent: "Form-Builder",
+    });
+  });
+
+  it("arms a command typed alone, in any case, without sending anything", async () => {
+    await typeSlash();
+    type("/FORM");
+    fireEvent.submit(screen.getByLabelText("Ask a question").closest("form")!);
+
+    expect(runCalls(fetchMock)).toHaveLength(0);
+    expect((screen.getByLabelText("Ask a question") as HTMLTextAreaElement).value).toBe("");
+
+    type("a vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ agent: "Form-Builder" });
+  });
+
+  it("does not send an unknown command, and names the real ones", async () => {
+    await typeSlash();
+    type("/fomr vehicle checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("No /fomr command. Try /form or /report.");
+    // Left in the box to be fixed, not cleared.
+    expect((screen.getByLabelText("Ask a question") as HTMLTextAreaElement).value).toBe(
+      "/fomr vehicle checklist",
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+
+    type("/form vehicle checklist");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("still sends a question that merely starts with a path", async () => {
+    await typeSlash();
+    type("/api/v1 returns 500 since Monday");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({
+      message: "/api/v1 returns 500 since Monday",
+    });
+  });
+
+  it("treats a leading slash as text for a tenant with no commands", async () => {
+    mount([SALES]);
+    await waitFor(() => expect(screen.getByLabelText("Ask a question")).toBeEnabled());
+    type("/foo bar");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    await waitFor(() => expect(runCalls(fetchMock)).toHaveLength(1));
+    expect(await runCalls(fetchMock)[0]!.json()).toMatchObject({ message: "/foo bar" });
   });
 
   it("offers nothing at all to a tenant whose agents have no commands", async () => {
@@ -453,6 +777,6 @@ describe("Composer slash commands", () => {
     fireEvent.click(screen.getByLabelText("Show commands"));
 
     expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
-    expect((screen.getByLabelText("Ask a question") as HTMLInputElement).value).toBe("/");
+    expect((screen.getByLabelText("Ask a question") as HTMLTextAreaElement).value).toBe("/");
   });
 });

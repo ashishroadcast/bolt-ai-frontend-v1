@@ -71,3 +71,34 @@ export async function postAgentRun(
   }
   return response;
 }
+
+/**
+ * `POST /agent/run`'s refusal of a `session_id` this caller cannot continue:
+ * `app.api.run._load_conversation`'s "no conversation N for this user",
+ * mapped to a 404.
+ *
+ * A conversation can be perfectly readable and still land here — one deleted
+ * from another tab after it was opened, or a channel transcript, which is
+ * listed in History but was never this user's own run. `useChat` answers it
+ * by starting a new conversation with the same question rather than failing a
+ * follow-up the reader had every reason to expect would work.
+ *
+ * Read off FastAPI's `detail`, because the status alone is shared with the
+ * unknown-agent refusal below, and the two need opposite recoveries.
+ */
+export function isMissingConversationError(error: unknown): boolean {
+  return (
+    error instanceof AgentApiError &&
+    error.status === 404 &&
+    /\bconversation\b/i.test(error.message) &&
+    !isUnknownAgentError(error)
+  );
+}
+
+/** The other 404 `POST /agent/run` sends: `_load_agent`'s "no active agent
+ * named … available to this tenant", for an agent deleted or switched off
+ * since its name was last seen. Checked first by the server, so it is the
+ * one a request carrying both a stale agent and a stale conversation gets. */
+export function isUnknownAgentError(error: unknown): boolean {
+  return error instanceof AgentApiError && error.status === 404 && /\bno active agent\b/i.test(error.message);
+}

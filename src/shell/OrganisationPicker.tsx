@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, type ActingOrganisation } from "../auth/AuthContext.tsx";
+import { confirmUnloadDuringAskRun, isAskRunInFlight } from "../ask/chat/useChat.ts";
 import { GatewayError } from "../ask/http/errors.ts";
 import styles from "./OrganisationPicker.module.css";
 
@@ -88,6 +89,19 @@ export function OrganisationPicker() {
     (organisationId: string) => {
       setOpen(false);
       if (organisationId === session?.organisationId) return;
+      // The reload below would cut off an answer Ask is still writing — the
+      // run is cancelled the moment its connection closes, and nothing of it
+      // is saved. Asked here, before the switch, rather than left to the
+      // browser's "Leave site?": by then `actAsOrganisation` has already
+      // run, and cancelling that prompt would leave the bar naming one
+      // organisation over another's data.
+      if (isAskRunInFlight()) {
+        const proceed = window.confirm(
+          "An answer is still being written. Switching organisation reloads the console and stops it. Switch anyway?",
+        );
+        if (!proceed) return;
+        confirmUnloadDuringAskRun();
+      }
       actAsOrganisation(organisationId);
       // Every screen currently rendered is showing the old organisation's
       // rows, and there is no store-wide invalidation to fire instead. A

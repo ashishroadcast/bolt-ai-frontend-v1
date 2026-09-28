@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayError, UnauthorizedError } from "../http/errors.ts";
 import { AgentApiError } from "../http/gatewayClient.ts";
-import { postAgentRun } from "./runStream.ts";
+import { isMissingConversationError, isUnknownAgentError, postAgentRun } from "./runStream.ts";
 import { GatewayClient } from "../http/gatewayClient.ts";
 
 // No `../api/client.ts` stub any more, and nothing left to stub: that module
@@ -186,4 +186,35 @@ describe("postAgentRun", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+});
+
+describe("telling postAgentRun's two 404s apart", () => {
+  const conversationGone = new AgentApiError("no conversation 57 for this user", 404, {
+    detail: "no conversation 57 for this user",
+  });
+  const agentGone = new AgentApiError("no active agent named 'Report' available to this tenant", 404, {
+    detail: "no active agent named 'Report' available to this tenant",
+  });
+
+  it("recognises a conversation this user cannot continue", () => {
+    expect(isMissingConversationError(conversationGone)).toBe(true);
+    expect(isUnknownAgentError(conversationGone)).toBe(false);
+  });
+
+  it("recognises an agent that is gone, even one with 'conversation' in its name", () => {
+    const oddlyNamed = new AgentApiError(
+      "no active agent named 'Conversation-Bot' available to this tenant",
+      404,
+      undefined,
+    );
+    expect(isUnknownAgentError(agentGone)).toBe(true);
+    expect(isMissingConversationError(agentGone)).toBe(false);
+    expect(isMissingConversationError(oddlyNamed)).toBe(false);
+  });
+
+  it("is neither for another status or another error", () => {
+    expect(isMissingConversationError(new AgentApiError("no conversation 57 for this user", 422, undefined))).toBe(false);
+    expect(isMissingConversationError(new GatewayError("no conversation 57"))).toBe(false);
+    expect(isUnknownAgentError(new TypeError("Failed to fetch"))).toBe(false);
+  });
 });

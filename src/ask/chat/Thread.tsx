@@ -355,6 +355,9 @@ function workedForMs(message: ChatMessage): number | null {
 function turnStatus(message: ChatMessage, visible: UIPart[]): RunStatus {
   if (message.runSummary?.status === "error" || message.runStatus === "error") return "error";
   if (message.runStatus === "cancelled") return "cancelled";
+  // The reader pressed Stop (`useChat.stop`). Whatever streamed before it is
+  // kept and shown; it is just not an answer to rate.
+  if (message.runSummary?.status === "stopped") return "stopped";
   if (visible.length > 0 || message.content.trim() !== "") return "done";
   return message.runSummary !== undefined ? "empty" : "unfinished";
 }
@@ -391,6 +394,11 @@ function noticeFor(status: RunStatus, message: ChatMessage): TurnNoticeCopy | nu
       return {
         title: "This answer didn't finish.",
         detail: partial ? "What it wrote before it stopped is below." : null,
+      };
+    case "stopped":
+      return {
+        title: "You stopped this answer.",
+        detail: partial ? "What it wrote before you stopped it is below." : null,
       };
     case "unfinished":
       return { title: "This answer didn't finish.", detail: null };

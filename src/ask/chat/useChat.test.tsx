@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useChat } from "./useChat.ts";
+import { isAskRunInFlight, useChat } from "./useChat.ts";
 import { TestAskProvider } from "../testing.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -26,18 +26,40 @@ function sseResponse(frames: string[], status = 200): Response {
  * `signal` fires, the same reaction a real `fetch` body gives a caller
  * mid-read, so the abort test exercises `useChat`'s actual catch branch
  * rather than assuming the wiring works. */
-function openEndedResponse(signal?: AbortSignal): Response {
+function openEndedResponse(signal?: AbortSignal, frames: string[] = []): Response {
   let controllerRef: ReadableStreamDefaultController<Uint8Array>;
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
       controllerRef = controller;
       controller.enqueue(
-        new TextEncoder().encode(`data: {"type":"start","messageId":"pending"}\n\n`),
+        new TextEncoder().encode(
+          [`data: {"type":"start","messageId":"pending"}`, ...frames].map((frame) => `${frame}\n\n`).join(""),
+        ),
       );
     },
   });
   signal?.addEventListener("abort", () => {
     controllerRef.error(new DOMException("The operation was aborted.", "AbortError"));
+  });
+  return new Response(body, { status: 200 });
+}
+
+/** Open-ended, and quiet except for the server's `: keepalive` comment every
+ * `everyMs` — a model thinking for a long time, as the wire shows it. */
+function heartbeatOnlyResponse(signal: AbortSignal, everyMs: number): Response {
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(`data: {"type":"start","messageId":"quiet"}\n\n`));
+      timer = setInterval(() => controller.enqueue(new TextEncoder().encode(": keepalive\n\n")), everyMs);
+      signal.addEventListener("abort", () => {
+        clearInterval(timer);
+        controller.error(new DOMException("The operation was aborted.", "AbortError"));
+      });
+    },
+    cancel() {
+      clearInterval(timer);
+    },
   });
   return new Response(body, { status: 200 });
 }
@@ -261,6 +283,37 @@ describe("useChat", () => {
     });
   });
 
+  it("shows the answer once when the connection breaks after finish but before [DONE]", async () => {
+    // Delivered in one read, then the next read fails the way a dropped
+    // socket does. Before, that failure became a second, "network error"
+    // turn under an answer that had already arrived whole.
+    const frames = [
+      `data: {"type":"start","messageId":"msg-20"}`,
+      `data: {"type":"text-delta","id":"answer","delta":"Done."}`,
+      `data: {"type":"finish"}`,
+    ];
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames.map((frame) => `${frame}\n\n`).join("")));
+      },
+      pull(controller) {
+        pulls += 1;
+        controller.error(new TypeError("network error"));
+      },
+    });
+    fetchMock.mockResolvedValue(new Response(body, { status: 200 }));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(pulls).toBeGreaterThan(0); // the break really was there to be hit
+    expect(result.current.messages).toHaveLength(2);
+    expect(result.current.messages[1]).toMatchObject({ content: "Done.", runSummary: { status: "done" } });
+    expect(result.current.error).toBeNull();
+  });
+
   it("does not start a second run while one is already streaming", async () => {
     fetchMock.mockImplementation((request: Request) =>
       Promise.resolve(openEndedResponse(request.signal)),
@@ -298,6 +351,96 @@ describe("useChat", () => {
     // — matching agent-service's own "a run cancelled this way persists
     // nothing new" (app/api/run.py's module docstring).
     expect(result.current.messages).toHaveLength(1);
+  });
+
+  it("stop() closes the connection and lands the turn as stopped, keeping what had arrived", async () => {
+    fetchMock.mockImplementation((request: Request) =>
+      Promise.resolve(
+        openEndedResponse(request.signal, [
+          `data: {"type":"data-table","data":{"columns":["n"],"rows":[[1]]}}`,
+          `data: {"type":"text-delta","id":"answer","delta":"So far, one"}`,
+        ]),
+      ),
+    );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.activeRun?.text).toBe("So far, one"));
+    const signal = (fetchMock.mock.calls[0]![0] as Request).signal;
+
+    act(() => result.current.stop());
+
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(signal.aborted).toBe(true);
+    expect(result.current.activeRun).toBeNull();
+    const assistant = result.current.messages[1]!;
+    expect(assistant.content).toBe("So far, one");
+    expect(assistant.parts).toHaveLength(1);
+    // Not an error: the reader asked for this.
+    expect(assistant.runSummary).toMatchObject({ status: "stopped", errorText: null });
+    expect(result.current.error).toBeNull();
+  });
+
+  it("warns before the tab closes mid-run, and only mid-run", async () => {
+    fetchMock.mockImplementation((request: Request) => Promise.resolve(openEndedResponse(request.signal)));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    const closeTab = () => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(closeTab()).toBe(false);
+    expect(isAskRunInFlight()).toBe(false);
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    expect(closeTab()).toBe(true);
+    expect(isAskRunInFlight()).toBe(true);
+
+    act(() => result.current.stop());
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(closeTab()).toBe(false);
+    expect(isAskRunInFlight()).toBe(false);
+  });
+
+  it("stop() between runs does nothing", () => {
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    act(() => result.current.stop());
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("ends a run that goes completely silent as a lost connection, instead of working forever", async () => {
+    fetchMock.mockImplementation((request: Request) => Promise.resolve(openEndedResponse(request.signal)));
+    const { result } = renderHook(() => useChat({ stallTimeoutMs: 40 }), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello"));
+
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect((fetchMock.mock.calls[0]![0] as Request).signal.aborted).toBe(true);
+    expect(result.current.messages[1]!.runSummary).toMatchObject({
+      status: "error",
+      errorText: "Lost connection to the run.",
+    });
+  });
+
+  it("keeps a quiet run alive for as long as the server's keepalives keep arriving", async () => {
+    fetchMock.mockImplementation((request: Request) =>
+      Promise.resolve(heartbeatOnlyResponse(request.signal, 10)),
+    );
+    const { result, unmount } = renderHook(() => useChat({ stallTimeoutMs: 150 }), {
+      wrapper: TestAskProvider,
+    });
+
+    act(() => result.current.sendMessage("hello"));
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    // Several stall windows pass with no chunk at all — only comments.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 500)));
+
+    expect(result.current.status).toBe("streaming");
+    expect(result.current.messages).toHaveLength(1);
+    unmount();
   });
 
   // The actual "chat history not opening" bug (this task's report): a
@@ -418,6 +561,226 @@ describe("useChat", () => {
     expect(await sentBody(2)).not.toHaveProperty("session_id");
   });
 
+  it("starts a new conversation with the same question when the open one can't be continued", async () => {
+    // Deleted in another tab since it was opened, or a channel transcript:
+    // readable, but the server will not add a turn to it.
+    fetchMock
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: {"type":"start","messageId":"m1","messageMetadata":{"session_id":57}}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      )
+      .mockResolvedValueOnce(jsonResponse({ detail: "no conversation 57 for this user" }, 404))
+      .mockResolvedValueOnce(
+        sseResponse([
+          `data: {"type":"start","messageId":"m2","messageMetadata":{"session_id":58}}`,
+          `data: {"type":"text-delta","id":"answer","delta":"Here it is."}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]),
+      );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    const sentBody = async (call: number) =>
+      (await (fetchMock.mock.calls[call]![0] as Request).clone().json()) as Record<string, unknown>;
+
+    act(() => result.current.sendMessage("Sales this week?"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(57));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    act(() => result.current.sendMessage("And by city?"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(await sentBody(1)).toMatchObject({ message: "And by city?", session_id: 57 });
+    expect(await sentBody(2)).toMatchObject({ message: "And by city?" });
+    expect(await sentBody(2)).not.toHaveProperty("session_id");
+    expect(result.current.activeConversationId).toBe(58);
+    // Asked once, answered once — the refusal never became a turn of its own.
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      "Sales this week?",
+      "",
+      "And by city?",
+      "Here it is.",
+    ]);
+    expect(result.current.error).toBeNull();
+    expect(result.current.notice).toBe("That conversation can't be continued, so this started a new one.");
+
+    // The note is about that send, not the ones after it.
+    fetchMock.mockResolvedValueOnce(sseResponse([`data: {"type":"finish"}`, `data: [DONE]`]));
+    act(() => result.current.sendMessage("Thanks"));
+    await waitFor(() => expect(result.current.notice).toBeNull());
+  });
+
+  describe("which agent a follow-up goes to", () => {
+    const routedTo = (agent: string, extra = "") => [
+      `data: {"type":"start","messageId":"m","messageMetadata":{"session_id":57,"agent_name":"${agent}"${extra}}}`,
+      `data: {"type":"finish"}`,
+      `data: [DONE]`,
+    ];
+    const runBodies = () =>
+      Promise.all(
+        fetchMock.mock.calls
+          .map((call) => call[0] as Request)
+          .filter((request) => new URL(request.url).pathname === "/agent/run")
+          .map(async (request) => (await request.clone().json()) as Record<string, unknown>),
+      );
+
+    async function ask(result: { current: ReturnType<typeof useChat> }, text: string, agent?: string) {
+      act(() => result.current.sendMessage(text, agent === undefined ? undefined : { agent }));
+      await waitFor(() => expect(result.current.status).toBe("idle"));
+    }
+
+    it("keeps a plain follow-up with the agent the server routed the conversation to", async () => {
+      fetchMock
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Form-Builder")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")));
+      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+      await ask(result, "trips per vehicle last week");
+      await ask(result, "now by city");
+      // Armed by the reader: that wins, and is not what gets pinned — once
+      // they disarm it they want routing, not the builder they let go of.
+      await ask(result, "a checklist form", "Form-Builder");
+      await ask(result, "how many trips today?");
+      // A new conversation starts unpinned.
+      act(() => result.current.clearConversation());
+      await ask(result, "something else");
+
+      const bodies = await runBodies();
+      expect(bodies[0]!.agent).toBeUndefined();
+      expect(bodies[1]).toMatchObject({ message: "now by city", agent: "Fleet-Report" });
+      expect(bodies[2]).toMatchObject({ agent: "Form-Builder" });
+      expect(bodies[3]!.agent).toBeUndefined();
+      expect(bodies[4]!.agent).toBeUndefined();
+    });
+
+    it("does not pin an agent the router fell back to, and says it was a fallback", async () => {
+      fetchMock
+        .mockResolvedValueOnce(sseResponse(routedTo("General", `,"routing_fallback":true`)))
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")));
+      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+      await ask(result, "hmm");
+      expect(result.current.messages[1]!.runSummary).toMatchObject({
+        agentName: "General",
+        routingFallback: true,
+      });
+      await ask(result, "yes");
+
+      const bodies = await runBodies();
+      expect(bodies[1]!.agent).toBeUndefined();
+      expect(result.current.messages[3]!.runSummary!.routingFallback).toBe(false);
+    });
+
+    it("routes afresh when the pinned agent has been switched off since", async () => {
+      fetchMock
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Report")))
+        .mockResolvedValueOnce(
+          jsonResponse({ detail: "no active agent named 'Fleet-Report' available to this tenant" }, 404),
+        )
+        .mockResolvedValueOnce(sseResponse(routedTo("Fleet-Ops")));
+      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+      await ask(result, "trips per vehicle");
+      await ask(result, "and by city");
+
+      const bodies = await runBodies();
+      expect(bodies).toHaveLength(3);
+      expect(bodies[1]).toMatchObject({ agent: "Fleet-Report", session_id: 57 });
+      expect(bodies[2]!.agent).toBeUndefined();
+      expect(bodies[2]).toMatchObject({ message: "and by city", session_id: 57 });
+      expect(result.current.messages[3]!.runSummary).toMatchObject({ status: "done", agentName: "Fleet-Ops" });
+    });
+
+    it("sends a reopened conversation's follow-up to whoever answered it last, by name", async () => {
+      const conversation = {
+        ...CONVERSATION_5,
+        messages: [
+          ...CONVERSATION_5.messages,
+          {
+            id: 2,
+            role: "assistant",
+            content: "an older answer",
+            agent_id: 3,
+            trace_id: null,
+            meta: null,
+            created_at: "2026-09-20T10:00:01Z",
+          },
+        ],
+      };
+      fetchMock.mockImplementation((request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path === "/agent/conversations/5") return Promise.resolve(jsonResponse(conversation));
+        if (path === "/agent/agents") {
+          return Promise.resolve(
+            jsonResponse([
+              { id: 1, name: "General", is_active: true },
+              { id: 3, name: "Fleet-Report", is_active: true },
+            ]),
+          );
+        }
+        return Promise.resolve(sseResponse(routedTo("Fleet-Report")));
+      });
+      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+      await act(() => result.current.loadConversation(5));
+      await ask(result, "and last month?");
+
+      expect((await runBodies())[0]).toMatchObject({ agent: "Fleet-Report", session_id: 5 });
+    });
+
+    it("routes a reopened conversation's follow-up when its last agent is gone", async () => {
+      const conversation = {
+        ...CONVERSATION_5,
+        messages: [
+          ...CONVERSATION_5.messages,
+          {
+            id: 2,
+            role: "assistant",
+            content: "an older answer",
+            agent_id: 3,
+            trace_id: null,
+            meta: null,
+            created_at: "2026-09-20T10:00:01Z",
+          },
+        ],
+      };
+      fetchMock.mockImplementation((request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (path === "/agent/conversations/5") return Promise.resolve(jsonResponse(conversation));
+        if (path === "/agent/agents") {
+          return Promise.resolve(jsonResponse([{ id: 3, name: "Fleet-Report", is_active: false }]));
+        }
+        return Promise.resolve(sseResponse(routedTo("General")));
+      });
+      const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+      await act(() => result.current.loadConversation(5));
+      await ask(result, "and last month?");
+
+      expect((await runBodies())[0]!.agent).toBeUndefined();
+    });
+  });
+
+  it("does not retry a 404 that is not about the conversation", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ detail: "no active agent named 'Retired' available to this tenant" }, 404),
+    );
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("hello", { agent: "Retired" }));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.current.messages[1]!.runSummary).toMatchObject({ status: "error" });
+    expect(result.current.notice).toBeNull();
+  });
+
   it("clearConversation disarms a slash-command agent, so the next question routes itself", () => {
     const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
     act(() => result.current.setSelectedAgent("Dashboard-Builder"));
@@ -426,5 +789,181 @@ describe("useChat", () => {
     act(() => result.current.clearConversation());
 
     expect(result.current.selectedAgent).toBeNull();
+  });
+});
+
+/**
+ * A run whose stream the test finishes by hand, and which — unlike a real
+ * `fetch` body — keeps going after its request is aborted. That is the
+ * point: it proves a stale run's answer is dropped by the generation check
+ * itself, not merely because the abort happened to stop it first.
+ */
+function heldRun(sessionId: number) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+        c.enqueue(
+          new TextEncoder().encode(
+            `data: {"type":"start","messageId":"held","messageMetadata":{"session_id":${sessionId}}}\n\n`,
+          ),
+        );
+      },
+    }),
+    { status: 200 },
+  );
+  const finish = (text: string) => {
+    controller.enqueue(
+      new TextEncoder().encode(
+        [
+          `data: {"type":"text-delta","id":"answer","delta":"${text}"}`,
+          `data: {"type":"finish"}`,
+          `data: [DONE]`,
+        ]
+          .map((frame) => `${frame}\n\n`)
+          .join(""),
+      ),
+    );
+    controller.close();
+  };
+  return { response, finish };
+}
+
+const CONVERSATION_5 = {
+  id: 5,
+  title: null,
+  created_at: "2026-09-20T10:00:00Z",
+  updated_at: "2026-09-20T10:00:00Z",
+  messages: [
+    {
+      id: 1,
+      role: "user",
+      content: "an older question",
+      agent_id: null,
+      trace_id: null,
+      meta: null,
+      created_at: "2026-09-20T10:00:00Z",
+    },
+  ],
+};
+
+describe("useChat — replacing the thread while a run is in flight", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const runBodies = () =>
+    Promise.all(
+      fetchMock.mock.calls
+        .map((call) => call[0] as Request)
+        .filter((request) => new URL(request.url).pathname === "/agent/run")
+        .map(async (request) => (await request.clone().json()) as Record<string, unknown>),
+    );
+
+  it("a new conversation unlocks at once and never receives the old run's answer", async () => {
+    const held = heldRun(11);
+    fetchMock.mockResolvedValueOnce(held.response);
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("first"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+    const firstSignal = (fetchMock.mock.calls[0]![0] as Request).signal;
+
+    act(() => result.current.clearConversation());
+
+    expect(firstSignal.aborted).toBe(true);
+    expect(result.current.status).toBe("idle");
+    expect(result.current.activeRun).toBeNull();
+    expect(result.current.messages).toHaveLength(0);
+
+    // The old run finishes anyway; its answer has nowhere to go.
+    fetchMock.mockResolvedValueOnce(
+      sseResponse([
+        `data: {"type":"start","messageId":"new","messageMetadata":{"session_id":12}}`,
+        `data: {"type":"text-delta","id":"answer","delta":"new answer"}`,
+        `data: {"type":"finish"}`,
+        `data: [DONE]`,
+      ]),
+    );
+    act(() => held.finish("old answer"));
+    act(() => result.current.sendMessage("second"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    expect(result.current.messages.map((message) => message.content)).toEqual(["second", "new answer"]);
+    expect(result.current.activeConversationId).toBe(12);
+    const bodies = await runBodies();
+    expect(bodies[1]).not.toHaveProperty("session_id");
+  });
+
+  it("reopening another conversation from History drops the run and the slash-armed agent", async () => {
+    const held = heldRun(11);
+    fetchMock.mockImplementation((request: Request) => {
+      if (new URL(request.url).pathname === "/agent/conversations/5") {
+        return Promise.resolve(jsonResponse(CONVERSATION_5));
+      }
+      return Promise.resolve(held.response);
+    });
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+    act(() => result.current.setSelectedAgent("Form-Builder"));
+    act(() => result.current.sendMessage("draft a form", { agent: "Form-Builder" }));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+
+    await act(() => result.current.loadConversation(5));
+
+    expect(result.current.status).toBe("idle");
+    expect(result.current.activeRun).toBeNull();
+    expect(result.current.activeConversationId).toBe(5);
+    expect(result.current.selectedAgent).toBeNull();
+
+    act(() => held.finish("old answer"));
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(result.current.messages.map((message) => message.content)).toEqual(["an older question"]);
+    expect(result.current.activeConversationId).toBe(5);
+  });
+
+  it("keeps the run when the conversation picked is the one it is streaming into", async () => {
+    const held = heldRun(11);
+    fetchMock.mockResolvedValueOnce(held.response);
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    act(() => result.current.sendMessage("first"));
+    await waitFor(() => expect(result.current.activeConversationId).toBe(11));
+
+    await act(() => result.current.loadConversation(11));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no reload of what is on screen
+    act(() => held.finish("the answer"));
+    await waitFor(() => expect(result.current.status).toBe("idle"));
+    expect(result.current.messages.map((message) => message.content)).toEqual(["first", "the answer"]);
+  });
+
+  it("a load that resolves after the reader started a new conversation does not replace it", async () => {
+    let answer!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => (answer = resolve)));
+    const { result } = renderHook(() => useChat(), { wrapper: TestAskProvider });
+
+    let load!: Promise<void>;
+    act(() => {
+      load = result.current.loadConversation(5);
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    act(() => result.current.clearConversation());
+    await act(async () => {
+      answer(jsonResponse(CONVERSATION_5));
+      await load;
+    });
+
+    expect(result.current.messages).toHaveLength(0);
+    expect(result.current.activeConversationId).toBeNull();
   });
 });

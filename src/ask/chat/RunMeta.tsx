@@ -123,7 +123,7 @@ function RatingButtons({ messageId }: { messageId: number }): ReactElement {
  * `empty` finished with nothing on screen; `unfinished` is a reopened row
  * the run never filled in.
  */
-export type RunStatus = "done" | "empty" | "unfinished" | "cancelled" | "error";
+export type RunStatus = "done" | "empty" | "unfinished" | "cancelled" | "stopped" | "error";
 
 export interface RunMetaProps {
   /** `ChatMessage.id` — a real row id enables the rating controls. */
@@ -257,7 +257,7 @@ export function RunMeta({
             className={styles.fact}
             title="Total elapsed time from submitting the question to receiving the answer"
           >
-            Worked for {formatDuration(durationMs)}
+            {runStatus === "stopped" ? "Stopped after" : "Worked for"} {formatDuration(durationMs)}
           </span>
         )}
         {showRunDetails && usage !== null && usage.cost_usd > 0 && (
