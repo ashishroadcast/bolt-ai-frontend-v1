@@ -50,44 +50,28 @@ describe("form fields", () => {
   // edged in --rule (the hairline that separates table rows) on a
   // --surface card is barely a value apart from its own fill, so it read
   // as a greyed-out disabled region rather than somewhere to type.
-  const FORMS = [
-    "src/routes/ChannelsRoute.module.css",
-    "src/routes/McpServersRoute.module.css",
-  ];
+  //
+  // The Channels and MCP servers forms used to carry that rule in their
+  // own .module.css. They are built from shadcn's Input and NativeSelect
+  // now, so the rule has two halves: the markup half (every field is one
+  // of those controls, whatever its type, with its edge, focus and
+  // disabled treatment on the control itself) is asserted in
+  // ChannelsRoute.test.tsx and McpServersRoute.test.tsx; the half that
+  // still lives in CSS — that the edge those controls draw is darker than
+  // the row hairline — is asserted here, against the theme's own source.
+  function lightness(css: string, token: string): number | undefined {
+    const value = new RegExp(`--${token}:\\s*oklch\\(([\\d.]+)`).exec(css)?.[1];
+    return value === undefined ? undefined : Number(value);
+  }
 
-  it.each(FORMS.map((f) => [f] as const))("%s gives every field a border that can actually be seen", (path) => {
-    const css = read(path);
-    const rule = /\.field input,\s*\.field select,\s*\.field textarea \{([^}]+)\}/.exec(css)?.[1];
-    expect(rule).toBeDefined();
-    expect(rule).toMatch(/border:\s*1px solid var\(--fg-faint\)/);
-    // Never --rule: that is the hairline this replaced, and reinstating
-    // it is exactly the regression worth catching.
-    expect(rule).not.toMatch(/border:\s*1px solid var\(--rule\)/);
-  });
-
-  it.each(FORMS.map((f) => [f] as const))("%s marks focus on the field itself, not only with the global ring", (path) => {
-    const css = read(path);
-    expect(css).toMatch(
-      /\.field input:focus,\s*\.field select:focus,\s*\.field textarea:focus \{\s*border-color:\s*var\(--signal\)/,
-    );
-  });
-
-  // The old selector listed `type="text"` and `type="password"` only, so
-  // `number`, `search` and `url` fell through to raw UA chrome next to
-  // styled neighbours — the visible inconsistency in the Channels form.
-  it.each(FORMS.map((f) => [f] as const))("%s styles fields by element, not by a list of input types", (path) => {
-    const css = read(path);
-    expect(css).not.toMatch(/\.field input\[type="text"\]/);
-  });
-
-  // Giving the resting state a real border is what frees the sunk fill to
-  // mean disabled; without this half, the two states look alike again.
-  it.each(FORMS.map((f) => [f] as const))("%s makes a disabled field look different from a resting one", (path) => {
-    const css = read(path);
-    const rule = /\.field input:disabled,\s*\.field select:disabled,\s*\.field textarea:disabled \{([^}]+)\}/.exec(
-      css,
-    )?.[1];
-    expect(rule).toBeDefined();
-    expect(rule).toMatch(/background:\s*var\(--surface-sunk\)/);
+  it("edges a field in --input, a token darker than the --border hairline between rows", () => {
+    const css = read("src/styles/app.css");
+    const input = lightness(css, "input");
+    const border = lightness(css, "border");
+    expect(input).toBeDefined();
+    expect(border).toBeDefined();
+    // Never the hairline itself, or lighter: that is the regression worth
+    // catching.
+    expect(input!).toBeLessThan(border!);
   });
 });

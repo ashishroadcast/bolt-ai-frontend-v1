@@ -1,5 +1,39 @@
-import { Webhook } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  CircleAlert,
+  CircleCheck,
+  Copy,
+  PlugZap,
+  Power,
+  PowerOff,
+  Trash2,
+  Webhook,
+} from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { toast } from "sonner";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+} from "@/components/ui/card";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill } from "../agents/StatusPill.tsx";
 import { useOrchestrators } from "../agents/useOrchestrators.ts";
@@ -15,7 +49,6 @@ import {
   type ChannelBinding,
   type ChannelTestResult,
 } from "./channelsApi.ts";
-import styles from "./ChannelsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -70,6 +103,28 @@ const BLANK_ROW_STATE: RowState = {
   removing: false,
   removeError: null,
 };
+
+/** Table cells sit on the card header's own inset at either edge, so a
+ * column and the title above it share one vertical line. */
+const CELL_X = "px-4 first:pl-6 last:pr-6";
+
+/** One line of per-row feedback under a row's actions — a test result, or
+ * why a toggle or delete failed. Wraps (the table cells around it don't),
+ * so a long server message never widens the table. */
+function RowNote({ tone, children }: { tone: "good" | "critical"; children: ReactNode }) {
+  const Icon = tone === "good" ? CircleCheck : CircleAlert;
+  return (
+    <p
+      className={cn(
+        "mt-2 ml-auto flex max-w-80 items-start justify-end gap-1.5 text-right text-sm whitespace-normal",
+        tone === "good" ? "text-success" : "text-destructive",
+      )}
+    >
+      <Icon className="mt-0.5 size-3.5 shrink-0" />
+      <span>{children}</span>
+    </p>
+  );
+}
 
 /**
  * `GET`/`POST /agent/channels`, `PATCH`/`DELETE /agent/channels/{id}`,
@@ -302,7 +357,10 @@ export function ChannelsRoute() {
     // jsdom (this route's own test suite) has no Clipboard implementation
     // by default — guarded rather than assumed, same reasoning
     // DatabasesRoute.tsx gives for treating a browser API as optional.
-    navigator.clipboard?.writeText(url).catch(() => {});
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => toast.success("Webhook URL copied"))
+      .catch(() => {});
   }
 
   const rows = channels ?? [];
@@ -317,154 +375,219 @@ export function ChannelsRoute() {
         onAction={openForm}
       />
 
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Couldn't load channels</AlertTitle>
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
 
         {justCreatedWebhookUrl !== null && (
-          <div className={styles.webhookPanel} role="status">
-            <p className={styles.webhookTitle}>Paste this into Chatwoot's webhook settings now</p>
-            <p className={styles.webhookNote}>
-              This URL is shown once. It won't appear again on this screen — if you lose it, delete
-              this channel and connect it again.
-            </p>
-            <div className={styles.webhookRow}>
-              <code className={styles.webhookUrl} data-testid="webhook-url-box">
+          <Card role="status" className="gap-4 border-primary/30 bg-primary/5 shadow-none">
+            <CardHeader>
+              <p className="flex items-center gap-2 leading-snug font-semibold">
+                <CircleCheck className="size-4 shrink-0 text-primary" />
+                Paste this into Chatwoot's webhook settings now
+              </p>
+              <CardDescription>
+                This URL is shown once. It won't appear again on this screen — if you lose it, delete
+                this channel and connect it again.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 sm:flex-row">
+              {/* The URL can run long (a 32-byte urlsafe token), so it
+                  scrolls inside its own box, never the page. */}
+              <code
+                className="min-w-0 flex-1 overflow-x-auto rounded-md border bg-background px-3 py-2 font-mono text-sm whitespace-nowrap"
+                data-testid="webhook-url-box"
+              >
                 {justCreatedWebhookUrl}
               </code>
-              <button
-                type="button"
-                className={styles.copyBtn}
-                onClick={() => copyWebhookUrl(justCreatedWebhookUrl)}
-              >
+              <Button type="button" onClick={() => copyWebhookUrl(justCreatedWebhookUrl)}>
+                <Copy />
                 Copy
-              </button>
-            </div>
-            <button
-              type="button"
-              className={styles.doneBtn}
-              onClick={() => setJustCreatedWebhookUrl(null)}
-            >
-              Done
-            </button>
-          </div>
+              </Button>
+            </CardContent>
+            <CardFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setJustCreatedWebhookUrl(null)}
+              >
+                Done
+              </Button>
+            </CardFooter>
+          </Card>
         )}
 
         {formOpen && (
-          <form className={styles.form} onSubmit={(event) => void handleSubmit(event)} autoComplete="off">
-            <h3 className={styles.formTitle}>Connect a channel</h3>
-
-            <div className={styles.field}>
-              <label htmlFor="channel-base-url">Chatwoot base URL</label>
-              <input
-                id="channel-base-url"
-                type="text"
+          <Card>
+            <CardHeader>
+              <h3 className="leading-none font-semibold">Connect a channel</h3>
+              <CardDescription>
+                The webhook URL Chatwoot needs is shown once, right after you connect.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="flex flex-col gap-6"
+                onSubmit={(event) => void handleSubmit(event)}
                 autoComplete="off"
-                value={form.baseUrl}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label htmlFor="channel-account-id">Account id</label>
-              <input
-                id="channel-account-id"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={form.accountId}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, accountId: e.target.value }))}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label htmlFor="channel-inbox-id">Inbox id</label>
-              <input
-                id="channel-inbox-id"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={form.inboxId}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, inboxId: e.target.value }))}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label htmlFor="channel-target">Answers via</label>
-              <select
-                id="channel-target"
-                value={form.targetId}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, targetId: e.target.value }))}
               >
-                <option value="">Choose an orchestrator…</option>
-                {orchestrators.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field className="gap-2 sm:col-span-2">
+                    <FieldLabel htmlFor="channel-base-url">Chatwoot base URL</FieldLabel>
+                    <Input
+                      id="channel-base-url"
+                      type="text"
+                      autoComplete="off"
+                      placeholder="https://chat.example.com"
+                      value={form.baseUrl}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                    />
+                  </Field>
 
-            <div className={`${styles.field} ${styles.wide}`}>
-              <label htmlFor="channel-token">Bot token</label>
-              <input
-                id="channel-token"
-                type="password"
-                // "off", never "new-password" — the same reasoning
-                // DatabasesRoute.tsx gives for its DSN field: this is a
-                // live credential, not a value to invite a save-password
-                // prompt for.
-                autoComplete="off"
-                value={form.apiAccessToken}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, apiAccessToken: e.target.value }))}
-              />
-            </div>
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="channel-account-id">Account id</FieldLabel>
+                    <Input
+                      id="channel-account-id"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      className="font-mono tabular-nums"
+                      value={form.accountId}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, accountId: e.target.value }))}
+                    />
+                  </Field>
 
-            <div className={styles.field}>
-              <label htmlFor="channel-handoff-team">Handoff team id (optional)</label>
-              <input
-                id="channel-handoff-team"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                value={form.handoffTeamId}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, handoffTeamId: e.target.value }))}
-              />
-            </div>
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="channel-inbox-id">Inbox id</FieldLabel>
+                    <Input
+                      id="channel-inbox-id"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      className="font-mono tabular-nums"
+                      value={form.inboxId}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, inboxId: e.target.value }))}
+                    />
+                  </Field>
 
-            <div className={styles.field}>
-              <label htmlFor="channel-score-threshold">Handoff confidence threshold</label>
-              <input
-                id="channel-score-threshold"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={form.scoreThreshold}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, scoreThreshold: e.target.value }))}
-              />
-            </div>
+                  <Field className="gap-2 sm:col-span-2">
+                    <FieldLabel htmlFor="channel-token">Bot token</FieldLabel>
+                    <Input
+                      id="channel-token"
+                      type="password"
+                      // "off", never "new-password" — the same reasoning
+                      // DatabasesRoute.tsx gives for its DSN field: this is a
+                      // live credential, not a value to invite a save-password
+                      // prompt for.
+                      autoComplete="off"
+                      aria-describedby="channel-token-help"
+                      value={form.apiAccessToken}
+                      disabled={submitting}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, apiAccessToken: e.target.value }))
+                      }
+                    />
+                    <FieldDescription id="channel-token-help">
+                      Write-only — it is never shown again after you connect.
+                    </FieldDescription>
+                  </Field>
 
-            {submitError !== null && (
-              <p role="alert" className={styles.formError}>
-                {submitError}
-              </p>
-            )}
+                  <Field className="gap-2 sm:col-span-2">
+                    <FieldLabel htmlFor="channel-target">Answers via</FieldLabel>
+                    <NativeSelect
+                      id="channel-target"
+                      value={form.targetId}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, targetId: e.target.value }))}
+                    >
+                      <NativeSelectOption value="">Choose an orchestrator…</NativeSelectOption>
+                      {orchestrators.map((o) => (
+                        <NativeSelectOption key={o.id} value={o.id}>
+                          {o.name}
+                        </NativeSelectOption>
+                      ))}
+                    </NativeSelect>
+                  </Field>
 
-            <div className={styles.formActions}>
-              <button type="submit" className={styles.submit} disabled={submitting}>
-                {submitting ? "Connecting…" : "Connect"}
-              </button>
-              <button type="button" className={styles.cancel} disabled={submitting} onClick={closeForm}>
-                Cancel
-              </button>
-            </div>
-          </form>
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="channel-handoff-team">Handoff team id (optional)</FieldLabel>
+                    <Input
+                      id="channel-handoff-team"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      className="font-mono tabular-nums"
+                      value={form.handoffTeamId}
+                      disabled={submitting}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, handoffTeamId: e.target.value }))
+                      }
+                    />
+                  </Field>
+
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="channel-score-threshold">
+                      Handoff confidence threshold
+                    </FieldLabel>
+                    <Input
+                      id="channel-score-threshold"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      className="font-mono tabular-nums"
+                      value={form.scoreThreshold}
+                      disabled={submitting}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, scoreThreshold: e.target.value }))
+                      }
+                    />
+                  </Field>
+                </div>
+
+                {submitError !== null && (
+                  <Alert variant="destructive">
+                    <CircleAlert />
+                    <AlertDescription>{submitError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 border-t pt-6">
+                  <Button type="submit" disabled={submitting}>
+                    {submitting && <Spinner aria-hidden="true" />}
+                    {submitting ? "Connecting…" : "Connect"}
+                  </Button>
+                  <Button type="button" variant="outline" disabled={submitting} onClick={closeForm}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {loading && (
+          <Card className="gap-0 overflow-hidden py-0" aria-busy="true">
+            <span className="sr-only">Loading channels…</span>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-4 border-b px-4 py-4 last:border-b-0">
+                <div className="flex flex-1 flex-col gap-2">
+                  <Skeleton className="h-4 w-48 max-w-full" />
+                  <Skeleton className="h-3 w-32 max-w-full" />
+                </div>
+                <Skeleton className="hidden h-4 w-24 sm:block" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+              </div>
+            ))}
+          </Card>
         )}
 
         {!loading && loadError === null && rows.length === 0 && !formOpen && (
@@ -478,135 +601,157 @@ export function ChannelsRoute() {
         )}
 
         {rows.length > 0 && (
-          <section className={styles.sheet}>
-            <header className={styles.sheetHead}>
-              <h3>Channels</h3>
-              <span className={styles.sub}>
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="py-4">
+              <h3 className="leading-none font-semibold">Channels</h3>
+              <CardDescription className="tabular-nums">
                 {rows.length} {rows.length === 1 ? "channel" : "channels"}
-              </span>
-            </header>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Channel</th>
-                    <th>Answers via</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="border-t px-0">
+              <Table>
+                <TableHeader className="bg-muted/40">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className={cn(CELL_X, "text-muted-foreground")}>Channel</TableHead>
+                    <TableHead className={cn(CELL_X, "text-muted-foreground")}>Answers via</TableHead>
+                    <TableHead className={cn(CELL_X, "text-muted-foreground")}>Status</TableHead>
+                    <TableHead className={cn(CELL_X, "text-right text-muted-foreground")}>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((channel) => {
                     const state = rowState(channel.id);
                     const targetName = orchestratorNameById.get(channel.target_id) ?? `#${channel.target_id}`;
                     const described = describeChannel(channel);
+                    const detail =
+                      described.detailLabel === ""
+                        ? described.detail
+                        : `${described.detailLabel}: ${described.detail}`;
                     return (
-                      <tr key={channel.id}>
-                        <td>
-                          <div className={styles.chatwoot}>
-                            <span className={styles.kindTag}>{described.kind}</span>
+                      <TableRow key={channel.id}>
+                        <TableCell className={cn(CELL_X, "py-3 align-top")}>
+                          {/* The provider sits on each row: with more than
+                              one kind of binding in the list, the column
+                              header can no longer carry it. */}
+                          <div className="flex items-center gap-2 font-medium">
+                            <Badge variant="secondary">{described.kind}</Badge>
                             {described.identity}
                           </div>
-                          <div className={styles.baseUrl}>
-                            {described.detailLabel === "" ? described.detail : `${described.detailLabel}: ${described.detail}`}
+                          <div
+                            className="mt-1 max-w-[32ch] truncate text-xs text-muted-foreground"
+                            title={detail}
+                          >
+                            {detail}
                           </div>
-                        </td>
-                        <td>{targetName}</td>
-                        <td>
+                        </TableCell>
+                        <TableCell className={cn(CELL_X, "py-3 align-top")}>{targetName}</TableCell>
+                        <TableCell className={cn(CELL_X, "py-3 align-top")}>
                           {channel.is_active ? (
                             <StatusPill tone="good" label="Active" />
                           ) : (
                             <StatusPill tone="neutral" label="Inactive" />
                           )}
-                        </td>
-                        <td>
-                          <div className={styles.rowActions}>
+                        </TableCell>
+                        <TableCell className={cn(CELL_X, "py-2 align-top")}>
+                          <div className="flex flex-wrap items-center justify-end gap-1">
                             {/* Test reaches Chatwoot's API and nothing else
                                 (`test_channel` builds a ChatwootClient
                                 whatever the provider), so on any other
                                 binding it can only fail — and would read as
                                 that binding being broken. */}
                             {described.testable && (
-                              <button
+                              <Button
                                 type="button"
-                                className={styles.actionBtn}
+                                variant="ghost"
+                                size="sm"
                                 disabled={state.testing}
                                 onClick={() => void handleTest(channel.id)}
                               >
+                                {state.testing ? <Spinner aria-hidden="true" /> : <PlugZap />}
                                 {state.testing ? "Testing…" : "Test"}
-                              </button>
+                              </Button>
                             )}
-                            <button
+                            <Button
                               type="button"
-                              className={styles.actionBtn}
+                              variant="ghost"
+                              size="sm"
                               disabled={state.toggling}
                               onClick={() => void handleToggleActive(channel)}
                             >
+                              {state.toggling ? (
+                                <Spinner aria-hidden="true" />
+                              ) : channel.is_active ? (
+                                <PowerOff />
+                              ) : (
+                                <Power />
+                              )}
                               {state.toggling
                                 ? "Saving…"
                                 : channel.is_active
                                   ? "Deactivate"
                                   : "Activate"}
-                            </button>
+                            </Button>
                             {confirmingDeleteId !== channel.id && (
-                              <button
+                              <Button
                                 type="button"
-                                className={`${styles.actionBtn} ${styles.danger}`}
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                                 onClick={() => setConfirmingDeleteId(channel.id)}
                               >
+                                <Trash2 />
                                 Delete
-                              </button>
+                              </Button>
                             )}
                           </div>
 
                           {confirmingDeleteId === channel.id && (
-                            <div className={styles.confirmRow}>
-                              <span className={styles.confirmText}>Delete this channel?</span>
-                              <button
+                            <div className="mt-2 ml-auto flex w-fit flex-wrap items-center justify-end gap-2 rounded-md border border-destructive/20 bg-destructive/5 py-1.5 pr-1.5 pl-3">
+                              <span className="text-sm text-destructive">Delete this channel?</span>
+                              <Button
                                 type="button"
-                                className={styles.confirmBtn}
+                                variant="destructive"
+                                size="sm"
                                 disabled={state.removing}
                                 onClick={() => void handleConfirmDelete(channel.id)}
                               >
+                                {state.removing && <Spinner aria-hidden="true" />}
                                 {state.removing ? "Deleting…" : "Confirm delete"}
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
-                                className={styles.actionBtn}
+                                variant="ghost"
+                                size="sm"
                                 disabled={state.removing}
                                 onClick={() => setConfirmingDeleteId(null)}
                               >
                                 Cancel
-                              </button>
+                              </Button>
                             </div>
                           )}
 
                           {state.testResult !== null && (
-                            <p
-                              className={`${styles.rowNote} ${state.testResult.ok ? styles.good : styles.critical}`}
-                            >
+                            <RowNote tone={state.testResult.ok ? "good" : "critical"}>
                               {state.testResult.ok ? "Connected." : "Couldn't reach Chatwoot with the stored token."}
-                            </p>
+                            </RowNote>
                           )}
                           {state.testError !== null && (
-                            <p className={`${styles.rowNote} ${styles.critical}`}>{state.testError}</p>
+                            <RowNote tone="critical">{state.testError}</RowNote>
                           )}
                           {state.toggleError !== null && (
-                            <p className={`${styles.rowNote} ${styles.critical}`}>{state.toggleError}</p>
+                            <RowNote tone="critical">{state.toggleError}</RowNote>
                           )}
                           {state.removeError !== null && (
-                            <p className={`${styles.rowNote} ${styles.critical}`}>
-                              Can't remove — {state.removeError}
-                            </p>
+                            <RowNote tone="critical">Can't remove — {state.removeError}</RowNote>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
     </>

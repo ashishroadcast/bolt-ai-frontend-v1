@@ -562,6 +562,36 @@ describe("McpServersRoute", () => {
     expect(within(card).getByRole("button", { name: /save allow-list/i })).toBeDisabled();
   });
 
+  // The field rules formAffordance.test.ts used to read off this screen's
+  // .module.css, asserted on the markup now that every field is shadcn's
+  // own Input or NativeSelect — every auth type's credential fields
+  // included. The theme half (that --input is darker than the row
+  // hairline) stays in formAffordance.test.ts.
+  it("gives every register-form field a visible edge, its own focus mark and a distinct disabled look", async () => {
+    mockReads(fetchMock, { servers: [] });
+
+    renderRoute();
+    await waitFor(() => expect(screen.getByText(/register a server/i)).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole("button", { name: /register a server/i })[0]!);
+
+    const form = screen.getByLabelText(/^name$/i).closest("form") as HTMLFormElement;
+    const seen = new Set<string>();
+    for (const authType of ["none", "bearer", "api_key", "oauth2_cc"]) {
+      fireEvent.change(screen.getByLabelText(/^auth type$/i), { target: { value: authType } });
+      for (const control of Array.from(form.querySelectorAll("input, select, textarea"))) {
+        seen.add(control.getAttribute("type") ?? control.tagName.toLowerCase());
+        const slot = control.getAttribute("data-slot");
+        expect(["input", "native-select"]).toContain(slot);
+        expect(control.className).toMatch(/(^|\s)border-input(\s|$)/);
+        expect(control.className).toMatch(/focus-visible:border-ring/);
+        // A select's disabled fade sits on NativeSelect's wrapper.
+        const disabledLook = slot === "input" ? control.className : control.parentElement!.className;
+        expect(disabledLook).toMatch(/disabled\]?:opacity-50/);
+      }
+    }
+    expect([...seen]).toEqual(expect.arrayContaining(["text", "password", "select"]));
+  });
+
   it("the credential field set changes with the chosen auth type", async () => {
     mockReads(fetchMock, { servers: [] });
 

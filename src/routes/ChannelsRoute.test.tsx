@@ -194,6 +194,34 @@ describe("ChannelsRoute", () => {
     await waitFor(() => expect(screen.getByText(/connected/i)).toBeInTheDocument());
   });
 
+  // The field rules formAffordance.test.ts used to read off this screen's
+  // .module.css ("forms are coming out weird", Saurabh), asserted on the
+  // markup now that every field is shadcn's own Input or NativeSelect —
+  // the password field included, which is the per-type gap the old
+  // selector had. The theme half (that --input is darker than the row
+  // hairline) stays in formAffordance.test.ts.
+  it("gives every field in the connect form a visible edge, its own focus mark and a distinct disabled look", async () => {
+    mockReads(fetchMock);
+    renderChannels();
+    await waitFor(() => expect(screen.getByText(/Account 12/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /connect a channel/i }));
+
+    const form = screen.getByLabelText(/chatwoot base url/i).closest("form") as HTMLFormElement;
+    const controls = Array.from(form.querySelectorAll("input, select, textarea"));
+    expect(controls.map((c) => c.getAttribute("type") ?? c.tagName.toLowerCase())).toEqual(
+      expect.arrayContaining(["text", "password", "select"]),
+    );
+    for (const control of controls) {
+      const slot = control.getAttribute("data-slot");
+      expect(["input", "native-select"]).toContain(slot);
+      expect(control.className).toMatch(/(^|\s)border-input(\s|$)/);
+      expect(control.className).toMatch(/focus-visible:border-ring/);
+      // A select's disabled fade sits on NativeSelect's wrapper.
+      const disabledLook = slot === "input" ? control.className : control.parentElement!.className;
+      expect(disabledLook).toMatch(/disabled\]?:opacity-50/);
+    }
+  });
+
   it("delete requires a second, explicit confirmation before anything is sent", async () => {
     mockReads(fetchMock);
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

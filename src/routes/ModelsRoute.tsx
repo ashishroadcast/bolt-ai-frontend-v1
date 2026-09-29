@@ -1,4 +1,24 @@
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  CircleAlert,
+  Search,
+  SearchX,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
 import { listLlmConfigs, listModelCatalogue, type CatalogueModel } from "./llmConfigsApi.ts";
@@ -8,7 +28,6 @@ import {
   perMillionNumber,
   providerOf,
 } from "./ModelsRoute.pricing.ts";
-import styles from "./ModelsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -39,6 +58,10 @@ const COLUMN_LABEL: Record<SortKey, string> = {
   output: "Output $/1M",
 };
 
+/** Table cells sit on the card header's own inset at either edge, so a
+ * column and the title above it share one vertical line. */
+const CELL_X = "px-4 first:pl-6 last:pr-6";
+
 interface Sort {
   key: SortKey;
   direction: SortDirection;
@@ -65,6 +88,11 @@ function compareText(a: string, b: string, direction: SortDirection): number {
 function matchesSearch(model: CatalogueModel, needle: string): boolean {
   if (needle === "") return true;
   return model.name.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle);
+}
+
+/** A numeric cell's value, or a quiet dash where the catalogue has none. */
+function numberOrDash(value: string | null) {
+  return value ?? <span className="text-muted-foreground">—</span>;
 }
 
 /**
@@ -211,20 +239,36 @@ export function ModelsRoute() {
 
   function sortHeader(key: SortKey, numeric = false) {
     const active = sort.key === key;
+    const Icon = !active ? ArrowUpDown : sort.direction === "asc" ? ArrowUp : ArrowDown;
     return (
-      <th
-        className={numeric ? styles.num : undefined}
+      <TableHead
+        // The header outlives its rows while the body scrolls — a price
+        // column with no label is unreadable after the first screenful. The
+        // inset shadow is its bottom rule: a collapsed table border stays
+        // behind with the rows when the cell sticks.
+        className={cn(
+          "sticky top-0 z-10 h-10 bg-card px-2 first:pl-4 last:pr-4 shadow-[inset_0_-1px_0_var(--color-border)]",
+          numeric && "text-right",
+        )}
         aria-sort={active ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
       >
-        <button type="button" className={styles.sortBtn} onClick={() => toggleSort(key)}>
-          {COLUMN_LABEL[key]}
-          {active && (
-            <span className={styles.caret} aria-hidden="true">
-              {sort.direction === "asc" ? "▲" : "▼"}
-            </span>
+        {/* The whole header cell is the target, so a sort is never a hunt
+            for a caret two pixels wide. */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "w-full px-2 font-medium",
+            numeric ? "justify-end" : "justify-start",
+            active ? "text-foreground" : "text-muted-foreground",
           )}
-        </button>
-      </th>
+          onClick={() => toggleSort(key)}
+        >
+          {COLUMN_LABEL[key]}
+          <Icon className={cn("size-3.5", active ? "text-primary" : "opacity-50")} />
+        </Button>
+      </TableHead>
     );
   }
 
@@ -238,104 +282,158 @@ export function ModelsRoute() {
         description="Every model the gateway can route to, with its context window and what a million tokens costs in and out."
       />
 
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Couldn't load the model catalogue</AlertTitle>
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
         {configsError !== null && (
-          <p className={styles.loadError}>
-            Couldn't load which models you've configured — {configsError}
-          </p>
+          <Alert className="border-warning/30 bg-warning-soft text-warning">
+            <TriangleAlert />
+            <AlertTitle>Couldn't load which models you've configured</AlertTitle>
+            <AlertDescription>{configsError}</AlertDescription>
+          </Alert>
         )}
 
-        <div className={styles.controls}>
-          <input
-            type="search"
-            className={styles.search}
-            placeholder="Search name or id…"
-            aria-label="Search models"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            className={styles.provider}
-            aria-label="Filter by provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          >
-            <option value="">All providers</option>
-            {providers.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={configuredOnly}
-              onChange={(e) => setConfiguredOnly(e.target.checked)}
-            />
-            Configured only ({configuredInCatalogue})
-          </label>
-        </div>
-
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Catalogue</h3>
-            <span className={styles.sub} data-testid="models-count">
+        <Card className="gap-0 overflow-hidden py-0">
+          <CardHeader className="py-4">
+            <h3 className="leading-none font-semibold">Catalogue</h3>
+            <CardDescription className="tabular-nums" data-testid="models-count">
               {loading
                 ? "Loading…"
                 : visible.length === rows.length
                   ? `${rows.length} models · ${providers.length} providers`
                   : `${visible.length} of ${rows.length} models`}
-            </span>
-          </header>
+            </CardDescription>
+          </CardHeader>
 
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
+          <div className="flex flex-col gap-3 border-t px-6 py-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <InputGroup className="sm:max-w-xs">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
+                type="search"
+                placeholder="Search name or id…"
+                aria-label="Search models"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </InputGroup>
+            {/* A provider is an id fragment, so it is shown in the id's own
+                voice. */}
+            <NativeSelect
+              aria-label="Filter by provider"
+              className="font-mono text-xs"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            >
+              <NativeSelectOption value="">All providers</NativeSelectOption>
+              {providers.map((name) => (
+                <NativeSelectOption key={name} value={name}>
+                  {name}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="models-configured-only"
+                checked={configuredOnly}
+                onCheckedChange={(checked) => setConfiguredOnly(checked === true)}
+              />
+              <Label htmlFor="models-configured-only" className="font-normal tabular-nums">
+                Configured only ({configuredInCatalogue})
+              </Label>
+            </div>
+          </div>
+
+          {/* 380 rows deep and five columns wide: the page scrolls
+              vertically, and only this box scrolls sideways when a long id
+              needs the room. */}
+          <div className="max-h-[68vh] overflow-auto border-t">
+            <table data-slot="table" className="w-full caption-bottom text-sm">
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {sortHeader("name")}
                   {sortHeader("id")}
                   {sortHeader("context", true)}
                   {sortHeader("input", true)}
                   {sortHeader("output", true)}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading &&
+                  [0, 1, 2, 3, 4, 5].map((i) => (
+                    <TableRow key={i} className="hover:bg-transparent">
+                      <TableCell className={cn(CELL_X, "py-3")}>
+                        <Skeleton className="h-4 w-40" />
+                      </TableCell>
+                      <TableCell className={cn(CELL_X, "py-3")}>
+                        <Skeleton className="h-4 w-48" />
+                      </TableCell>
+                      {[0, 1, 2].map((j) => (
+                        <TableCell key={j} className={cn(CELL_X, "py-3")}>
+                          <Skeleton className="ml-auto h-4 w-12" />
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
                 {visible.map((model) => (
-                  <tr key={model.id}>
-                    <td>
-                      <div className={styles.nameCell}>
-                        <span className={styles.name} title={model.name}>
+                  <TableRow key={model.id} className="even:bg-muted/30">
+                    <TableCell className={cn(CELL_X, "py-2")}>
+                      {/* The two text columns are capped so the three
+                          numeric ones — the point of the screen — are never
+                          the columns pushed off the right edge. */}
+                      <div className="flex max-w-[30ch] items-center gap-2">
+                        <span className="min-w-0 truncate font-medium" title={model.name}>
                           {model.name}
                         </span>
+                        {/* Already configured on Settings. A quiet badge,
+                            not a colour on the row — this marks a fact
+                            about the tenant, not a state of the model. */}
                         {configuredIds.has(model.id) && (
-                          <span className={styles.inUse}>in use</span>
+                          <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
+                            in use
+                          </Badge>
                         )}
                       </div>
-                    </td>
-                    <td>
-                      <code className={styles.modelId}>{model.id}</code>
-                    </td>
-                    <td className={styles.num}>{formatContext(model.context_length) ?? "—"}</td>
-                    <td className={styles.num}>{formatPerMillion(model.pricing?.prompt) ?? "—"}</td>
-                    <td className={styles.num}>
-                      {formatPerMillion(model.pricing?.completion) ?? "—"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className={cn(CELL_X, "py-2")}>
+                      {/* An id is a value to read and copy, so it scrolls
+                          inside its own cell rather than being clipped. */}
+                      <code className="block max-w-[32ch] overflow-x-auto font-mono text-xs text-muted-foreground">
+                        {model.id}
+                      </code>
+                    </TableCell>
+                    <TableCell className={cn(CELL_X, "py-2 text-right font-mono tabular-nums")}>
+                      {numberOrDash(formatContext(model.context_length))}
+                    </TableCell>
+                    <TableCell className={cn(CELL_X, "py-2 text-right font-mono tabular-nums")}>
+                      {numberOrDash(formatPerMillion(model.pricing?.prompt))}
+                    </TableCell>
+                    <TableCell className={cn(CELL_X, "py-2 text-right font-mono tabular-nums")}>
+                      {numberOrDash(formatPerMillion(model.pricing?.completion))}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
+              </TableBody>
             </table>
           </div>
 
           {!loading && visible.length === 0 && (
-            <p className={styles.noMatch}>
-              {rows.length === 0
-                ? "The catalogue came back empty."
-                : "No model matches these filters."}
-            </p>
+            <div className="flex flex-col items-center gap-2 border-t px-4 py-10 text-center text-sm text-muted-foreground">
+              <SearchX className="size-5" />
+              <p>
+                {rows.length === 0
+                  ? "The catalogue came back empty."
+                  : "No model matches these filters."}
+              </p>
+            </div>
           )}
-        </section>
+        </Card>
       </div>
     </>
   );

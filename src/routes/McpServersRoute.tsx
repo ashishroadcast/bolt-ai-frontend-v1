@@ -1,5 +1,34 @@
-import { Plug } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import {
+  Bot,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  CircleCheck,
+  Clock,
+  KeyRound,
+  Lock,
+  Plug,
+  RefreshCw,
+  Search,
+  Server,
+  Trash2,
+  TriangleAlert,
+  Wrench,
+} from "lucide-react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill } from "../agents/StatusPill.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
@@ -16,7 +45,6 @@ import {
   type McpDiscoveredTool,
   type McpServer,
 } from "./mcpServersApi.ts";
-import styles from "./McpServersRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -193,6 +221,132 @@ const BLANK_ROW_STATE: RowState = {
   removeError: null,
 };
 
+/** One line of feedback on a server card — a refresh, a save, or why one
+ * of them failed. */
+function Note({ tone, children }: { tone: "good" | "critical"; children: ReactNode }) {
+  const Icon = tone === "good" ? CircleCheck : CircleAlert;
+  return (
+    <p
+      className={cn(
+        "flex items-start gap-1.5 text-sm",
+        tone === "good" ? "text-success" : "text-destructive",
+      )}
+    >
+      <Icon className="mt-0.5 size-3.5 shrink-0" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+interface ToolCardProps {
+  serverId: number;
+  tool: McpDiscoveredTool;
+  /** This tool's entry in the open panel's draft, or `undefined` when it is
+   * not allow-listed. */
+  entry: CodeModeDraftEntry | undefined;
+  onToggleAllowed: () => void;
+  onBindingChange: (field: "tenantField" | "storeField", value: string) => void;
+}
+
+/** One discovered tool: its name, its description in full (a tool's
+ * description is its interface, so it is never truncated), and — where the
+ * server allows it — the code-mode allow-list control for it.
+ *
+ * The control lives here, on the tool's own card, rather than in a separate
+ * list, because the question it answers is per-tool ("may generated code
+ * call THIS one, and scoped by which argument"). A tool the server declares
+ * writes gets a sentence instead of a disabled checkbox: there is no state
+ * an operator could move it to (§6.5: a server's "this writes" is trusted in
+ * the direction that denies). */
+function ToolCard({ serverId, tool, entry, onToggleAllowed, onBindingChange }: ToolCardProps) {
+  const args = toolArgumentNames(tool);
+  const idBase = `mcp-${serverId}-tool-${tool.name}`;
+  return (
+    // <article>, not <div>: each tool is a small self-contained unit with
+    // its own controls, and the element is what lets a test (and a screen
+    // reader) address one tool's card rather than whichever anonymous
+    // wrapper happens to enclose its name.
+    <article className="rounded-lg border bg-muted/30 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <code className="font-mono text-sm font-semibold break-all">{tool.name}</code>
+        {tool.readOnlyHint && <Badge variant="success">read-only</Badge>}
+      </div>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{tool.description}</p>
+
+      {!tool.readOnlyHint ? (
+        <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Lock className="mt-px size-3.5 shrink-0" />
+          This server declares the tool writes, so it can't be allow-listed for code mode.
+        </p>
+      ) : args.length === 0 ? (
+        <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Lock className="mt-px size-3.5 shrink-0" />
+          The tool declares no arguments, so there is nothing to scope a code-mode call by.
+        </p>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-3 border-t pt-3">
+          <div className="flex h-8 items-center gap-2">
+            <Checkbox
+              id={`${idBase}-allow`}
+              checked={entry !== undefined}
+              onCheckedChange={onToggleAllowed}
+            />
+            <Label htmlFor={`${idBase}-allow`}>Allow in code mode</Label>
+          </div>
+
+          {entry !== undefined && (
+            <>
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor={`${idBase}-tenant`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  Tenant argument
+                </Label>
+                <NativeSelect
+                  id={`${idBase}-tenant`}
+                  size="sm"
+                  className="min-w-36 bg-background font-mono text-xs"
+                  value={entry.tenantField}
+                  onChange={(e) => onBindingChange("tenantField", e.target.value)}
+                >
+                  {args.map((arg) => (
+                    <NativeSelectOption key={arg} value={arg}>
+                      {arg}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div className="grid gap-1.5">
+                <Label
+                  htmlFor={`${idBase}-store`}
+                  className="text-xs font-normal text-muted-foreground"
+                >
+                  Store argument
+                </Label>
+                <NativeSelect
+                  id={`${idBase}-store`}
+                  size="sm"
+                  className="min-w-36 bg-background font-mono text-xs"
+                  value={entry.storeField}
+                  onChange={(e) => onBindingChange("storeField", e.target.value)}
+                >
+                  <NativeSelectOption value="">None</NativeSelectOption>
+                  {args.map((arg) => (
+                    <NativeSelectOption key={arg} value={arg}>
+                      {arg}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
 /**
  * The MCP servers screen — Saurabh's own question, verbatim: "where can i
  * see mcp server list? and its config and what functions are available
@@ -216,8 +370,9 @@ const BLANK_ROW_STATE: RowState = {
  * servers exist ("should be card or list. brief overview then button to
  * view in detail or edit or delete etc", Saurabh). Each card now answers
  * "what is this, is it working, who uses it" at a glance and holds its
- * tools behind View tools, where the per-server search box narrows a long
- * list without hiding anything.
+ * tools behind View tools — the card's one lead action, so it is the
+ * filled button — where the per-server search box narrows a long list
+ * without hiding anything.
  *
  * **The allow-list is edited in place, on the same cards.** `code_mode_
  * tools` — which of the discovered tools a code-mode sandbox may actually
@@ -473,168 +628,238 @@ export function McpServersRoute() {
         onAction={openForm}
       />
 
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertTitle>Couldn't load MCP servers</AlertTitle>
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
         {bindingsError !== null && (
-          <p className={styles.loadError}>Couldn't load which agents use these servers — {bindingsError}</p>
+          <Alert className="border-warning/30 bg-warning-soft text-warning">
+            <TriangleAlert />
+            <AlertTitle>Couldn't load which agents use these servers</AlertTitle>
+            <AlertDescription>{bindingsError}</AlertDescription>
+          </Alert>
         )}
 
         {formOpen && (
-          <form className={styles.form} onSubmit={(event) => void handleSubmit(event)} autoComplete="off">
-            <h3 className={styles.formTitle}>Register a server</h3>
-
-            <div className={styles.field}>
-              <label htmlFor="mcp-name">Name</label>
-              <input
-                id="mcp-name"
-                type="text"
+          <Card>
+            <CardHeader>
+              <h3 className="leading-none font-semibold">Register a server</h3>
+              <CardDescription>
+                Credentials are write-only: the server never sends them back, on this screen or
+                any other.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                className="flex flex-col gap-6"
+                onSubmit={(event) => void handleSubmit(event)}
                 autoComplete="off"
-                value={form.name}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label htmlFor="mcp-base-url">Base URL</label>
-              <input
-                id="mcp-base-url"
-                type="text"
-                autoComplete="off"
-                value={form.baseUrl}
-                disabled={submitting}
-                onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label htmlFor="mcp-auth-type">Auth type</label>
-              <select
-                id="mcp-auth-type"
-                value={form.authType}
-                disabled={submitting}
-                onChange={(e) =>
-                  setForm((prev) => ({ ...prev, authType: e.target.value as McpAuthType }))
-                }
               >
-                <option value="none">No auth</option>
-                <option value="bearer">Bearer token</option>
-                <option value="api_key">API key</option>
-                <option value="oauth2_cc">OAuth2 client credentials</option>
-              </select>
-            </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="mcp-name">Name</FieldLabel>
+                    <Input
+                      id="mcp-name"
+                      type="text"
+                      autoComplete="off"
+                      value={form.name}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                    />
+                  </Field>
 
-            {form.authType === "bearer" && (
-              <div className={`${styles.field} ${styles.wide}`}>
-                <label htmlFor="mcp-bearer-token">Token</label>
-                <input
-                  id="mcp-bearer-token"
-                  type="password"
-                  // "off", never "new-password" — a live credential, not a
-                  // value to invite a save-password prompt for (same
-                  // reasoning DatabasesRoute.tsx gives for its DSN field).
-                  autoComplete="off"
-                  value={form.bearerToken}
-                  disabled={submitting}
-                  onChange={(e) => setForm((prev) => ({ ...prev, bearerToken: e.target.value }))}
-                />
-              </div>
-            )}
+                  <Field className="gap-2">
+                    <FieldLabel htmlFor="mcp-base-url">Base URL</FieldLabel>
+                    <Input
+                      id="mcp-base-url"
+                      type="text"
+                      autoComplete="off"
+                      placeholder="https://tools.example.com/mcp"
+                      value={form.baseUrl}
+                      disabled={submitting}
+                      onChange={(e) => setForm((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                    />
+                  </Field>
+                </div>
 
-            {form.authType === "api_key" && (
-              <>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-api-key-header">Header name</label>
-                  <input
-                    id="mcp-api-key-header"
-                    type="text"
-                    autoComplete="off"
-                    placeholder="X-API-Key"
-                    value={form.apiKeyHeader}
-                    disabled={submitting}
-                    onChange={(e) => setForm((prev) => ({ ...prev, apiKeyHeader: e.target.value }))}
-                  />
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-api-key-value">Key</label>
-                  <input
-                    id="mcp-api-key-value"
-                    type="password"
-                    autoComplete="off"
-                    value={form.apiKeyValue}
-                    disabled={submitting}
-                    onChange={(e) => setForm((prev) => ({ ...prev, apiKeyValue: e.target.value }))}
-                  />
-                </div>
-              </>
-            )}
+                <div className="grid gap-4 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2">
+                  <Field className="gap-2 sm:col-span-2 sm:max-w-sm">
+                    <FieldLabel htmlFor="mcp-auth-type">Auth type</FieldLabel>
+                    <NativeSelect
+                      id="mcp-auth-type"
+                      className="bg-background"
+                      value={form.authType}
+                      disabled={submitting}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, authType: e.target.value as McpAuthType }))
+                      }
+                    >
+                      <NativeSelectOption value="none">No auth</NativeSelectOption>
+                      <NativeSelectOption value="bearer">Bearer token</NativeSelectOption>
+                      <NativeSelectOption value="api_key">API key</NativeSelectOption>
+                      <NativeSelectOption value="oauth2_cc">OAuth2 client credentials</NativeSelectOption>
+                    </NativeSelect>
+                    {form.authType === "none" && (
+                      <FieldDescription>Requests go to the server without credentials.</FieldDescription>
+                    )}
+                  </Field>
 
-            {form.authType === "oauth2_cc" && (
-              <>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-oauth-token-url">Token URL</label>
-                  <input
-                    id="mcp-oauth-token-url"
-                    type="text"
-                    autoComplete="off"
-                    value={form.oauthTokenUrl}
-                    disabled={submitting}
-                    onChange={(e) => setForm((prev) => ({ ...prev, oauthTokenUrl: e.target.value }))}
-                  />
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-oauth-client-id">Client id</label>
-                  <input
-                    id="mcp-oauth-client-id"
-                    type="text"
-                    autoComplete="off"
-                    value={form.oauthClientId}
-                    disabled={submitting}
-                    onChange={(e) => setForm((prev) => ({ ...prev, oauthClientId: e.target.value }))}
-                  />
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-oauth-client-secret">Client secret</label>
-                  <input
-                    id="mcp-oauth-client-secret"
-                    type="password"
-                    autoComplete="off"
-                    value={form.oauthClientSecret}
-                    disabled={submitting}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, oauthClientSecret: e.target.value }))
-                    }
-                  />
-                </div>
-                <div className={styles.field}>
-                  <label htmlFor="mcp-oauth-scope">Scope (optional)</label>
-                  <input
-                    id="mcp-oauth-scope"
-                    type="text"
-                    autoComplete="off"
-                    value={form.oauthScope}
-                    disabled={submitting}
-                    onChange={(e) => setForm((prev) => ({ ...prev, oauthScope: e.target.value }))}
-                  />
-                </div>
-              </>
-            )}
+                  {form.authType === "bearer" && (
+                    <Field className="gap-2 sm:col-span-2">
+                      <FieldLabel htmlFor="mcp-bearer-token">Token</FieldLabel>
+                      <Input
+                        id="mcp-bearer-token"
+                        type="password"
+                        // "off", never "new-password" — a live credential, not a
+                        // value to invite a save-password prompt for (same
+                        // reasoning DatabasesRoute.tsx gives for its DSN field).
+                        autoComplete="off"
+                        className="bg-background"
+                        value={form.bearerToken}
+                        disabled={submitting}
+                        onChange={(e) => setForm((prev) => ({ ...prev, bearerToken: e.target.value }))}
+                      />
+                    </Field>
+                  )}
 
-            {submitError !== null && (
-              <p role="alert" className={styles.formError}>
-                {submitError}
-              </p>
-            )}
+                  {form.authType === "api_key" && (
+                    <>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-api-key-header">Header name</FieldLabel>
+                        <Input
+                          id="mcp-api-key-header"
+                          type="text"
+                          autoComplete="off"
+                          placeholder="X-API-Key"
+                          className="bg-background font-mono"
+                          value={form.apiKeyHeader}
+                          disabled={submitting}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, apiKeyHeader: e.target.value }))
+                          }
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-api-key-value">Key</FieldLabel>
+                        <Input
+                          id="mcp-api-key-value"
+                          type="password"
+                          autoComplete="off"
+                          className="bg-background"
+                          value={form.apiKeyValue}
+                          disabled={submitting}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, apiKeyValue: e.target.value }))
+                          }
+                        />
+                      </Field>
+                    </>
+                  )}
 
-            <div className={styles.formActions}>
-              <button type="submit" className={styles.submit} disabled={submitting}>
-                {submitting ? "Registering…" : "Register"}
-              </button>
-              <button type="button" className={styles.cancel} disabled={submitting} onClick={closeForm}>
-                Cancel
-              </button>
-            </div>
-          </form>
+                  {form.authType === "oauth2_cc" && (
+                    <>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-oauth-token-url">Token URL</FieldLabel>
+                        <Input
+                          id="mcp-oauth-token-url"
+                          type="text"
+                          autoComplete="off"
+                          className="bg-background"
+                          value={form.oauthTokenUrl}
+                          disabled={submitting}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, oauthTokenUrl: e.target.value }))
+                          }
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-oauth-client-id">Client id</FieldLabel>
+                        <Input
+                          id="mcp-oauth-client-id"
+                          type="text"
+                          autoComplete="off"
+                          className="bg-background font-mono"
+                          value={form.oauthClientId}
+                          disabled={submitting}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, oauthClientId: e.target.value }))
+                          }
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-oauth-client-secret">Client secret</FieldLabel>
+                        <Input
+                          id="mcp-oauth-client-secret"
+                          type="password"
+                          autoComplete="off"
+                          className="bg-background"
+                          value={form.oauthClientSecret}
+                          disabled={submitting}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, oauthClientSecret: e.target.value }))
+                          }
+                        />
+                      </Field>
+                      <Field className="gap-2">
+                        <FieldLabel htmlFor="mcp-oauth-scope">Scope (optional)</FieldLabel>
+                        <Input
+                          id="mcp-oauth-scope"
+                          type="text"
+                          autoComplete="off"
+                          className="bg-background"
+                          value={form.oauthScope}
+                          disabled={submitting}
+                          onChange={(e) => setForm((prev) => ({ ...prev, oauthScope: e.target.value }))}
+                        />
+                      </Field>
+                    </>
+                  )}
+                </div>
+
+                {submitError !== null && (
+                  <Alert variant="destructive">
+                    <CircleAlert />
+                    <AlertDescription>{submitError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 border-t pt-6">
+                  <Button type="submit" disabled={submitting}>
+                    {submitting && <Spinner aria-hidden="true" />}
+                    {submitting ? "Registering…" : "Register"}
+                  </Button>
+                  <Button type="button" variant="outline" disabled={submitting} onClick={closeForm}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        )}
+
+        {servers === null && loadError === null && (
+          <div className="flex flex-col gap-4" aria-busy="true">
+            <span className="sr-only">Loading MCP servers…</span>
+            {[0, 1].map((i) => (
+              <Card key={i} className="gap-4">
+                <CardHeader>
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-3 w-56 max-w-full" />
+                </CardHeader>
+                <CardContent className="flex flex-col gap-4">
+                  <Skeleton className="h-3 w-72 max-w-full" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-8 w-24" />
+                    <Skeleton className="h-8 w-24" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
 
         {servers !== null && rows.length === 0 && !formOpen && (
@@ -647,241 +872,217 @@ export function McpServersRoute() {
           />
         )}
 
-        {rows.map((server) => {
-          const state = rowState(server.id);
-          const boundAgents = bindings.get(server.id) ?? [];
-          const search = searchFor(server.id);
-          const filteredTools = server.discovered_tools.filter((tool) =>
-            matchesToolSearch(tool, search),
-          );
-          const toolsOpen = openToolsId === server.id;
+        {rows.length > 0 && (
+          <div className="flex flex-col gap-4">
+            {rows.map((server) => {
+              const state = rowState(server.id);
+              const boundAgents = bindings.get(server.id) ?? [];
+              const search = searchFor(server.id);
+              const filteredTools = server.discovered_tools.filter((tool) =>
+                matchesToolSearch(tool, search),
+              );
+              const toolsOpen = openToolsId === server.id;
+              const headingId = `mcp-server-${server.id}-name`;
 
-          return (
-            <section className={styles.card} key={server.id}>
-              <div className={styles.cardHead}>
-                <div>
-                  <h3 className={styles.serverName}>{server.name}</h3>
-                  <code className={styles.baseUrl}>{server.base_url}</code>
-                </div>
-                <div className={styles.cardHeadRight}>
-                  <span className={styles.authChip}>{AUTH_TYPE_LABEL[server.auth_type]}</span>
-                  {server.is_active ? (
-                    <StatusPill tone="good" label="Active" />
-                  ) : (
-                    <StatusPill tone="neutral" label="Inactive" />
-                  )}
-                </div>
-              </div>
-
-              <div className={styles.metaRow}>
-                <span className={styles.metaItem}>{plural(server.discovered_tools.length, "tool")}</span>
-                <span className={styles.metaItem}>{lastDiscoveredLabel(server.last_discovery_at)}</span>
-                <span className={styles.metaItem}>
-                  {boundAgents.length === 0
-                    ? "Not bound to any agent"
-                    : `Used by ${boundAgents.join(", ")}`}
-                </span>
-              </div>
-
-              <div className={styles.cardActions}>
-                <button
-                  type="button"
-                  className={styles.primaryBtn}
-                  aria-expanded={toolsOpen}
-                  onClick={() => toggleTools(server)}
-                >
-                  {toolsOpen ? "Hide tools" : "View tools"}
-                </button>
-                <button
-                  type="button"
-                  className={styles.actionBtn}
-                  disabled={state.discovering}
-                  onClick={() => void handleDiscover(server)}
-                >
-                  {state.discovering ? "Discovering…" : "Discover"}
-                </button>
-                {confirmingDeleteId !== server.id && (
-                  <button
-                    type="button"
-                    className={`${styles.actionBtn} ${styles.danger}`}
-                    onClick={() => setConfirmingDeleteId(server.id)}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-
-              {confirmingDeleteId === server.id && (
-                <div className={styles.confirmRow}>
-                  <span className={styles.confirmText}>Remove {server.name}? This can't be undone.</span>
-                  <button
-                    type="button"
-                    className={styles.confirmBtn}
-                    disabled={state.removing}
-                    onClick={() => void handleConfirmRemove(server.id)}
-                  >
-                    {state.removing ? "Removing…" : "Confirm remove"}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.actionBtn}
-                    disabled={state.removing}
-                    onClick={() => setConfirmingDeleteId(null)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
-
-              {state.discoverNote !== null && (
-                <p className={`${styles.rowNote} ${styles.good}`}>{state.discoverNote}</p>
-              )}
-              {state.discoverError !== null && (
-                <p className={`${styles.rowNote} ${styles.critical}`}>{state.discoverError}</p>
-              )}
-              {state.removeError !== null && (
-                <p className={`${styles.rowNote} ${styles.critical}`}>
-                  Can't remove — {state.removeError}
-                </p>
-              )}
-
-              {toolsOpen && (
-              <div className={styles.toolsSection}>
-                <div className={styles.toolsHead}>
-                  <h4>Tools</h4>
-                  <input
-                    type="search"
-                    className={styles.toolsSearch}
-                    placeholder="Search tools…"
-                    value={search}
-                    onChange={(e) =>
-                      setToolSearch((prev) => ({ ...prev, [server.id]: e.target.value }))
-                    }
-                  />
-                </div>
-                <p className={styles.toolsNote}>
-                  Every tool this server discovered. Allow-list the ones generated code may call
-                  in code mode, and name the argument each one is scoped by.
-                </p>
-
-                {filteredTools.length === 0 && (
-                  <p className={styles.toolsEmpty}>
-                    {server.discovered_tools.length === 0
-                      ? "Not discovered yet — run Discover to fetch its tools."
-                      : `No tools match "${search}".`}
-                  </p>
-                )}
-
-                <div className={styles.toolList}>
-                  {filteredTools.map((tool) => {
-                    const entry = codeModeDraft[tool.name];
-                    const args = toolArgumentNames(tool);
-                    return (
-                    // <article>, not <div>: each tool is now a small
-                    // self-contained unit with its own controls, and the
-                    // element is what lets a test (and a screen reader)
-                    // address one tool's card rather than whichever
-                    // anonymous wrapper happens to enclose its name.
-                    <article className={styles.toolCard} key={tool.name}>
-                      <div className={styles.toolCardHead}>
-                        <code className={styles.toolName}>{tool.name}</code>
-                        {tool.readOnlyHint && <span className={styles.readOnlyChip}>read-only</span>}
+              return (
+                <section key={server.id} aria-labelledby={headingId}>
+                  <Card className="gap-4">
+                    <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 space-y-1.5">
+                        <h3 id={headingId} className="flex items-center gap-2 leading-none font-semibold">
+                          <Server className="size-4 shrink-0 text-muted-foreground" />
+                          {server.name}
+                        </h3>
+                        <code className="block font-mono text-xs break-all text-muted-foreground">
+                          {server.base_url}
+                        </code>
                       </div>
-                      <p className={styles.toolDescription}>{tool.description}</p>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <Badge variant="outline">
+                          <KeyRound />
+                          {AUTH_TYPE_LABEL[server.auth_type]}
+                        </Badge>
+                        {server.is_active ? (
+                          <StatusPill tone="good" label="Active" />
+                        ) : (
+                          <StatusPill tone="neutral" label="Inactive" />
+                        )}
+                      </div>
+                    </CardHeader>
 
-                      {!tool.readOnlyHint ? (
-                        <p className={styles.codeModeBlocked}>
-                          This server declares the tool writes, so it can't be allow-listed for
-                          code mode.
-                        </p>
-                      ) : args.length === 0 ? (
-                        <p className={styles.codeModeBlocked}>
-                          The tool declares no arguments, so there is nothing to scope a
-                          code-mode call by.
-                        </p>
-                      ) : (
-                        <div className={styles.codeModeRow}>
-                          <label className={styles.codeModeToggle}>
-                            <input
-                              type="checkbox"
-                              checked={entry !== undefined}
-                              onChange={() => toggleAllowed(tool)}
-                            />
-                            Allow in code mode
-                          </label>
+                    <CardContent className="flex flex-col gap-4">
+                      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted-foreground">
+                        <span className="flex items-center gap-1.5 tabular-nums">
+                          <Wrench className="size-3.5 shrink-0" />
+                          {plural(server.discovered_tools.length, "tool")}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Clock className="size-3.5 shrink-0" />
+                          {lastDiscoveredLabel(server.last_discovery_at)}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <Bot className="size-3.5 shrink-0" />
+                          {boundAgents.length === 0
+                            ? "Not bound to any agent"
+                            : `Used by ${boundAgents.join(", ")}`}
+                        </span>
+                      </div>
 
-                          {entry !== undefined && (
-                            <>
-                              <label className={styles.codeModeField}>
-                                Tenant argument
-                                <select
-                                  value={entry.tenantField}
-                                  onChange={(e) =>
-                                    setBindingField(tool.name, "tenantField", e.target.value)
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          aria-expanded={toolsOpen}
+                          onClick={() => toggleTools(server)}
+                        >
+                          {toolsOpen ? <ChevronUp /> : <ChevronDown />}
+                          {toolsOpen ? "Hide tools" : "View tools"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={state.discovering}
+                          onClick={() => void handleDiscover(server)}
+                        >
+                          {state.discovering ? <Spinner aria-hidden="true" /> : <RefreshCw />}
+                          {state.discovering ? "Discovering…" : "Discover"}
+                        </Button>
+                        {confirmingDeleteId !== server.id && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setConfirmingDeleteId(server.id)}
+                          >
+                            <Trash2 />
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+
+                      {confirmingDeleteId === server.id && (
+                        <div className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/20 bg-destructive/5 py-1.5 pr-1.5 pl-3">
+                          <span className="mr-auto text-sm text-destructive">
+                            Remove {server.name}? This can't be undone.
+                          </span>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            disabled={state.removing}
+                            onClick={() => void handleConfirmRemove(server.id)}
+                          >
+                            {state.removing && <Spinner aria-hidden="true" />}
+                            {state.removing ? "Removing…" : "Confirm remove"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={state.removing}
+                            onClick={() => setConfirmingDeleteId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+
+                      {state.discoverNote !== null && <Note tone="good">{state.discoverNote}</Note>}
+                      {state.discoverError !== null && (
+                        <Note tone="critical">{state.discoverError}</Note>
+                      )}
+                      {state.removeError !== null && (
+                        <Note tone="critical">Can't remove — {state.removeError}</Note>
+                      )}
+
+                      {toolsOpen && (
+                        <div className="flex flex-col gap-4 border-t pt-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="space-y-1">
+                              <h4 className="text-sm font-semibold">Tools</h4>
+                              <p className="max-w-prose text-sm text-muted-foreground">
+                                Every tool this server discovered. Allow-list the ones generated
+                                code may call in code mode, and name the argument each one is
+                                scoped by.
+                              </p>
+                            </div>
+                            <InputGroup className="sm:w-64 sm:shrink-0">
+                              <InputGroupAddon>
+                                <Search />
+                              </InputGroupAddon>
+                              <InputGroupInput
+                                type="search"
+                                placeholder="Search tools…"
+                                aria-label="Search tools"
+                                value={search}
+                                onChange={(e) =>
+                                  setToolSearch((prev) => ({ ...prev, [server.id]: e.target.value }))
+                                }
+                              />
+                            </InputGroup>
+                          </div>
+
+                          {filteredTools.length === 0 && (
+                            <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                              {server.discovered_tools.length === 0
+                                ? "Not discovered yet — run Discover to fetch its tools."
+                                : `No tools match "${search}".`}
+                            </p>
+                          )}
+
+                          {filteredTools.length > 0 && (
+                            <div className="flex flex-col gap-3">
+                              {filteredTools.map((tool) => (
+                                <ToolCard
+                                  key={tool.name}
+                                  serverId={server.id}
+                                  tool={tool}
+                                  entry={codeModeDraft[tool.name]}
+                                  onToggleAllowed={() => toggleAllowed(tool)}
+                                  onBindingChange={(field, value) =>
+                                    setBindingField(tool.name, field, value)
                                   }
-                                >
-                                  {args.map((arg) => (
-                                    <option key={arg} value={arg}>
-                                      {arg}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                              <label className={styles.codeModeField}>
-                                Store argument
-                                <select
-                                  value={entry.storeField}
-                                  onChange={(e) =>
-                                    setBindingField(tool.name, "storeField", e.target.value)
-                                  }
-                                >
-                                  <option value="">None</option>
-                                  {args.map((arg) => (
-                                    <option key={arg} value={arg}>
-                                      {arg}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-                            </>
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {server.discovered_tools.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={
+                                  savingAllowList ||
+                                  draftsEqual(codeModeDraft, draftFromServer(server))
+                                }
+                                onClick={() => void handleSaveAllowList(server)}
+                              >
+                                {savingAllowList && <Spinner aria-hidden="true" />}
+                                {savingAllowList ? "Saving…" : "Save allow-list"}
+                              </Button>
+                              <span className="text-sm text-muted-foreground tabular-nums">
+                                {plural(Object.keys(codeModeDraft).length, "tool")} allow-listed of{" "}
+                                {server.discovered_tools.length} discovered
+                              </span>
+                            </div>
+                          )}
+
+                          {allowListNote !== null && <Note tone="good">{allowListNote}</Note>}
+                          {allowListError !== null && (
+                            <Note tone="critical">Can't save the allow-list — {allowListError}</Note>
                           )}
                         </div>
                       )}
-                    </article>
-                    );
-                  })}
-                </div>
-
-                {server.discovered_tools.length > 0 && (
-                  <div className={styles.allowListActions}>
-                    <button
-                      type="button"
-                      className={styles.primaryBtn}
-                      disabled={savingAllowList || draftsEqual(codeModeDraft, draftFromServer(server))}
-                      onClick={() => void handleSaveAllowList(server)}
-                    >
-                      {savingAllowList ? "Saving…" : "Save allow-list"}
-                    </button>
-                    <span className={styles.allowListCount}>
-                      {plural(Object.keys(codeModeDraft).length, "tool")} allow-listed of{" "}
-                      {plural(server.discovered_tools.length, "discovered")}
-                    </span>
-                  </div>
-                )}
-
-                {allowListNote !== null && (
-                  <p className={`${styles.rowNote} ${styles.good}`}>{allowListNote}</p>
-                )}
-                {allowListError !== null && (
-                  <p className={`${styles.rowNote} ${styles.critical}`}>
-                    Can't save the allow-list — {allowListError}
-                  </p>
-                )}
-              </div>
-              )}
-            </section>
-          );
-        })}
+                    </CardContent>
+                  </Card>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </div>
     </>
   );
