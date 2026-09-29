@@ -1,6 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CircleAlert, CircleCheck, LoaderCircle, TriangleAlert } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { cn } from "@/lib/utils";
 import { getAgent, optimizeAgent } from "../../agents/api.ts";
 import type { AgentDetail } from "../../agents/types.ts";
 import { listLlmConfigs, type LLMConfig } from "../llmConfigsApi.ts";
@@ -19,7 +27,6 @@ import {
 import type { AgentDetailContext } from "../AgentDetailRoute.tsx";
 import { compileBlockedReason, resolveBoundModel } from "./llmResolution.ts";
 import { usePersistentState } from "./usePersistentState.ts";
-import styles from "./LearningTab.module.css";
 
 /** The registry-state row every card below leads with — "not observed" is
  * a fetch that hasn't landed (or failed), distinct from `is_fallback`
@@ -45,6 +52,68 @@ function compiledLabel(uri: string | undefined): string {
   if (uri === undefined) return "not yet compiled";
   const tail = uri.split("/").pop();
   return `compiled · ${tail !== undefined && tail.length > 0 ? tail : uri}`;
+}
+
+/** One numbered step of the compile → tune → promote sequence, as a card
+ * inside a `<section>` (the unit the tests scope a card's contents by). */
+function StepCard({ step, title, children }: { step: number; title: string; children: ReactNode }) {
+  return (
+    <section className="flex min-w-0">
+      <Card className="w-full gap-5">
+        <CardHeader className="gap-1.5">
+          <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Step {step} of 3
+          </span>
+          <h3 className="leading-none font-semibold">{title}</h3>
+        </CardHeader>
+        <CardContent className="flex flex-1 flex-col gap-4">{children}</CardContent>
+      </Card>
+    </section>
+  );
+}
+
+/** The state block every card leads with — real figures first, the action
+ * underneath (task brief): label left, value right. `mono` for the rows
+ * that are ids/URIs rather than names. */
+function StateList({ mono = false, children }: { mono?: boolean; children: ReactNode }) {
+  return (
+    <dl className={cn("divide-y rounded-lg border text-sm", mono && "font-mono text-xs tabular-nums")}>
+      {children}
+    </dl>
+  );
+}
+
+function StateRow({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className="flex items-start justify-between gap-4 px-3 py-2">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className={cn("min-w-0 text-right font-medium break-words", className)}>{children}</dd>
+    </div>
+  );
+}
+
+/** An action's own failure — the server's reason, verbatim. Not an ARIA
+ * alert (it never was one); the page-level load failure is. */
+function ActionError({ message }: { message: string }) {
+  return (
+    <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm leading-relaxed text-destructive">
+      <CircleAlert className="mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0 break-words">{message}</span>
+    </p>
+  );
+}
+
+/** An action that cannot run says why, right on it — not enabled with the
+ * reason left in a paragraph above (task brief). Warning, not destructive:
+ * "needs attention before you can act", the same role SuiteSizeBadge
+ * already gives a thin-suite warning. */
+function BlockedReason({ children }: { children: ReactNode }) {
+  return (
+    <p className="flex items-start gap-1.5 text-sm text-warning">
+      <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+      <span className="min-w-0 break-words">{children}</span>
+    </p>
+  );
 }
 
 interface LearningData {
@@ -172,56 +241,46 @@ function OptimizePanel({ agentId, detail, llmConfigs }: OptimizePanelProps) {
   }
 
   return (
-    <section className={styles.card}>
-      <div className={styles.cardHead}>
-        <span className={styles.step}>Step 1 of 3</span>
-        <h3>Compile a plan program</h3>
+    <StepCard step={1} title="Compile a plan program">
+      <StateList>
+        <StateRow label="Plan model">{detail === null ? "loading…" : (planModel?.name ?? "not configured")}</StateRow>
+        <StateRow label="Judge model">{detail === null ? "loading…" : (judgeModel?.name ?? "not configured")}</StateRow>
+        {/* An honest gap, not a fabricated number — no endpoint reports the
+            exemplar count (see the comment on `blockedReason` above).
+            Italic and muted so it reads as "not available", not as a zero. */}
+        <StateRow label="Exemplars" className="font-normal text-muted-foreground italic">
+          not exposed by this API yet
+        </StateRow>
+        <StateRow label="Compiled">{compiledLabel(detail?.compiled_programs.plan)}</StateRow>
+      </StateList>
+
+      <div className="grid gap-2">
+        <Button type="button" className="w-fit" onClick={() => void run()} disabled={disabled}>
+          {running && <LoaderCircle className="animate-spin" />}
+          {running ? "Compiling…" : "Compile plan"}
+        </Button>
+        {blockedReason !== null && <BlockedReason>{blockedReason}</BlockedReason>}
       </div>
-
-      <dl className={styles.state}>
-        <div>
-          <dt>Plan model</dt>
-          <dd>{detail === null ? "loading…" : (planModel?.name ?? "not configured")}</dd>
-        </div>
-        <div>
-          <dt>Judge model</dt>
-          <dd>{detail === null ? "loading…" : (judgeModel?.name ?? "not configured")}</dd>
-        </div>
-        <div>
-          <dt>Exemplars</dt>
-          <dd className={styles.unavailable}>not exposed by this API yet</dd>
-        </div>
-        <div>
-          <dt>Compiled</dt>
-          <dd>{compiledLabel(detail?.compiled_programs.plan)}</dd>
-        </div>
-      </dl>
-
-      <button type="button" className={styles.btn} onClick={() => void run()} disabled={disabled}>
-        {running ? "Compiling…" : "Compile plan"}
-      </button>
-      {blockedReason !== null && <p className={styles.blockedReason}>{blockedReason}</p>}
 
       {outcome.kind === "done" && (
         <>
-          <div className={styles.stat}>
-            <span className={styles.statValue}>{outcome.demoCount}</span>
-            <span className={styles.statLabel}>demos compiled</span>
+          {/* The one number this screen has ahead of any action: a compiled
+              run's demo count. Large and tabular — a count is the point of
+              a stat and has to read before anything else on the card. */}
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl leading-none font-semibold tracking-tight tabular-nums">
+              {outcome.demoCount}
+            </span>
+            <span className="text-sm text-muted-foreground">demos compiled</span>
           </div>
-          <dl className={styles.kv}>
-            <div>
-              <dt>run id</dt>
-              <dd>{outcome.runId}</dd>
-            </div>
-            <div>
-              <dt>artifact</dt>
-              <dd>{outcome.artifactUri}</dd>
-            </div>
-          </dl>
+          <StateList mono>
+            <StateRow label="run id">{outcome.runId}</StateRow>
+            <StateRow label="artifact">{outcome.artifactUri}</StateRow>
+          </StateList>
         </>
       )}
-      {outcome.kind === "error" && <p className={styles.error}>{outcome.message}</p>}
-    </section>
+      {outcome.kind === "error" && <ActionError message={outcome.message} />}
+    </StepCard>
   );
 }
 
@@ -268,59 +327,42 @@ function TunePanel({ agentId, detail, llmConfigs, prompts }: TunePanelProps) {
   }
 
   return (
-    <section className={styles.card}>
-      <div className={styles.cardHead}>
-        <span className={styles.step}>Step 2 of 3</span>
-        <h3>Register a tuned prompt</h3>
-      </div>
-
-      <div className={styles.row}>
-        <label className={styles.label} htmlFor="tune-phase">
-          Phase
-        </label>
-        <select
+    <StepCard step={2} title="Register a tuned prompt">
+      <div className="grid gap-2 sm:max-w-48 *:data-[slot=native-select-wrapper]:w-full">
+        <Label htmlFor="tune-phase">Phase</Label>
+        <NativeSelect
           id="tune-phase"
-          className={styles.select}
           value={phase}
           onChange={(event) => setPhase(event.target.value as PromptPhase)}
         >
           {PROMPT_PHASES.map((p) => (
-            <option key={p} value={p}>
+            <NativeSelectOption key={p} value={p}>
               {p}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
       </div>
 
-      <dl className={styles.state}>
-        <div>
-          <dt>Serving</dt>
-          <dd>{servingLabel(snapshot)}</dd>
-        </div>
-        <div>
-          <dt>Runs on</dt>
-          <dd>{detail === null ? "loading…" : (phaseModel?.name ?? "not configured")}</dd>
-        </div>
-      </dl>
+      <StateList>
+        <StateRow label="Serving">{servingLabel(snapshot)}</StateRow>
+        <StateRow label="Runs on">{detail === null ? "loading…" : (phaseModel?.name ?? "not configured")}</StateRow>
+      </StateList>
 
-      <button type="button" className={styles.btn} onClick={() => void run()} disabled={running}>
-        {running ? "Registering…" : "Register tuned version"}
-      </button>
+      <div>
+        <Button type="button" onClick={() => void run()} disabled={running}>
+          {running && <LoaderCircle className="animate-spin" />}
+          {running ? "Registering…" : "Register tuned version"}
+        </Button>
+      </div>
 
       {outcome.kind === "done" && (
-        <dl className={styles.kv}>
-          <div>
-            <dt>version</dt>
-            <dd>{outcome.version}</dd>
-          </div>
-          <div>
-            <dt>prompt uri</dt>
-            <dd>{outcome.promptUri}</dd>
-          </div>
-        </dl>
+        <StateList mono>
+          <StateRow label="version">{outcome.version}</StateRow>
+          <StateRow label="prompt uri">{outcome.promptUri}</StateRow>
+        </StateList>
       )}
-      {outcome.kind === "error" && <p className={styles.error}>{outcome.message}</p>}
-    </section>
+      {outcome.kind === "error" && <ActionError message={outcome.message} />}
+    </StepCard>
   );
 }
 
@@ -380,129 +422,123 @@ function PromotePanel({ agentId, cases, prompts }: PromotePanelProps) {
   }
 
   return (
-    <section className={styles.card}>
-      <div className={styles.cardHead}>
-        <span className={styles.step}>Step 3 of 3</span>
-        <h3>Promote to production</h3>
+    <StepCard step={3} title="Promote to production">
+      <StateList>
+        <StateRow label="Serving now">{servingLabel(snapshot)}</StateRow>
+        <StateRow label="Test cases">
+          <SuiteSizeBadge activeCount={activeCount} />
+        </StateRow>
+      </StateList>
+
+      <div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-3">
+        <div className="grid gap-2 *:data-[slot=native-select-wrapper]:w-full">
+          <Label htmlFor="promote-phase">Phase</Label>
+          <NativeSelect
+            id="promote-phase"
+            value={phase}
+            onChange={(event) => {
+              setPhase(event.target.value as PromptPhase);
+              setConfirming(false);
+            }}
+          >
+            {PROMPT_PHASES.map((p) => (
+              <NativeSelectOption key={p} value={p}>
+                {p}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="promote-version">Version</Label>
+          <Input
+            id="promote-version"
+            type="number"
+            min={1}
+            className="font-mono tabular-nums"
+            value={version}
+            onChange={(event) => {
+              setVersion(event.target.value);
+              setConfirming(false);
+            }}
+          />
+        </div>
       </div>
-
-      <dl className={styles.state}>
-        <div>
-          <dt>Serving now</dt>
-          <dd>{servingLabel(snapshot)}</dd>
-        </div>
-        <div>
-          <dt>Test cases</dt>
-          <dd>
-            <SuiteSizeBadge activeCount={activeCount} />
-          </dd>
-        </div>
-      </dl>
-
-      <div className={styles.row}>
-        <label className={styles.label} htmlFor="promote-phase">
-          Phase
-        </label>
-        <select
-          id="promote-phase"
-          className={styles.select}
-          value={phase}
-          onChange={(event) => {
-            setPhase(event.target.value as PromptPhase);
-            setConfirming(false);
-          }}
-        >
-          {PROMPT_PHASES.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-        <label className={styles.label} htmlFor="promote-version">
-          Version
-        </label>
-        <input
-          id="promote-version"
-          type="number"
-          min={1}
-          className={styles.numberField}
-          value={version}
-          onChange={(event) => {
-            setVersion(event.target.value);
-            setConfirming(false);
-          }}
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="promote-override"
+          checked={override}
+          onCheckedChange={(checked) => setOverride(checked === true)}
         />
-      </div>
-      <div className={styles.row}>
-        <label className={styles.checkboxRow}>
-          <input type="checkbox" checked={override} onChange={(event) => setOverride(event.target.checked)} />
+        <Label htmlFor="promote-override" className="font-normal">
           Override a regression
-        </label>
+        </Label>
       </div>
 
       {confirming ? (
-        <div className={styles.row}>
-          <span className={styles.hint}>
-            Move <code>production</code> for <strong>{phase}</strong> ({servingVersionShort(snapshot)}) to
-            version <strong>{version}</strong>?
+        <div className="grid gap-3 rounded-lg border border-warning/30 bg-warning-soft p-3">
+          <span className="text-sm leading-relaxed">
+            Move <code className="rounded bg-background/70 px-1 py-0.5 font-mono text-xs">production</code> for{" "}
+            <strong className="font-semibold">{phase}</strong> ({servingVersionShort(snapshot)}) to version{" "}
+            <strong className="font-semibold">{version}</strong>?
           </span>
-          <button
-            type="button"
-            className={styles.btn}
-            onClick={() => void run(override)}
-            disabled={running}
-          >
-            {running ? "Promoting…" : "Confirm promote"}
-          </button>
-          <button type="button" className={styles.btn} onClick={() => setConfirming(false)}>
-            Cancel
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" onClick={() => void run(override)} disabled={running}>
+              {running && <LoaderCircle className="animate-spin" />}
+              {running ? "Promoting…" : "Confirm promote"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </div>
         </div>
       ) : (
-        <>
-          <button
+        <div className="grid gap-2">
+          <Button
             type="button"
-            className={styles.btn}
+            className="w-fit"
             onClick={() => setConfirming(true)}
             disabled={running || versionInvalid}
           >
+            {running && <LoaderCircle className="animate-spin" />}
             {running ? "Promoting…" : "Promote to production"}
-          </button>
-          {versionInvalid && (
-            <p className={styles.blockedReason}>Enter a version number, 1 or higher, to promote.</p>
-          )}
-        </>
+          </Button>
+          {versionInvalid && <BlockedReason>Enter a version number, 1 or higher, to promote.</BlockedReason>}
+        </div>
       )}
 
+      {/* Success — the same visual contract as PhasePromptPanel's own
+          result, so a promotion reads the same way on both tabs that can
+          do one. */}
       {outcome.kind === "done" && (
-        <div className={styles.result} role="status">
-          <p className={styles.resultTitle}>Promoted</p>
-          <p className={styles.resultMove}>
-            {outcome.result.from_version !== null ? `v${outcome.result.from_version}` : "none"} → v
-            {outcome.result.to_version}
-            {outcome.result.overridden ? " (overridden)" : ""}
-          </p>
-          {outcome.result.from_version !== null && (
-            <p className={styles.rollback}>
-              Roll back by promoting v{outcome.result.from_version} again — it stays resolvable.
+        <div className="flex gap-3 rounded-lg border border-success/30 bg-success-soft p-3" role="status">
+          <CircleCheck className="mt-0.5 size-4 shrink-0 text-success" />
+          <div className="grid min-w-0 gap-1">
+            <p className="text-sm font-medium">Promoted</p>
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
+              {outcome.result.from_version !== null ? `v${outcome.result.from_version}` : "none"} → v
+              {outcome.result.to_version}
+              {outcome.result.overridden ? " (overridden)" : ""}
             </p>
-          )}
+            {outcome.result.from_version !== null && (
+              <p className="text-sm text-muted-foreground">
+                Roll back by promoting v{outcome.result.from_version} again — it stays resolvable.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
       {outcome.kind === "refused" && (
-        <div className={styles.refusalWrap}>
-          <RefusalPanel
-            reason={outcome.refusal.reason}
-            regressedCases={outcome.refusal.regressed_cases}
-            onOverride={() => void run(true)}
-            overriding={running}
-          />
-        </div>
+        <RefusalPanel
+          reason={outcome.refusal.reason}
+          regressedCases={outcome.refusal.regressed_cases}
+          onOverride={() => void run(true)}
+          overriding={running}
+        />
       )}
 
-      {outcome.kind === "error" && <p className={styles.error}>{outcome.message}</p>}
-    </section>
+      {outcome.kind === "error" && <ActionError message={outcome.message} />}
+    </StepCard>
   );
 }
 
@@ -533,23 +569,37 @@ export function LearningTab() {
   const { detail, llmConfigs, cases, prompts, loadError } = useLearningData(agent.id);
 
   return (
-    <div className={styles.page}>
+    <div className="flex flex-col gap-4">
       {loadError !== null && (
-        <p role="alert" className={styles.error}>
-          {loadError}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       )}
-      <div className={styles.sequence}>
-        <OptimizePanel agentId={agent.id} detail={detail} llmConfigs={llmConfigs} />
-        <span className={styles.connector} aria-hidden="true">
-          <ArrowRight size={18} strokeWidth={2} />
-        </span>
-        <TunePanel agentId={agent.id} detail={detail} llmConfigs={llmConfigs} prompts={prompts} />
-        <span className={styles.connector} aria-hidden="true">
-          <ArrowRight size={18} strokeWidth={2} />
-        </span>
-        <PromotePanel agentId={agent.id} cases={cases} prompts={prompts} />
+      {/* Three cards, but a sequence, not three peers (task brief: "compile
+          -> tune -> promote is a sequence with a state machine. Side-by-side
+          equal cards hide that entirely"). Sized by the tab's own width (a
+          container query), not the viewport's, since the sidebar takes a
+          variable share of it. Narrow: the cards stack, which still reads
+          top-to-bottom as a sequence. Wide: one row, with an arrow between
+          steps — decorative, so hidden from assistive readers. */}
+      <div className="@container">
+        <div className="grid gap-4 @4xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+          <OptimizePanel agentId={agent.id} detail={detail} llmConfigs={llmConfigs} />
+          <StepConnector />
+          <TunePanel agentId={agent.id} detail={detail} llmConfigs={llmConfigs} prompts={prompts} />
+          <StepConnector />
+          <PromotePanel agentId={agent.id} cases={cases} prompts={prompts} />
+        </div>
       </div>
     </div>
+  );
+}
+
+function StepConnector() {
+  return (
+    <span className="hidden items-start pt-7 text-muted-foreground/70 @4xl:flex" aria-hidden="true">
+      <ArrowRight className="size-4" />
+    </span>
   );
 }

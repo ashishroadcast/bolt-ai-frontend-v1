@@ -1,21 +1,22 @@
 import { useEffect, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { CircleAlert, LoaderCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { apiErrorMessage, createTestCase, deleteTestCase, listTestCases, runTestCase } from "../testing/api.ts";
 import { NewTestCaseForm } from "../testing/NewTestCaseForm.tsx";
-import { SuiteSizeBadge } from "../testing/SuiteSizeBadge.tsx";
-import { activeCases, casesForPhase } from "../testing/suite.ts";
+import { casesForPhase } from "../testing/suite.ts";
 import { TestCaseList } from "../testing/TestCaseList.tsx";
 import { SUITE_PHASES, type AgentTestCase, type AgentTestCaseCreate } from "../testing/types.ts";
 import type { AgentDetailContext } from "../AgentDetailRoute.tsx";
-import styles from "./TestsTab.module.css";
 
 /**
  * This agent's own test cases — moved here from the standalone
  * `/test-suites` screen (task brief: "a test suite grades one agent's
  * phase"). One question, one expected answer, graded across the six
  * evaluation phases; every phase's suite is shown with its size legible up
- * front (`SuiteSizeBadge`), not only at the moment a promotion is refused
- * on the Prompts &amp; tuning tab.
+ * front (`TestCaseList` leads each phase's card with its `SuiteSizeBadge`),
+ * not only at the moment a promotion is refused on the Prompts &amp; tuning
+ * tab.
  *
  * `GET /agent/tests` returns every case for the tenant (`testing/api.ts`'s
  * own comment) — the old screen mixed every agent's cases into the same
@@ -80,35 +81,37 @@ export function TestsTab() {
   const agentCases = (cases ?? []).filter((testCase) => testCase.agent_id === agent.id);
 
   return (
-    <div className={styles.page}>
-      <p className={styles.body}>
+    <div className="flex flex-col gap-6">
+      <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
         A test suite is a set of questions with known-good answers. Run it against a prompt candidate
         before promoting it on Prompts &amp; tuning, and the verdict — pass, fail, and why — shows up
         here.
       </p>
 
       {loadError !== null && (
-        <p className={styles.alert} role="alert">
-          {loadError}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       )}
 
-      {cases === null && loadError === null && <p className={styles.status}>Loading test suites…</p>}
+      {cases === null && loadError === null && (
+        <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin" />
+          Loading test suites…
+        </p>
+      )}
 
       {cases !== null && (
         <>
           <NewTestCaseForm agentId={agent.id} onSubmit={handleCreate} />
 
-          {SUITE_PHASES.map((phase) => {
-            const phaseCases = casesForPhase(agentCases, phase);
-            const activeCount = activeCases(phaseCases).length;
-            return (
-              <section key={phase}>
-                <div className={styles.phaseHead}>
-                  <h3 className={styles.phaseName}>{phase}</h3>
-                  <SuiteSizeBadge activeCount={activeCount} />
-                </div>
+          <div className="grid gap-4">
+            {SUITE_PHASES.map((phase) => {
+              const phaseCases = casesForPhase(agentCases, phase);
+              return (
                 <TestCaseList
+                  key={phase}
                   title={phase}
                   subLabel={`${phaseCases.length} case${phaseCases.length === 1 ? "" : "s"}`}
                   cases={phaseCases}
@@ -117,9 +120,9 @@ export function TestsTab() {
                   runningId={runningId}
                   runErrors={runErrors}
                 />
-              </section>
-            );
-          })}
+              );
+            })}
+          </div>
         </>
       )}
     </div>

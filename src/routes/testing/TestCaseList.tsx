@@ -1,7 +1,12 @@
-import { Sheet } from "../../ask/parts/Sheet.tsx";
+import { CircleAlert, LoaderCircle, Play, Trash2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardDescription, CardHeader } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Pill } from "./Pill.tsx";
+import { SuiteSizeBadge } from "./SuiteSizeBadge.tsx";
+import { activeCases } from "./suite.ts";
 import type { AgentTestCase } from "./types.ts";
-import styles from "./TestCaseList.module.css";
 
 interface TestCaseListProps {
   title: string;
@@ -22,75 +27,112 @@ function verdictPill(testCase: AgentTestCase) {
   return <Pill tone={testCase.last_verdict === "pass" ? "pass" : "fail"}>{testCase.last_verdict.toUpperCase()}</Pill>;
 }
 
+/** The small uppercase run-in label ("Expected", "Judge") that leads a
+ * case's secondary lines. */
+const RUN_IN_LABEL = "mr-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase";
+
 /**
- * One phase's authored cases, as a paper sheet (reusing `Sheet` per the
- * console's own convention — this reads as an artifact, not chrome). Every
- * case that has been graded shows its judge reasoning inline, never behind
- * an extra click — see TestCaseList.module.css's own comment on
- * `.reasoning` for why: a passing verdict is evidence, not proof, and the
- * reasoning is the only way an operator actually checks it.
+ * One phase's authored cases, as a card whose header carries the phase's
+ * suite size (`SuiteSizeBadge`, counted from these same cases) so it is
+ * legible up front, not only at the moment a promotion is refused.
+ *
+ * Every case that has been graded shows its judge reasoning inline, never
+ * behind an extra click — a passing verdict is evidence, not proof, and
+ * the reasoning is the only way an operator actually checks it (task
+ * brief: "last_reasoning exists so a person can read why the judge passed
+ * something, and it should be reachable, not buried").
  */
 export function TestCaseList({ title, subLabel, cases, onRun, onDelete, runningId, runErrors }: TestCaseListProps) {
   return (
-    <Sheet title={title} subLabel={subLabel}>
-      {cases.length === 0 ? (
-        <p className={styles.empty}>No cases yet for this phase.</p>
-      ) : (
-        <ul className={styles.list}>
-          {cases.map((testCase) => (
-            <li key={testCase.id} className={styles.row}>
-              <div className={styles.top}>
-                <span className={`${styles.question} ${testCase.is_active ? "" : styles.inactive}`}>
-                  {testCase.question}
-                </span>
-                <span className={styles.meta}>
-                  {testCase.last_score !== null && (
-                    <span className={styles.score}>{testCase.last_score.toFixed(2)}</span>
-                  )}
-                  {verdictPill(testCase)}
-                </span>
-              </div>
+    <section className="min-w-0">
+      <Card className="gap-0 py-0">
+        <CardHeader className="border-b py-4 [.border-b]:pb-4">
+          <h3 className="leading-none font-semibold capitalize">{title}</h3>
+          <CardDescription>{subLabel}</CardDescription>
+          <CardAction>
+            <SuiteSizeBadge activeCount={activeCases(cases).length} />
+          </CardAction>
+        </CardHeader>
 
-              <p className={styles.expected}>
-                <b>Expected</b> {testCase.expected}
-              </p>
+        {cases.length === 0 ? (
+          <p className="px-6 py-8 text-center text-sm text-muted-foreground">No cases yet for this phase.</p>
+        ) : (
+          <ul className="divide-y">
+            {cases.map((testCase) => {
+              const running = runningId === testCase.id;
+              return (
+                <li key={testCase.id} className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-start sm:gap-6">
+                  <div className="grid min-w-0 flex-1 gap-2">
+                    <span
+                      className={cn(
+                        "text-sm font-medium break-words",
+                        !testCase.is_active && "text-muted-foreground line-through",
+                      )}
+                    >
+                      {testCase.question}
+                    </span>
 
-              {testCase.last_reasoning !== null ? (
-                <p className={styles.reasoning}>
-                  <b>Judge</b>
-                  {testCase.last_reasoning}
-                </p>
-              ) : (
-                <span className={styles.never}>Never run.</span>
-              )}
+                    <p className="text-sm break-words text-muted-foreground">
+                      <b className={RUN_IN_LABEL}>Expected</b> {testCase.expected}
+                    </p>
 
-              {runErrors[testCase.id] !== undefined && (
-                <p className={styles.runError} role="alert">
-                  {runErrors[testCase.id]}
-                </p>
-              )}
+                    {testCase.last_reasoning !== null ? (
+                      <p className="rounded-md bg-muted px-3 py-2 text-sm leading-relaxed break-words">
+                        <b className={RUN_IN_LABEL}>Judge</b>
+                        {testCase.last_reasoning}
+                      </p>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Never run.</span>
+                    )}
 
-              <div className={styles.actions}>
-                <button
-                  type="button"
-                  className={styles.action}
-                  onClick={() => onRun(testCase.id)}
-                  disabled={runningId === testCase.id}
-                >
-                  {runningId === testCase.id ? "Running…" : "Run"}
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.action} ${styles.danger}`}
-                  onClick={() => onDelete(testCase.id)}
-                >
-                  Delete
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Sheet>
+                    {runErrors[testCase.id] !== undefined && (
+                      <Alert variant="destructive" className="py-2">
+                        <CircleAlert />
+                        <AlertDescription>{runErrors[testCase.id]}</AlertDescription>
+                      </Alert>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+                    {(testCase.last_score !== null || testCase.last_verdict !== null) && (
+                      <span className="flex items-center gap-2">
+                        {testCase.last_score !== null && (
+                          <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                            {testCase.last_score.toFixed(2)}
+                          </span>
+                        )}
+                        {verdictPill(testCase)}
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRun(testCase.id)}
+                        disabled={running}
+                      >
+                        {running ? <LoaderCircle className="animate-spin" /> : <Play />}
+                        {running ? "Running…" : "Run"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => onDelete(testCase.id)}
+                      >
+                        <Trash2 />
+                        Delete
+                      </Button>
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+    </section>
   );
 }
