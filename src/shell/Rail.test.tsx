@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { AuthProvider } from "../auth/AuthContext.tsx";
 import { Rail } from "./Rail.tsx";
 
 /**
@@ -13,7 +15,11 @@ describe("Rail", () => {
   it("offers only Work and Build — the Tuning group is gone, not left empty", () => {
     render(
       <MemoryRouter>
-        <Rail />
+        <AuthProvider>
+          <SidebarProvider>
+            <Rail />
+          </SidebarProvider>
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -25,7 +31,11 @@ describe("Rail", () => {
   it("no longer links to the standalone Prompts or Test suites screens", () => {
     render(
       <MemoryRouter>
-        <Rail />
+        <AuthProvider>
+          <SidebarProvider>
+            <Rail />
+          </SidebarProvider>
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -36,7 +46,11 @@ describe("Rail", () => {
   it("still links to Agents — where Prompts & tuning and Test suites now live as tabs", () => {
     render(
       <MemoryRouter>
-        <Rail />
+        <AuthProvider>
+          <SidebarProvider>
+            <Rail />
+          </SidebarProvider>
+        </AuthProvider>
       </MemoryRouter>,
     );
 
@@ -46,7 +60,11 @@ describe("Rail", () => {
   it("links to MCP servers under Connections — the surface that was planned and never built", () => {
     render(
       <MemoryRouter>
-        <Rail />
+        <AuthProvider>
+          <SidebarProvider>
+            <Rail />
+          </SidebarProvider>
+        </AuthProvider>
       </MemoryRouter>,
     );
 

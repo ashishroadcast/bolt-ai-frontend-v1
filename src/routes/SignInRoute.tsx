@@ -8,6 +8,7 @@ import {
   Info,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   Lock,
   Mail,
   MessageSquareText,
@@ -37,7 +38,114 @@ import {
   type SignInOutcome,
 } from "../auth/AuthContext.tsx";
 import { peekSignOutReason } from "../auth/session.ts";
-import styles from "./SignInRoute.module.css";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+/*
+ * The screen's look, in shadcn's vocabulary: buttonVariants for every button
+ * and the Input/Card/Alert classes for the rest, gathered here so the markup
+ * below reads as structure. The brand panel's gradient and map-tile grid are
+ * the one bespoke piece.
+ */
+const INPUT_BASE =
+  "h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 disabled:cursor-not-allowed disabled:opacity-60";
+
+const styles = {
+  screen: "grid min-h-svh grid-cols-1 bg-muted/40 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]",
+  brand:
+    "relative hidden flex-col justify-between gap-10 overflow-hidden px-12 py-11 text-emerald-50 min-[900px]:flex bg-[radial-gradient(120%_80%_at_0%_0%,rgba(80,180,130,0.35)_0%,transparent_55%),radial-gradient(90%_70%_at_100%_100%,rgba(30,110,160,0.3)_0%,transparent_60%),linear-gradient(160deg,#0b5d3b_0%,#073d27_55%,#052a1b_100%)]",
+  brandGrid:
+    "pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-size-[36px_36px] [mask-image:radial-gradient(90%_70%_at_30%_40%,#000_20%,transparent_80%)]",
+  wordmark: "relative inline-flex items-center gap-2.5 text-xl font-bold tracking-tight",
+  wordmarkGlyph:
+    "grid size-8 place-items-center rounded-lg bg-white/15 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.22)]",
+  pitch: "relative max-w-md",
+  pitchTitle: "mb-3.5 text-4xl leading-tight font-bold tracking-tight",
+  pitchBody: "mb-7 text-[15px] leading-relaxed text-emerald-50/80",
+  features: "m-0 flex list-none flex-col gap-4 p-0",
+  feature:
+    "flex items-start gap-3.5 text-sm leading-normal text-emerald-50/85 [&_strong]:block [&_strong]:font-semibold [&_strong]:text-white",
+  featureIcon:
+    "grid size-9 flex-none place-items-center rounded-lg bg-white/10 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]",
+  brandFoot: "relative font-mono text-xs tracking-wide text-emerald-50/55",
+
+  formSide:
+    "flex items-start justify-center px-4 py-6 min-[900px]:items-center min-[900px]:px-6 min-[900px]:py-10",
+  card:
+    "mt-[6vh] flex w-full max-w-[420px] flex-col gap-5 rounded-xl border bg-card px-5 pt-6 pb-5 text-card-foreground shadow-lg shadow-black/5 animate-in fade-in-0 slide-in-from-bottom-2 duration-200 min-[900px]:mt-0 min-[900px]:px-8 min-[900px]:pt-8 min-[900px]:pb-7",
+  cardMark: "inline-flex items-center gap-2 text-base font-bold tracking-tight text-primary min-[900px]:hidden",
+  cardGlyph: "grid size-7 place-items-center rounded-md bg-primary text-primary-foreground",
+  head: "flex flex-col gap-1.5",
+  back: cn(buttonVariants({ variant: "ghost", size: "sm" }), "-mt-1.5 -ml-2.5 mb-1 self-start text-muted-foreground"),
+  stepLabel: "text-xs font-medium tracking-wide text-primary uppercase",
+  title: "m-0 text-2xl font-semibold tracking-tight",
+  subtitle: "m-0 text-sm leading-relaxed text-muted-foreground",
+  form: "flex flex-col gap-4",
+
+  boltButton: cn(buttonVariants({ variant: "outline", size: "lg" }), "h-11 w-full text-[15px]"),
+  boltBadge: "grid size-5.5 place-items-center rounded-md bg-primary text-primary-foreground",
+  hint: "-mt-2 m-0 text-center text-xs leading-normal text-muted-foreground",
+  divider:
+    "flex items-center gap-3 text-xs text-muted-foreground uppercase before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border",
+
+  segmented: "grid grid-cols-2 gap-1 rounded-lg bg-muted p-1",
+  segment:
+    "inline-flex h-8 items-center justify-center gap-2 rounded-md text-sm font-medium text-muted-foreground transition-colors hover:text-foreground aria-checked:bg-background aria-checked:text-foreground aria-checked:shadow-sm [&_svg]:size-4",
+
+  fieldGroup: "flex flex-col gap-2",
+  labelRow: "flex items-baseline justify-between gap-2",
+  label: "text-sm leading-none font-medium",
+  inputWrap: "relative flex items-stretch",
+  inputIcon: "pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground",
+  input: cn(INPUT_BASE, "pl-9"),
+  noIcon: "pl-3",
+  withToggle: "pr-11",
+  mono: "font-mono text-[13px]",
+  phoneRow: "grid grid-cols-[104px_minmax(0,1fr)] gap-2",
+  select: cn(INPUT_BASE, "px-2.5"),
+  toggle: cn(
+    buttonVariants({ variant: "ghost", size: "icon-sm" }),
+    "absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground",
+  ),
+  fieldHelp: "m-0 text-xs leading-normal text-muted-foreground",
+
+  identity: "flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5",
+  avatar:
+    "grid size-9 flex-none place-items-center rounded-full bg-primary/10 text-sm font-semibold text-primary [&_svg]:size-4",
+  identityText: "flex min-w-0 flex-1 flex-col leading-snug",
+  identityPrimary: "truncate text-sm font-medium",
+  identitySecondary: "truncate text-xs text-muted-foreground",
+
+  submit: cn(buttonVariants({ size: "lg" }), "h-11 w-full text-[15px]"),
+  spinner: "size-4 animate-spin",
+  links: "flex flex-wrap justify-center gap-x-4 gap-y-1",
+  link: cn(buttonVariants({ variant: "link", size: "sm" }), "h-auto p-0"),
+  foot: "border-t pt-4 text-center text-sm text-muted-foreground",
+
+  error:
+    "m-0 flex items-start gap-2.5 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm leading-normal text-destructive [&>svg]:mt-0.5 [&>svg]:flex-none",
+  notice:
+    "m-0 flex items-start gap-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm leading-normal text-foreground [&>svg]:mt-0.5 [&>svg]:flex-none [&>svg]:text-primary",
+
+  choices: "m-0 flex max-h-80 list-none flex-col gap-2 overflow-y-auto p-0",
+  choice:
+    "flex w-full items-center gap-3 rounded-lg border bg-card px-3 py-2.5 text-left transition-colors hover:border-primary/40 hover:bg-accent disabled:opacity-60",
+  choiceName: "min-w-0 flex-1 truncate text-sm font-medium",
+  chevron: "size-4 flex-none text-muted-foreground",
+  empty: "py-3 text-center text-sm text-muted-foreground",
+
+  otp: "grid grid-cols-6 gap-2",
+  otpBox: cn(INPUT_BASE, "h-12 px-0 text-center font-mono text-xl"),
+  resend: "flex items-center justify-between gap-2 text-sm text-muted-foreground",
+
+  devices: "m-0 flex list-none flex-col gap-2 p-0",
+  device: "flex items-center gap-3 rounded-lg border px-3 py-2.5",
+  deviceIcon: "grid size-9 flex-none place-items-center rounded-lg bg-muted text-muted-foreground [&_svg]:size-4",
+  deviceText: "flex min-w-0 flex-1 flex-col leading-snug",
+  deviceName: "truncate text-sm font-medium",
+  deviceMeta: "text-xs text-muted-foreground",
+  deviceAction: cn(buttonVariants({ variant: "outline", size: "sm" }), "text-destructive hover:text-destructive"),
+} as const;
 
 interface RedirectState {
   from?: { pathname: string; search?: string };
@@ -172,7 +280,7 @@ function isAbort(err: unknown): boolean {
 // ── Small pieces ─────────────────────────────────────────────────────────
 
 function Spinner() {
-  return <span className={styles.spinner} aria-hidden="true" />;
+  return <Loader2 className={styles.spinner} aria-hidden="true" />;
 }
 
 function ErrorMessage({ children }: { children: ReactNode }) {
@@ -193,10 +301,10 @@ function Notice({ children }: { children: ReactNode }) {
   );
 }
 
-function Glyph() {
+function Glyph({ onBrand = false }: { onBrand?: boolean }) {
   return (
-    <span className={styles.wordmarkGlyph} aria-hidden="true">
-      <Zap size={16} strokeWidth={2.4} />
+    <span className={onBrand ? styles.wordmarkGlyph : styles.cardGlyph} aria-hidden="true">
+      <Zap size={15} strokeWidth={2.4} />
     </span>
   );
 }
@@ -351,8 +459,9 @@ function CodeInput({
 function BrandPanel() {
   return (
     <aside className={styles.brand} aria-label="About Bolty">
+      <div className={styles.brandGrid} aria-hidden="true" />
       <div className={styles.wordmark}>
-        <Glyph />
+        <Glyph onBrand />
         bolty
       </div>
       <div className={styles.pitch}>
@@ -796,7 +905,7 @@ export function SignInRoute() {
                     inputMode="tel"
                     autoFocus
                     placeholder="98765 43210"
-                    className={`${styles.input} ${styles.noIcon}`}
+                    className={cn(styles.input, styles.noIcon)}
                     value={national}
                     disabled={busy === "identify"}
                     aria-invalid={error !== null}
@@ -932,7 +1041,7 @@ export function SignInRoute() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   autoFocus
-                  className={`${styles.input} ${styles.withToggle}`}
+                  className={cn(styles.input, styles.withToggle)}
                   value={password}
                   disabled={busy === "password"}
                   aria-invalid={error !== null}
@@ -1117,7 +1226,7 @@ export function SignInRoute() {
                   spellCheck={false}
                   autoFocus
                   placeholder="boltai_…"
-                  className={`${styles.input} ${styles.mono}`}
+                  className={cn(styles.input, styles.mono)}
                   value={apiKey}
                   disabled={busy === "apiKey"}
                   aria-invalid={error !== null}

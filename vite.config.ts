@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 
@@ -13,7 +15,12 @@ export default defineConfig(({ mode }) => {
   const gatewayUpstream = env.GATEWAY_PROXY_TARGET
 
   return {
-    plugins: [react()],
+    // Tailwind is the CONSOLE's only: the Ask element (vite.element.config.ts)
+    // renders inside bolt-v2 and keeps its own CSS modules and tokens.
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
     server: {
       proxy: {
         ...(gatewayUpstream

@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth, type ActingOrganisation } from "../auth/AuthContext.tsx";
 import { confirmUnloadDuringAskRun, isAskRunInFlight } from "../ask/chat/useChat.ts";
 import { GatewayError } from "../ask/http/errors.ts";
-import styles from "./OrganisationPicker.module.css";
+import { Building2, Check, ChevronsUpDown } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 /**
  * Which organisation the console is reading.
@@ -133,28 +136,33 @@ export function OrganisationPicker() {
           );
 
   return (
-    <div className={styles.root} ref={rootRef}>
-      <button
+    <div className="relative" ref={rootRef}>
+      <Button
         type="button"
-        className={styles.trigger}
+        variant="outline"
+        size="sm"
+        className="max-w-[16rem] gap-2"
         onClick={toggle}
         aria-haspopup="listbox"
         aria-expanded={open}
         title={current?.path ?? "Choose the organisation to read"}
       >
-        <span className={styles.label}>{label}</span>
-        <span aria-hidden="true" className={styles.caret}>
-          ▾
-        </span>
-      </button>
+        <Building2 className="text-muted-foreground" aria-hidden="true" />
+        <span className="truncate">{label}</span>
+        <ChevronsUpDown className="ml-auto text-muted-foreground" aria-hidden="true" />
+      </Button>
 
       {open ? (
-        <div className={styles.menu} role="listbox" aria-label="Organisation">
+        <div
+          className="absolute top-full right-0 z-50 mt-1.5 flex max-h-[min(24rem,70vh)] w-80 flex-col overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95"
+          role="listbox"
+          aria-label="Organisation"
+        >
           {/* Shown whenever the list is big enough that scanning it is not
               the fastest way to a specific depot. */}
           {organisations !== null && organisations.length > 8 ? (
-            <input
-              className={styles.filter}
+            <Input
+              className="mb-1 h-8 shrink-0"
               type="search"
               placeholder="Filter organisations"
               value={filter}
@@ -165,42 +173,48 @@ export function OrganisationPicker() {
             />
           ) : null}
 
-          {loading ? <div className={styles.note}>Loading organisations…</div> : null}
+          {loading ? <div className="px-2 py-3 text-sm text-muted-foreground">Loading organisations…</div> : null}
           {error !== null ? (
-            <div className={styles.error} role="alert">
+            <div className="px-2 py-3 text-sm text-destructive" role="alert">
               {error}
             </div>
           ) : null}
           {!loading && error === null && organisations !== null && shown.length === 0 ? (
-            <div className={styles.note}>
+            <div className="px-2 py-3 text-sm text-muted-foreground">
               {organisations.length === 0 ? "No organisations." : "Nothing matches."}
             </div>
           ) : null}
 
-          {shown.map((organisation) => (
-            <button
-              key={organisation.id}
-              type="button"
-              role="option"
-              aria-selected={organisation.id === session.organisationId}
-              className={
-                organisation.id === session.organisationId
-                  ? `${styles.option} ${styles.optionCurrent}`
-                  : styles.option
-              }
-              onClick={() => choose(organisation.id)}
-            >
-              <span className={styles.optionPath}>{organisation.path}</span>
-              {/* Was a device count, from bolt-v2's `myOrganisations`. The
-                  list comes from agent-service now, which resolves the
-                  organisation TREE and does not count fleet — so the number
-                  is dropped rather than faked. "Current" is the one marker
-                  the picker actually needs. */}
-              {organisation.current ? (
-                <span className={styles.optionMeta}>current</span>
-              ) : null}
-            </button>
-          ))}
+          <div className="min-h-0 overflow-y-auto">
+            {shown.map((organisation) => {
+              const selected = organisation.id === session.organisationId;
+              return (
+                <button
+                  key={organisation.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={cn(
+                    "flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none select-none",
+                    "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent",
+                    selected && "font-medium",
+                  )}
+                  onClick={() => choose(organisation.id)}
+                >
+                  <Check className={cn("size-4 shrink-0", selected ? "text-primary" : "invisible")} aria-hidden="true" />
+                  <span className="min-w-0 flex-1 truncate">{organisation.path}</span>
+                  {/* Was a device count, from bolt-v2's `myOrganisations`. The
+                      list comes from agent-service now, which resolves the
+                      organisation TREE and does not count fleet — so the number
+                      is dropped rather than faked. "Current" is the one marker
+                      the picker actually needs. */}
+                  {organisation.current ? (
+                    <span className="shrink-0 text-xs text-muted-foreground">current</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
     </div>

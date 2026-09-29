@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
@@ -10,6 +11,9 @@ import { defineConfig } from "vitest/config";
 // relying on jsdom's limited CSS engine to compute it.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

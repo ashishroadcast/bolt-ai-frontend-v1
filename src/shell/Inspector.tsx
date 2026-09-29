@@ -2,9 +2,14 @@ import { ChevronLeft, ChevronRight, MousePointerClick } from "lucide-react";
 import type { ReactNode } from "react";
 import type { PhaseDetail, PhaseSegment } from "../ask/chat/phaseTimeline.ts";
 import { useInspector } from "./InspectorContext.tsx";
-import styles from "./Inspector.module.css";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 const BODY_ID = "inspector-body";
+
+const KV =
+  "font-mono text-[11px] tabular-nums [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:gap-2.5 [&>div]:border-b [&>div]:py-1 [&>div:last-child]:border-b-0 [&_dt]:text-muted-foreground [&_dd]:m-0";
+const PROSE = "m-0 text-xs leading-relaxed text-muted-foreground";
 
 function formatMeasure(segment: PhaseSegment): string {
   if (segment.score !== undefined) return segment.score.toFixed(2);
@@ -33,11 +38,11 @@ function formatTokenCount(n: number): string {
 function SelectedPhase({ segment }: { segment: PhaseSegment }) {
   return (
     <div>
-      <h2 className={styles.selectionTitle}>{segment.phase}</h2>
-      <dl className={styles.kv}>
+      <h2 className="mb-4 text-lg font-semibold tracking-tight">{segment.phase}</h2>
+      <dl className={KV}>
         <div>
           <dt>{segment.score !== undefined ? "score" : "duration"}</dt>
-          <dd className={segment.score !== undefined ? styles.good : undefined}>{formatMeasure(segment)}</dd>
+          <dd className={segment.score !== undefined ? "font-medium text-success" : undefined}>{formatMeasure(segment)}</dd>
         </div>
         {segment.state !== undefined && (
           <div>
@@ -53,7 +58,7 @@ function SelectedPhase({ segment }: { segment: PhaseSegment }) {
         )}
       </dl>
       {segment.detail === undefined ? (
-        <p className={styles.note}>
+        <p className="mt-2 text-xs text-muted-foreground">
           {segment.inferred
             ? "Timed from the phases around it — this run has no dedicated execute event."
             : "This phase reported nothing beyond its timing."}
@@ -70,8 +75,8 @@ function SelectedPhase({ segment }: { segment: PhaseSegment }) {
  *  that no longer runs. */
 function Block({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <section className={styles.block}>
-      <h3 className={styles.blockTitle}>{label}</h3>
+    <section className="min-w-0">
+      <h3 className="mb-1.5 text-[11px] font-medium tracking-wider text-muted-foreground uppercase">{label}</h3>
       {children}
     </section>
   );
@@ -79,10 +84,10 @@ function Block({ label, children }: { label: string; children: ReactNode }) {
 
 function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
   return (
-    <div className={styles.detail}>
+    <div className="mt-4 flex flex-col gap-4">
       {detail.findings !== undefined && (
         <Block label="What it found">
-          <p className={styles.prose}>{detail.findings}</p>
+          <p className={PROSE}>{detail.findings}</p>
         </Block>
       )}
 
@@ -90,7 +95,7 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
         <Block label="The plan">
           {/* Numbered, because a plan is a sequence — step two only makes
               sense after step one. */}
-          <ol className={styles.steps}>
+          <ol className={cn(PROSE, "list-decimal space-y-1 pl-4")}>
             {detail.plan.map((step, index) => (
               <li key={index}>{step}</li>
             ))}
@@ -100,7 +105,7 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
 
       {detail.rationale !== undefined && (
         <Block label="Why">
-          <p className={styles.prose}>{detail.rationale}</p>
+          <p className={PROSE}>{detail.rationale}</p>
         </Block>
       )}
 
@@ -108,9 +113,9 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
         <Block label="The query that ran">
           {/* The scoped, clamped statement actually executed — not the
               model's draft. See PhaseContext.sql_run. */}
-          <pre className={styles.code}>{detail.sql}</pre>
+          <pre className="rounded-md bg-muted px-2.5 py-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap">{detail.sql}</pre>
           {detail.sqlParams !== undefined && Object.keys(detail.sqlParams).length > 0 && (
-            <dl className={styles.kv}>
+            <dl className={KV}>
               {Object.entries(detail.sqlParams).map(([key, value]) => (
                 <div key={key}>
                   <dt>{key}</dt>
@@ -124,13 +129,13 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
 
       {detail.verdict !== undefined && (
         <Block label="Verdict">
-          <p className={styles.prose}>{detail.verdict}</p>
+          <p className={PROSE}>{detail.verdict}</p>
         </Block>
       )}
 
       {detail.reasoning !== undefined && (
         <Block label="The judge's reasoning">
-          <p className={styles.prose}>{detail.reasoning}</p>
+          <p className={PROSE}>{detail.reasoning}</p>
         </Block>
       )}
 
@@ -138,7 +143,7 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
         <Block label="Issues raised">
           {/* Amber, and labelled: an objection the judge raised is the one
               thing on this panel an operator may need to act on. */}
-          <p className={styles.issues}>{detail.issues}</p>
+          <p className="border-l-2 border-warning bg-warning-soft px-2.5 py-2 text-xs leading-relaxed text-foreground">{detail.issues}</p>
         </Block>
       )}
     </div>
@@ -147,35 +152,70 @@ function PhaseDetailView({ detail }: { detail: PhaseDetail }) {
 
 export function Inspector() {
   const { isOpen, toggle, selection } = useInspector();
+  const empty = selection === null;
 
   return (
     <aside
-      className={styles.inspector}
+      className={cn(
+        "group/inspector flex min-w-0 shrink-0 flex-col overflow-hidden border-t bg-card md:border-t-0 md:border-l",
+        "max-md:max-h-[40vh]",
+        isOpen ? "md:w-80" : "md:w-11",
+      )}
       data-state={isOpen ? "open" : "closed"}
-      data-empty={selection === null ? "true" : undefined}
+      data-empty={empty ? "true" : undefined}
       aria-label="Inspector"
     >
-      <div className={styles.header}>
-        <span className={styles.title}>Inspecting</span>
-        <button
+      <div
+        className={cn(
+          "flex h-11 shrink-0 items-center justify-between gap-2 border-b px-3",
+          !isOpen && "md:justify-center md:px-0",
+        )}
+      >
+        <span
+          className={cn(
+            "truncate text-[11px] font-medium tracking-wider text-muted-foreground uppercase",
+            !isOpen && "md:hidden",
+          )}
+        >
+          Inspecting
+        </span>
+        <Button
           type="button"
-          className={styles.toggle}
+          variant="ghost"
+          size="icon"
+          className="size-7"
           aria-expanded={isOpen}
           aria-controls={BODY_ID}
           aria-label={isOpen ? "Close inspector" : "Open inspector"}
           onClick={toggle}
         >
-          {isOpen ? <ChevronRight size={14} strokeWidth={2.25} /> : <ChevronLeft size={14} strokeWidth={2.25} />}
-        </button>
+          {isOpen ? (
+            <ChevronRight className="max-md:rotate-90" aria-hidden="true" />
+          ) : (
+            <ChevronLeft className="max-md:-rotate-90" aria-hidden="true" />
+          )}
+        </Button>
       </div>
-      <div id={BODY_ID} className={styles.body}>
-        {selection === null ? (
-          <div className={styles.invite}>
-            <span className={styles.inviteIcon} aria-hidden="true">
-              <MousePointerClick size={18} strokeWidth={2} />
+      <div
+        id={BODY_ID}
+        className={cn(
+          "min-h-0 flex-1 overflow-y-auto p-4",
+          !isOpen && "md:hidden",
+          // On a phone the panel sits under the screen: until something is
+          // selected it is only its header bar, not half the viewport.
+          empty && "max-md:hidden",
+        )}
+      >
+        {empty ? (
+          <div className="flex max-w-[34ch] flex-col items-start gap-2 text-xs text-muted-foreground">
+            <span
+              className="inline-flex size-8 items-center justify-center rounded-md bg-primary/10 text-primary"
+              aria-hidden="true"
+            >
+              <MousePointerClick className="size-4" />
             </span>
-            <p>
-              <strong>Nothing selected</strong>
+            <p className="m-0">
+              <strong className="mb-1.5 block text-sm font-semibold text-foreground">Nothing selected</strong>
               Click a phase in an answer's run rail, or a result on the page, to see its query, plan
               gate and judge verdict here.
             </p>

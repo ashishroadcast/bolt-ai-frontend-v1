@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
-import styles from "./EmptyState.module.css";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 
 interface EmptyStateProps {
   /** A lucide icon component, not a unicode glyph — the glyphs this
@@ -18,17 +19,25 @@ interface EmptyStateProps {
 
 export function EmptyState({ icon: Icon, title, body, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <div className={styles.empty}>
-      <span className={styles.iconTile} aria-hidden="true">
-        <Icon size={20} strokeWidth={2} />
-      </span>
-      <h2 className={styles.title}>{title}</h2>
-      <p className={styles.body}>{body}</p>
+    <Empty className="border bg-card">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" aria-hidden="true">
+          <Icon />
+        </EmptyMedia>
+        {/* An h2 (EmptyTitle is a div): screen readers navigate an empty
+            screen by its heading. */}
+        <h2 data-slot="empty-title" className="text-lg font-medium tracking-tight">
+          {title}
+        </h2>
+        <EmptyDescription>{body}</EmptyDescription>
+      </EmptyHeader>
       {actionLabel !== undefined && (
-        <button type="button" className={styles.action} onClick={onAction}>
-          {actionLabel}
-        </button>
+        <EmptyContent>
+          <Button type="button" onClick={onAction}>
+            {actionLabel}
+          </Button>
+        </EmptyContent>
       )}
-    </div>
+    </Empty>
   );
 }

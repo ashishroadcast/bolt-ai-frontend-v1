@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import styles from "./PageHeader.module.css";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface PageHeaderProps {
   /** e.g. "Build" — the nav group this screen belongs to. */
@@ -40,21 +41,22 @@ export function PageHeader({
   actionDisabled,
 }: PageHeaderProps) {
   return (
-    <div className={styles.head}>
-      <div className={styles.titleRow}>
-        <p className={styles.kicker}>{kicker}</p>
-        <h2 className={styles.title}>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b pb-5">
+      <div className="min-w-0 space-y-1">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{kicker}</p>
+        <h2 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
           {title}
           {titleAdornment}
         </h2>
+        {description !== undefined && description !== "" && (
+          <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
+        )}
       </div>
-      {description !== undefined && description !== "" && (
-        <p className={styles.description}>{description}</p>
-      )}
       {actionLabel !== undefined && (
-        <button type="button" className={styles.action} onClick={onAction} disabled={actionDisabled}>
+        <Button type="button" onClick={onAction} disabled={actionDisabled}>
+          <Plus aria-hidden="true" />
           {actionLabel}
-        </button>
+        </Button>
       )}
     </div>
   );

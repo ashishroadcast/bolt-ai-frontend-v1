@@ -21,7 +21,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+
+    /* `@/components/ui/...` — shadcn's import convention */
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src"]
 }

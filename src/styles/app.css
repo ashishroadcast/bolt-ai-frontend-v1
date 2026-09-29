@@ -1,0 +1,183 @@
+/*
+ * The console's design system: Tailwind v4 + shadcn/ui.
+ *
+ * Loaded by the CONSOLE only (src/main.tsx). The Ask element that bolt-v2
+ * embeds is built separately (vite.element.config.ts) from `tokens.css`
+ * alone, inside a shadow root, so nothing here reaches bolt-v2.
+ *
+ * Three parts:
+ *   1. shadcn's theme variables — the palette every `@/components/ui`
+ *      component reads (`bg-primary`, `border-border`, …). Light only, by
+ *      Saurabh's standing instruction ("i don't want dark theme").
+ *   2. The Tailwind theme mapping (`@theme inline`) that turns those
+ *      variables into utilities.
+ *   3. A BRIDGE onto the older token names in `tokens.css`. Ask's own CSS
+ *      modules (shared with the bolt-v2 element) read `--signal`, `--rule`,
+ *      `--fg-dim` and friends; re-pointing them here makes Ask inside the
+ *      console wear the same palette, radii and type as every shadcn screen,
+ *      without touching the element bolt-v2 ships.
+ */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  /* Bolty green — the one brand colour, on primary actions, focus and
+     "live". Kept from the old palette so the product is still recognisable. */
+  --primary: oklch(0.43 0.09 160);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.967 0.008 160);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  /* State colours beside destructive, for badges and alerts. */
+  --success: oklch(0.527 0.137 150.069);
+  --success-soft: oklch(0.975 0.025 155);
+  --warning: oklch(0.555 0.163 48.998);
+  --warning-soft: oklch(0.987 0.022 95.277);
+
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.87 0 0);
+  --ring: oklch(0.62 0.1 160);
+
+  /* Chart series — the old six-step ramp, which was chosen for separation
+     in greyscale (see tokens.css). Orange and red stay reserved for
+     partner data inside charts. */
+  --chart-1: #0b5d3b;
+  --chart-2: #2f8fd8;
+  --chart-3: #6b3fa0;
+  --chart-4: #2bb3a3;
+  --chart-5: #7d8c00;
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.43 0.09 160);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.955 0.012 160);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.62 0.1 160);
+
+  --font-sans-stack: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono-stack: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+/*
+ * The bridge — unlayered, so it beats tokens.css's own `:root` values
+ * (loaded first) and every layered Tailwind rule. Only VALUES change; the
+ * names are the contract Ask's CSS modules were written against.
+ */
+:root {
+  --ground: var(--background);
+  --surface: var(--card);
+  --surface-sunk: var(--muted);
+  --ground-lift: var(--accent);
+  --rule: var(--border);
+  --rule-soft: oklch(0.955 0 0);
+
+  --signal: var(--primary);
+  --signal-hover: color-mix(in oklch, var(--primary) 86%, black);
+  --signal-soft: color-mix(in oklch, var(--primary) 9%, white);
+  --signal-band: color-mix(in oklch, var(--primary) 24%, white);
+  --on-signal: var(--primary-foreground);
+
+  --good: var(--success);
+  --good-soft: var(--success-soft);
+  --amber: var(--warning);
+  --amber-soft: var(--warning-soft);
+  --critical: var(--destructive);
+  --critical-soft: oklch(0.971 0.013 17.38);
+
+  --chip: oklch(0.371 0 0);
+  --chip-soft: var(--muted);
+
+  --fg: var(--foreground);
+  --fg-dim: var(--muted-foreground);
+  --fg-faint: oklch(0.708 0 0);
+  --on-sheet: var(--foreground);
+  --on-sheet-dim: var(--muted-foreground);
+
+  --font-display: var(--font-sans-stack);
+  --font-body: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
+  --lift-card: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --lift-float: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  --control-h: 36px;
+  --control-h-sm: 32px;
+  --radius-control: calc(var(--radius) - 2px);
+  --radius-card: calc(var(--radius) + 4px);
+}
