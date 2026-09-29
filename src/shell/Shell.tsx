@@ -15,6 +15,11 @@ import { SCROLL_REGION_ATTR } from "../ask/chat/useStickToBottom.ts";
  * thread can find it and follow its own tail while an answer streams in (see
  * chat/useStickToBottom.ts). A screen that scrolls itself (Ask's full-height
  * `screen` layout) turns that off, as before.
+ *
+ * Children do not shrink (`shrink-0`), except that full-height screen: in a
+ * column flex box a child with any `overflow` other than visible has a zero
+ * minimum height, so a sideways-scrolling tab bar collapsed to nothing and
+ * the tab's content slid over it.
  */
 function ShellLayout() {
   return (
@@ -24,7 +29,7 @@ function ShellLayout() {
         <TopBar />
         <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <div
-            className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6 has-[[class*=screen]]:overflow-y-hidden"
+            className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6 has-[[class*=screen]]:overflow-y-hidden [&>:not([class*=screen])]:shrink-0"
             {...{ [SCROLL_REGION_ATTR]: "" }}
           >
             <Outlet />
