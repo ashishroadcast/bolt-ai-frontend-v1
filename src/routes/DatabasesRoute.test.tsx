@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
+import { installRadixPolyfills } from "../test/radix.ts";
 import { DatabasesRoute } from "./DatabasesRoute.tsx";
 import type { DataSource } from "./datasourcesApi.ts";
 
@@ -52,6 +53,9 @@ function renderDatabasesRoute() {
 
 describe("DatabasesRoute", () => {
   beforeEach(() => {
+    // The connect form's and the table picker's checkboxes are Radix
+    // Checkboxes, which measure themselves with ResizeObserver.
+    installRadixPolyfills();
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 

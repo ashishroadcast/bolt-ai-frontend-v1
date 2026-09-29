@@ -1,7 +1,20 @@
-import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  Database,
+  ListChecks,
+  Loader2,
+  PlugZap,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { GatewayError } from "../ask/http/errors.ts";
 import { PageHeader } from "../agents/PageHeader.tsx";
-import { Sheet } from "../ask/parts/Sheet.tsx";
+import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
+import { EmptyState } from "../components/EmptyState.tsx";
 import {
   createDatasource,
   deleteDatasource,
@@ -19,8 +32,20 @@ import {
   type SchemaTableInfo,
   type TestConnectionResult,
 } from "./datasourcesApi.ts";
-import { Database } from "lucide-react";
-import styles from "./DatabasesRoute.module.css";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 // While at least one row is mid-scan, poll the list so its status/table
 // counts pick up the background scan finishing without a manual reload —
@@ -44,16 +69,16 @@ const ISOLATION_LABEL: Record<IsolationMode, string> = {
   column: "Per column",
 };
 
-function statusPillClass(status: DataSource["status"]): string {
+function statusTone(status: DataSource["status"]): StatusPillTone {
   switch (status) {
     case "ready":
-      return `${styles.pill} ${styles.good}`;
+      return "good";
     case "error":
-      return `${styles.pill} ${styles.critical}`;
+      return "critical";
     case "indexing":
-      return `${styles.pill} ${styles.amber}`;
+      return "amber";
     default:
-      return `${styles.pill} ${styles.neutral}`;
+      return "neutral";
   }
 }
 
@@ -275,6 +300,34 @@ function initialSelection(catalog: DatasourceCatalog, patterns: string[] | null)
   );
 }
 
+/** A one-line outcome under a row's actions (or the form's) — the icon
+ * carries success/failure as well as the colour does. */
+function Note({ tone, children, className }: { tone: "good" | "critical"; children: ReactNode; className?: string }) {
+  const Icon = tone === "good" ? CircleCheck : CircleX;
+  return (
+    <p
+      className={cn(
+        "flex items-start gap-1.5 text-sm leading-snug",
+        tone === "good" ? "text-success" : "text-destructive",
+        className,
+      )}
+    >
+      <Icon className="mt-px size-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 wrap-anywhere">{children}</span>
+    </p>
+  );
+}
+
+/** A quiet in-panel status line ("Loading tables…"). */
+function PanelNote({ children, critical = false, busy = false }: { children: ReactNode; critical?: boolean; busy?: boolean }) {
+  return (
+    <p className={cn("flex items-center gap-2 text-sm", critical ? "text-destructive" : "text-muted-foreground")}>
+      {busy && <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />}
+      {children}
+    </p>
+  );
+}
+
 /*
  * Connecting a database is the highest-consequence action in this console
  * (task brief) — the DSN is a live credential, so the form's own state
@@ -295,10 +348,9 @@ function initialSelection(catalog: DatasourceCatalog, patterns: string[] | null)
  * any row is indexing (see SCAN_POLL_INTERVAL_MS) to pick up the finished
  * table/column counts or `last_scan_error` without a manual reload.
  *
- * Replaces the inert shared `EmptyState` (src/components/, out of this
- * task's file list — its action button has no handler yet) with this
- * route's own real, wired invite — EmptyState.tsx's own docstring already
- * names this file as where that happens.
+ * The empty state is the shared `EmptyState` with its action wired to this
+ * route's own `openForm` — the same control PageHeader draws, shown only
+ * once the list has loaded empty.
  */
 export function DatabasesRoute() {
   const [datasources, setDatasources] = useState<DataSource[] | null>(null);
@@ -608,513 +660,617 @@ export function DatabasesRoute() {
     }
   }
 
+  const isRedisForm = form.type === "redis";
+
   return (
-    <div>
-      {/* The shared header, not a local copy of one: this screen used to
-          stack its own eyebrow, a 22px title and a paragraph, which put
-          its title on a different line and at a different size from the
-          eleven screens either side of it in the rail. */}
-      <PageHeader
-        kicker="Connections"
-        title="Databases"
-        description="Point the agent at a database and it can answer directly from your data, with the query and its plan gate open for you to check in the inspector."
-        actionLabel={formOpen ? undefined : "Connect a database"}
-        onAction={openForm}
-      />
+    // Tooltips here label the icon-only Remove control; a provider of this
+    // screen's own keeps them working outside the shell (tests render the
+    // route on its own).
+    <TooltipProvider>
+      <div className="min-w-0 space-y-6">
+        {/* The shared header, not a local copy of one: this screen used to
+            stack its own eyebrow, a 22px title and a paragraph, which put
+            its title on a different line and at a different size from the
+            eleven screens either side of it in the rail. */}
+        <PageHeader
+          kicker="Connections"
+          title="Databases"
+          description="Point the agent at a database and it can answer directly from your data, with the query and its plan gate open for you to check in the inspector."
+          actionLabel={formOpen ? undefined : "Connect a database"}
+          onAction={openForm}
+        />
 
-      {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
 
-      {formOpen && (
-        // autoComplete="off" at both the form and field level: a lone
-        // type="password" field (the DSN below) is enough for some browsers
-        // to read this whole form as a login and offer a saved email into
-        // "Database name" — see this component's own docstring.
-        <form className={styles.form} onSubmit={handleSubmit} autoComplete="off">
-          <h3 className={styles.formTitle}>Connect a database</h3>
+        {formOpen && (
+          <Card>
+            {/* autoComplete="off" at both the form and field level: a lone
+                type="password" field (the DSN below) is enough for some
+                browsers to read this whole form as a login and offer a saved
+                email into "Database name" — see this component's own
+                docstring. */}
+            <form className="flex flex-col gap-6" onSubmit={handleSubmit} autoComplete="off">
+              <CardHeader>
+                <h3 data-slot="card-title" className="leading-none font-semibold">
+                  Connect a database
+                </h3>
+                <CardDescription>
+                  Check it with Test connection first. The connection string stays masked and is never
+                  shown again after you connect.
+                </CardDescription>
+              </CardHeader>
 
-          <div className={styles.field}>
-            <label htmlFor="datasource-name">Name</label>
-            <input
-              id="datasource-name"
-              type="text"
-              autoComplete="off"
-              value={form.name}
-              disabled={submitting}
-              onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-            />
-          </div>
+              <CardContent className="space-y-5">
+                <FieldGroup className="grid gap-5 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="datasource-name">Name</FieldLabel>
+                    <Input
+                      id="datasource-name"
+                      type="text"
+                      autoComplete="off"
+                      value={form.name}
+                      disabled={submitting}
+                      onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                    />
+                  </Field>
 
-          <div className={styles.field}>
-            <label htmlFor="datasource-type">Type</label>
-            <select
-              id="datasource-type"
-              value={form.type}
-              disabled={submitting}
-              onChange={(event) => {
-                resetConnectionTest();
-                const nextType = event.target.value as DataSourceType;
-                setForm((prev) => ({
-                  ...prev,
-                  type: nextType,
-                  // Redis only supports per-connection scoping (see
-                  // handleSubmit) — reset away from a stale "Per column"
-                  // selection left over from a different type rather than
-                  // silently overriding it at submit with no visible change.
-                  isolationMode: nextType === "redis" ? "connection" : prev.isolationMode,
-                }));
-              }}
-            >
-              <option value="postgres">Postgres</option>
-              <option value="mysql">MySQL</option>
-              <option value="redis">Redis</option>
-            </select>
-          </div>
+                  <Field>
+                    <FieldLabel htmlFor="datasource-type">Type</FieldLabel>
+                    <NativeSelect
+                      id="datasource-type"
+                      value={form.type}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        resetConnectionTest();
+                        const nextType = event.target.value as DataSourceType;
+                        setForm((prev) => ({
+                          ...prev,
+                          type: nextType,
+                          // Redis only supports per-connection scoping (see
+                          // handleSubmit) — reset away from a stale "Per
+                          // column" selection left over from a different type
+                          // rather than silently overriding it at submit with
+                          // no visible change.
+                          isolationMode: nextType === "redis" ? "connection" : prev.isolationMode,
+                        }));
+                      }}
+                    >
+                      <NativeSelectOption value="postgres">Postgres</NativeSelectOption>
+                      <NativeSelectOption value="mysql">MySQL</NativeSelectOption>
+                      <NativeSelectOption value="redis">Redis</NativeSelectOption>
+                    </NativeSelect>
+                  </Field>
 
-          <div className={styles.field}>
-            <label htmlFor="datasource-database-name">Database name</label>
-            <input
-              id="datasource-database-name"
-              type="text"
-              autoComplete="off"
-              value={form.databaseName}
-              disabled={submitting}
-              onChange={(event) => {
-                resetConnectionTest();
-                setForm((prev) => ({ ...prev, databaseName: event.target.value }));
-              }}
-            />
-          </div>
+                  <Field>
+                    <FieldLabel htmlFor="datasource-database-name">Database name</FieldLabel>
+                    <Input
+                      id="datasource-database-name"
+                      type="text"
+                      autoComplete="off"
+                      value={form.databaseName}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        resetConnectionTest();
+                        setForm((prev) => ({ ...prev, databaseName: event.target.value }));
+                      }}
+                    />
+                  </Field>
 
-          {form.type !== "redis" && (
-            <div className={styles.field}>
-              <label htmlFor="datasource-isolation-mode">Tenant scoping</label>
-              <select
-                id="datasource-isolation-mode"
-                value={form.isolationMode}
-                disabled={submitting}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    isolationMode: event.target.value as IsolationMode,
-                  }))
-                }
-              >
-                <option value="connection">Per connection</option>
-                <option value="column">Per column</option>
-              </select>
-            </div>
-          )}
+                  {!isRedisForm && (
+                    <Field>
+                      <FieldLabel htmlFor="datasource-isolation-mode">Tenant scoping</FieldLabel>
+                      <NativeSelect
+                        id="datasource-isolation-mode"
+                        value={form.isolationMode}
+                        disabled={submitting}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            isolationMode: event.target.value as IsolationMode,
+                          }))
+                        }
+                      >
+                        <NativeSelectOption value="connection">Per connection</NativeSelectOption>
+                        <NativeSelectOption value="column">Per column</NativeSelectOption>
+                      </NativeSelect>
+                    </Field>
+                  )}
 
-          <div className={`${styles.field} ${styles.wide}`}>
-            <label htmlFor="datasource-dsn">Connection string (DSN)</label>
-            <input
-              id="datasource-dsn"
-              type="password"
-              // "off", never "new-password": the latter is the token
-              // signup/change-password forms use specifically to invite the
-              // browser's "save this password?" prompt on submit — the
-              // opposite of what a live production credential needs. "off"
-              // is the spec's own "do not offer to remember this value"
-              // signal.
-              autoComplete="off"
-              placeholder={form.type === "redis" ? "redis://[:password@]host:port[/db]" : undefined}
-              value={form.dsn}
-              disabled={submitting}
-              onChange={(event) => {
-                resetConnectionTest();
-                setForm((prev) => ({ ...prev, dsn: event.target.value }));
-              }}
-            />
-          </div>
+                  <Field className="sm:col-span-2">
+                    <FieldLabel htmlFor="datasource-dsn">Connection string (DSN)</FieldLabel>
+                    <Input
+                      id="datasource-dsn"
+                      type="password"
+                      className="font-mono"
+                      // "off", never "new-password": the latter is the token
+                      // signup/change-password forms use specifically to
+                      // invite the browser's "save this password?" prompt on
+                      // submit — the opposite of what a live production
+                      // credential needs. "off" is the spec's own "do not
+                      // offer to remember this value" signal.
+                      autoComplete="off"
+                      placeholder={isRedisForm ? "redis://[:password@]host:port[/db]" : undefined}
+                      value={form.dsn}
+                      disabled={submitting}
+                      onChange={(event) => {
+                        resetConnectionTest();
+                        setForm((prev) => ({ ...prev, dsn: event.target.value }));
+                      }}
+                    />
+                  </Field>
 
-          {form.type === "redis" ? (
-            <div className={`${styles.field} ${styles.wide}`}>
-              <label htmlFor="datasource-key-patterns">Key patterns</label>
-              <textarea
-                id="datasource-key-patterns"
-                autoComplete="off"
-                rows={3}
-                placeholder={"session:*\norder:*:items"}
-                value={form.keyPatterns}
-                disabled={submitting}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, keyPatterns: event.target.value }))
-                }
-              />
-              <p className={styles.fieldHint}>
-                One glob pattern per line — only keys matching one of these are ever readable.
-              </p>
-            </div>
-          ) : null}
+                  {isRedisForm && (
+                    <Field className="sm:col-span-2">
+                      <FieldLabel htmlFor="datasource-key-patterns">Key patterns</FieldLabel>
+                      <Textarea
+                        id="datasource-key-patterns"
+                        className="font-mono"
+                        autoComplete="off"
+                        rows={3}
+                        placeholder={"session:*\norder:*:items"}
+                        value={form.keyPatterns}
+                        disabled={submitting}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, keyPatterns: event.target.value }))
+                        }
+                      />
+                      <FieldDescription>
+                        One glob pattern per line — only keys matching one of these are ever readable.
+                      </FieldDescription>
+                    </Field>
+                  )}
 
-          {form.type === "redis" && (
-            <div className={`${styles.field} ${styles.wide}`}>
-              <label className={styles.checkboxField} htmlFor="datasource-redis-cluster">
-                <input
-                  id="datasource-redis-cluster"
-                  type="checkbox"
-                  checked={form.redisCluster}
-                  disabled={submitting}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, redisCluster: event.target.checked }))
-                  }
-                />
-                Cluster mode
-              </label>
-              <p className={styles.fieldHint}>
-                On for a multi-node Redis cluster (redis.asyncio.cluster.RedisCluster) — off for a
-                single standalone instance.
-              </p>
-            </div>
-          )}
+                  {isRedisForm && (
+                    <Field orientation="horizontal" className="sm:col-span-2">
+                      <Checkbox
+                        id="datasource-redis-cluster"
+                        checked={form.redisCluster}
+                        disabled={submitting}
+                        onCheckedChange={(checked) =>
+                          setForm((prev) => ({ ...prev, redisCluster: checked === true }))
+                        }
+                      />
+                      <FieldContent>
+                        <FieldLabel htmlFor="datasource-redis-cluster">Cluster mode</FieldLabel>
+                        <FieldDescription>
+                          On for a multi-node Redis cluster (redis.asyncio.cluster.RedisCluster) — off
+                          for a single standalone instance.
+                        </FieldDescription>
+                      </FieldContent>
+                    </Field>
+                  )}
 
-          {form.type === "redis" && form.redisCluster && (
-            <div className={`${styles.field} ${styles.wide}`}>
-              <label htmlFor="datasource-redis-address-map">Address remap (optional)</label>
-              <textarea
-                id="datasource-redis-address-map"
-                autoComplete="off"
-                rows={2}
-                placeholder={"10.139.148.254:7000=127.0.0.1:7000"}
-                value={form.redisAddressMap}
-                disabled={submitting}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, redisAddressMap: event.target.value }))
-                }
-              />
-              <p className={styles.fieldHint}>
-                One "internal_host:port=local_host:port" pair per line — only needed when the
-                cluster is reached through a tunnel whose forwarded ports differ from what the
-                cluster itself advertises.
-              </p>
-            </div>
-          )}
+                  {isRedisForm && form.redisCluster && (
+                    <Field className="sm:col-span-2">
+                      <FieldLabel htmlFor="datasource-redis-address-map">Address remap (optional)</FieldLabel>
+                      <Textarea
+                        id="datasource-redis-address-map"
+                        className="font-mono"
+                        autoComplete="off"
+                        rows={2}
+                        placeholder={"10.139.148.254:7000=127.0.0.1:7000"}
+                        value={form.redisAddressMap}
+                        disabled={submitting}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, redisAddressMap: event.target.value }))
+                        }
+                      />
+                      <FieldDescription>
+                        One "internal_host:port=local_host:port" pair per line — only needed when the
+                        cluster is reached through a tunnel whose forwarded ports differ from what the
+                        cluster itself advertises.
+                      </FieldDescription>
+                    </Field>
+                  )}
 
-          {form.type === "redis" && (
-            <div className={`${styles.field} ${styles.wide}`}>
-              <label htmlFor="datasource-allowed-key-ids">Allowed IDs (optional)</label>
-              <textarea
-                id="datasource-allowed-key-ids"
-                autoComplete="off"
-                rows={3}
-                placeholder={"11111111-0000-4000-8000-000000000101"}
-                value={form.allowedKeyIds}
-                disabled={submitting}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, allowedKeyIds: event.target.value }))
-                }
-              />
-              <p className={styles.fieldHint}>
-                One id per line, substituted for every key pattern's own "*" — when set, only
-                these exact keys are ever scanned or read, and no broader scan of the pattern ever
-                runs. Leave blank to let each pattern's own glob match normally.
-              </p>
-            </div>
-          )}
+                  {isRedisForm && (
+                    <Field className="sm:col-span-2">
+                      <FieldLabel htmlFor="datasource-allowed-key-ids">Allowed IDs (optional)</FieldLabel>
+                      <Textarea
+                        id="datasource-allowed-key-ids"
+                        className="font-mono"
+                        autoComplete="off"
+                        rows={3}
+                        placeholder={"11111111-0000-4000-8000-000000000101"}
+                        value={form.allowedKeyIds}
+                        disabled={submitting}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, allowedKeyIds: event.target.value }))
+                        }
+                      />
+                      <FieldDescription>
+                        One id per line, substituted for every key pattern's own "*" — when set, only
+                        these exact keys are ever scanned or read, and no broader scan of the pattern
+                        ever runs. Leave blank to let each pattern's own glob match normally.
+                      </FieldDescription>
+                    </Field>
+                  )}
 
-          {form.type !== "redis" && (
-            form.isolationMode === "column" && (
-              <div className={styles.field}>
-                <label htmlFor="datasource-tenant-column">Tenant column</label>
-                <input
-                  id="datasource-tenant-column"
-                  type="text"
-                  autoComplete="off"
-                  value={form.tenantColumn}
-                  disabled={submitting}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, tenantColumn: event.target.value }))
-                  }
-                />
+                  {!isRedisForm && form.isolationMode === "column" && (
+                    <Field>
+                      <FieldLabel htmlFor="datasource-tenant-column">Tenant column</FieldLabel>
+                      <Input
+                        id="datasource-tenant-column"
+                        type="text"
+                        className="font-mono"
+                        autoComplete="off"
+                        value={form.tenantColumn}
+                        disabled={submitting}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, tenantColumn: event.target.value }))
+                        }
+                      />
+                    </Field>
+                  )}
+
+                  <Field orientation="horizontal" className="sm:col-span-2">
+                    <Checkbox
+                      id="datasource-sample-values"
+                      checked={form.sampleValuesEnabled}
+                      disabled={submitting}
+                      onCheckedChange={(checked) =>
+                        setForm((prev) => ({ ...prev, sampleValuesEnabled: checked === true }))
+                      }
+                    />
+                    <FieldLabel htmlFor="datasource-sample-values" className="font-normal">
+                      Allow sample values in prompts
+                    </FieldLabel>
+                  </Field>
+                </FieldGroup>
+
+                {submitError !== null && (
+                  <Alert variant="destructive">
+                    <CircleAlert aria-hidden="true" />
+                    <AlertDescription>{submitError}</AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+
+              <CardFooter className="flex-col items-stretch gap-3 border-t">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Test connection reads as the "check first" step on the
+                      leading edge, not competing with Connect's emphasis. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="mr-auto"
+                    disabled={submitting || testingConnection}
+                    onClick={handleTestConnection}
+                  >
+                    {testingConnection ? (
+                      <Loader2 className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <PlugZap aria-hidden="true" />
+                    )}
+                    {testingConnection ? "Testing…" : "Test connection"}
+                  </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting && <Loader2 className="animate-spin" aria-hidden="true" />}
+                    {submitting ? "Connecting…" : "Connect"}
+                  </Button>
+                  <Button type="button" variant="ghost" disabled={submitting} onClick={closeForm}>
+                    Cancel
+                  </Button>
+                </div>
+
+                {connectionTestResult !== null && (
+                  <Note tone={connectionTestResult.success ? "good" : "critical"}>
+                    {connectionTestResult.success ? "Connected." : connectionTestResult.reason}
+                  </Note>
+                )}
+                {connectionTestError !== null && <Note tone="critical">{connectionTestError}</Note>}
+              </CardFooter>
+            </form>
+          </Card>
+        )}
+
+        {datasources === null && loadError === null && (
+          <Card className="gap-3 py-4" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-4 px-4">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-5 w-16 rounded-full" />
+                <Skeleton className="ml-auto h-8 w-48" />
               </div>
-            )
-          )}
+            ))}
+          </Card>
+        )}
 
-          <div className={`${styles.field} ${styles.wide}`}>
-            <label className={styles.checkboxField} htmlFor="datasource-sample-values">
-              <input
-                id="datasource-sample-values"
-                type="checkbox"
-                checked={form.sampleValuesEnabled}
-                disabled={submitting}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, sampleValuesEnabled: event.target.checked }))
-                }
-              />
-              Allow sample values in prompts
-            </label>
-          </div>
+        {datasources !== null && databases.length === 0 && !formOpen && (
+          <EmptyState
+            icon={Database}
+            title="Connect a database"
+            body="Point the agent at a database and it can answer directly from your data — sales, items, discounts, taxes — with the query and its plan gate open for you to check in the inspector."
+            actionLabel="Connect a database"
+            onAction={openForm}
+          />
+        )}
 
-          {submitError !== null && (
-            <p role="alert" className={styles.formError}>
-              {submitError}
-            </p>
-          )}
-
-          <div className={styles.formActions}>
-            <button
-              type="button"
-              className={styles.testConnection}
-              disabled={submitting || testingConnection}
-              onClick={handleTestConnection}
-            >
-              {testingConnection ? "Testing…" : "Test connection"}
-            </button>
-            <button type="submit" className={styles.submit} disabled={submitting}>
-              {submitting ? "Connecting…" : "Connect"}
-            </button>
-            <button type="button" className={styles.cancel} disabled={submitting} onClick={closeForm}>
-              Cancel
-            </button>
-          </div>
-
-          {connectionTestResult !== null && (
-            <p
-              className={`${styles.formTestNote} ${connectionTestResult.success ? styles.good : styles.critical}`}
-            >
-              {connectionTestResult.success ? "Connected." : connectionTestResult.reason}
-            </p>
-          )}
-          {connectionTestError !== null && (
-            <p className={`${styles.formTestNote} ${styles.critical}`}>{connectionTestError}</p>
-          )}
-        </form>
-      )}
-
-      {datasources !== null && databases.length === 0 && !formOpen && (
-        <div className={styles.empty}>
-          <Database className={styles.emptyGlyph} size={22} aria-hidden="true" />
-          <h3 className={styles.emptyTitle}>Connect a database</h3>
-          <p className={styles.emptyBody}>
-            Point the agent at a database and it can answer directly from your data — sales, items,
-            discounts, taxes — with the query and its plan gate open for you to check in the
-            inspector.
-          </p>
-          <button type="button" className={styles.primaryAction} onClick={openForm}>
-            Connect a database
-          </button>
-        </div>
-      )}
-
-      {databases.length > 0 && (
-        <Sheet title="Connected databases" subLabel={`${databases.length} of ${databases.length}`}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Isolation</th>
-                <th>Status</th>
-                <th className={styles.num}>Tables</th>
-                <th className={styles.num}>Columns</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {databases.map((row) => {
-                const state = rowState(row.id);
-                const scanDisabled = state.scanning || row.status === "indexing";
-                const detail = tableDetail(row.id);
-                const pick = picker(row.id);
-                const overBounds =
-                  row.status === "error" && (row.last_scan_error ?? "").includes("scan limit");
-                return (
-                  <Fragment key={row.id}>
-                  <tr>
-                    <td>
-                      <span>{row.name}</span>
-                      {scansTables(row) && (
-                        <span className={styles.scopeNote}>
-                          {row.table_patterns === null
-                            ? "Scans every table"
-                            : `Scans ${row.table_patterns.length} chosen ${
-                                row.table_patterns.length === 1 ? "table" : "tables"
-                              }`}
-                        </span>
-                      )}
-                    </td>
-                    <td>{DATASOURCE_TYPE_LABEL[row.type]}</td>
-                    <td>{ISOLATION_LABEL[row.isolation_mode]}</td>
-                    <td>
-                      <span className={statusPillClass(row.status)}>{row.status}</span>
-                    </td>
-                    <td className={styles.num}>
-                      {row.total_tables}
-                      {row.total_tables > 0 && (
-                        <button
-                          type="button"
-                          className={styles.tablesLink}
-                          onClick={() => handleToggleTables(row.id)}
-                        >
-                          {detail.open ? "Hide" : "Tables"}
-                        </button>
-                      )}
-                    </td>
-                    <td className={styles.num}>{row.total_columns}</td>
-                    <td>
-                      <div className={styles.rowActions}>
-                        <button
-                          type="button"
-                          className={styles.actionBtn}
-                          disabled={state.testing}
-                          onClick={() => handleTest(row.id)}
-                        >
-                          {state.testing ? "Testing…" : "Test connection"}
-                        </button>
-                        <button
-                          type="button"
-                          className={styles.actionBtn}
-                          disabled={scanDisabled}
-                          onClick={() => handleScan(row.id)}
-                        >
-                          {state.scanning || row.status === "indexing" ? "Scanning…" : "Scan"}
-                        </button>
-                        {scansTables(row) && (
-                          <button
-                            type="button"
-                            className={styles.actionBtn}
-                            aria-expanded={pick.open}
-                            onClick={() => handleTogglePicker(row)}
-                          >
-                            {pick.open ? "Close tables" : "Choose tables"}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className={`${styles.actionBtn} ${styles.danger}`}
-                          disabled={state.removing}
-                          onClick={() => handleRemove(row.id)}
-                        >
-                          {state.removing ? "Removing…" : "Remove"}
-                        </button>
-                      </div>
-                      {state.testResult !== null && (
-                        <p
-                          className={`${styles.rowNote} ${state.testResult.success ? styles.good : styles.critical}`}
-                        >
-                          {state.testResult.success ? "Connected." : state.testResult.reason}
-                        </p>
-                      )}
-                      {state.testError !== null && (
-                        <p className={`${styles.rowNote} ${styles.critical}`}>{state.testError}</p>
-                      )}
-                      {state.scanError !== null && (
-                        <p className={`${styles.rowNote} ${styles.critical}`}>{state.scanError}</p>
-                      )}
-                      {state.scanError === null && row.status === "error" && row.last_scan_error !== null && (
-                        <p className={`${styles.rowNote} ${styles.critical}`}>
-                          Scan failed — {row.last_scan_error}
-                          {overBounds && !pick.open && (
-                            <>
-                              {" "}
-                              <button
-                                type="button"
-                                className={styles.tablesLink}
-                                onClick={() => handleTogglePicker(row)}
-                              >
-                                Choose which tables to scan
-                              </button>
-                            </>
-                          )}
-                        </p>
-                      )}
-                      {state.removeError !== null && (
-                        <p className={`${styles.rowNote} ${styles.critical}`}>
-                          Can't remove — {state.removeError}
-                        </p>
-                      )}
-                    </td>
-                  </tr>
-                  {detail.open && (
-                    <tr>
-                      <td colSpan={7} className={styles.tablesDetail}>
-                        {detail.loading && (
-                          <p className={styles.tablesDetailNote}>Loading tables…</p>
-                        )}
-                        {detail.error !== null && (
-                          <p className={`${styles.tablesDetailNote} ${styles.critical}`}>
-                            {detail.error}
-                          </p>
-                        )}
-                        {detail.tables !== null && !detail.loading && (
-                          detail.tables.length === 0 ? (
-                            <p className={styles.tablesDetailNote}>
-                              Not scanned yet — run Scan to see its tables.
-                            </p>
-                          ) : (
-                            <>
-                              <div className={styles.tablesSummaryRow}>
-                                <span className={styles.tablesSummary}>
-                                  {summarizeTables(detail.tables)}
-                                </span>
-                                <input
-                                  type="search"
-                                  className={styles.tablesSearch}
-                                  placeholder="Search tables and columns…"
-                                  value={detail.search}
-                                  onChange={(event) =>
-                                    patchTableDetail(row.id, { search: event.target.value })
-                                  }
-                                />
+        {databases.length > 0 && (
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="py-4">
+              <h3 data-slot="card-title" className="leading-none font-semibold">
+                Connected databases
+              </h3>
+              <CardDescription>
+                {databases.length} {databases.length === 1 ? "database" : "databases"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="border-t p-0">
+              <Table className="[&_tr>*:first-child]:pl-6 [&_tr>*:last-child]:pr-6">
+                <TableHeader className="bg-muted/40">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="text-muted-foreground">Name</TableHead>
+                    <TableHead className="text-muted-foreground">Type</TableHead>
+                    <TableHead className="text-muted-foreground">Isolation</TableHead>
+                    <TableHead className="text-muted-foreground">Status</TableHead>
+                    <TableHead className="text-right text-muted-foreground">Tables</TableHead>
+                    <TableHead className="text-right text-muted-foreground">Columns</TableHead>
+                    <TableHead className="text-muted-foreground">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {databases.map((row) => {
+                    const state = rowState(row.id);
+                    const scanning = state.scanning || row.status === "indexing";
+                    const detail = tableDetail(row.id);
+                    const pick = picker(row.id);
+                    const overBounds =
+                      row.status === "error" && (row.last_scan_error ?? "").includes("scan limit");
+                    return (
+                      <Fragment key={row.id}>
+                        <TableRow className="[&>td]:py-3 [&>td]:align-top">
+                          <TableCell className="min-w-32 whitespace-normal">
+                            <span className="font-medium">{row.name}</span>
+                            {scansTables(row) && (
+                              <span className="mt-0.5 block text-xs text-muted-foreground">
+                                {row.table_patterns === null
+                                  ? "Scans every table"
+                                  : `Scans ${row.table_patterns.length} chosen ${
+                                      row.table_patterns.length === 1 ? "table" : "tables"
+                                    }`}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {DATASOURCE_TYPE_LABEL[row.type]}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {ISOLATION_LABEL[row.isolation_mode]}
+                          </TableCell>
+                          <TableCell>
+                            {/* The raw status word, capitalised by CSS only —
+                                it is the server's own vocabulary. */}
+                            <span className="capitalize">
+                              <StatusPill tone={statusTone(row.status)} label={row.status} />
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              {row.total_tables > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  size="xs"
+                                  className="h-auto px-0"
+                                  aria-expanded={detail.open}
+                                  onClick={() => handleToggleTables(row.id)}
+                                >
+                                  {detail.open ? "Hide" : "Tables"}
+                                </Button>
+                              )}
+                              <span className="font-mono tabular-nums">{row.total_tables}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {row.total_columns}
+                          </TableCell>
+                          <TableCell className="min-w-72 whitespace-normal">
+                            {/* Two groups, so a narrow table wraps the row's
+                                actions between them rather than orphaning
+                                Remove on a line of its own. */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={state.testing}
+                                  onClick={() => handleTest(row.id)}
+                                >
+                                  {state.testing ? (
+                                    <Loader2 className="animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <PlugZap aria-hidden="true" />
+                                  )}
+                                  {state.testing ? "Testing…" : "Test connection"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={scanning}
+                                  onClick={() => handleScan(row.id)}
+                                >
+                                  <RefreshCw className={cn(scanning && "animate-spin")} aria-hidden="true" />
+                                  {scanning ? "Scanning…" : "Scan"}
+                                </Button>
                               </div>
-                              <div className={styles.tablesList}>
-                                {detail.tables
-                                  .filter((table) => matchesSearch(table, detail.search))
-                                  .map((table) => (
-                                    <div key={table.id} className={styles.tableCard}>
-                                      <div className={styles.tableCardHead}>
-                                        <span className={styles.tableCardName}>
-                                          {table.schema_name}.{table.table_name}
-                                        </span>
-                                        <span className={styles.tableKindTag}>
-                                          {TABLE_KIND_LABEL[table.table_kind]}
-                                        </span>
-                                      </div>
-                                      <ul className={styles.columnList}>
-                                        {table.columns.map((column) => (
-                                          <li key={column.name} className={styles.columnRow}>
-                                            <span className={styles.columnName}>{column.name}</span>
-                                            <span className={styles.columnType}>{column.data_type}</span>
-                                            {column.has_samples && (
-                                              <span className={styles.columnSamples}>
-                                                {column.samples !== null
-                                                  ? column.samples.map(String).join(", ")
-                                                  : "sampled"}
-                                              </span>
-                                            )}
-                                          </li>
-                                        ))}
-                                      </ul>
+                              <div className="flex items-center gap-1.5">
+                                {scansTables(row) && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={pick.open}
+                                    onClick={() => handleTogglePicker(row)}
+                                  >
+                                    <ListChecks aria-hidden="true" />
+                                    {pick.open ? "Close tables" : "Choose tables"}
+                                  </Button>
+                                )}
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      aria-label={state.removing ? "Removing…" : "Remove"}
+                                      disabled={state.removing}
+                                      onClick={() => handleRemove(row.id)}
+                                    >
+                                      {state.removing ? (
+                                        <Loader2 className="animate-spin" aria-hidden="true" />
+                                      ) : (
+                                        <Trash2 aria-hidden="true" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Remove</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                            <div className="mt-2 max-w-md space-y-1 empty:hidden">
+                              {state.testResult !== null && (
+                                <Note tone={state.testResult.success ? "good" : "critical"}>
+                                  {state.testResult.success ? "Connected." : state.testResult.reason}
+                                </Note>
+                              )}
+                              {state.testError !== null && <Note tone="critical">{state.testError}</Note>}
+                              {state.scanError !== null && <Note tone="critical">{state.scanError}</Note>}
+                              {state.scanError === null &&
+                                row.status === "error" &&
+                                row.last_scan_error !== null && (
+                                  <Note tone="critical">
+                                    Scan failed — {row.last_scan_error}
+                                    {overBounds && !pick.open && (
+                                      <>
+                                        {" "}
+                                        <Button
+                                          type="button"
+                                          variant="link"
+                                          className="h-auto p-0 align-baseline whitespace-normal text-destructive underline"
+                                          onClick={() => handleTogglePicker(row)}
+                                        >
+                                          Choose which tables to scan
+                                        </Button>
+                                      </>
+                                    )}
+                                  </Note>
+                                )}
+                              {state.removeError !== null && (
+                                <Note tone="critical">Can't remove — {state.removeError}</Note>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {detail.open && (
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableCell colSpan={7} className="p-4 whitespace-normal">
+                              {detail.loading && <PanelNote busy>Loading tables…</PanelNote>}
+                              {detail.error !== null && <PanelNote critical>{detail.error}</PanelNote>}
+                              {detail.tables !== null && !detail.loading && (
+                                detail.tables.length === 0 ? (
+                                  <PanelNote>Not scanned yet — run Scan to see its tables.</PanelNote>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <span className="font-mono text-xs text-muted-foreground">
+                                        {summarizeTables(detail.tables)}
+                                      </span>
+                                      <InputGroup className="w-full bg-background sm:w-64">
+                                        <InputGroupAddon>
+                                          <Search aria-hidden="true" />
+                                        </InputGroupAddon>
+                                        <InputGroupInput
+                                          type="search"
+                                          placeholder="Search tables and columns…"
+                                          aria-label="Search tables and columns"
+                                          value={detail.search}
+                                          onChange={(event) =>
+                                            patchTableDetail(row.id, { search: event.target.value })
+                                          }
+                                        />
+                                      </InputGroup>
                                     </div>
-                                  ))}
-                              </div>
-                            </>
-                          )
+                                    <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
+                                      {detail.tables
+                                        .filter((table) => matchesSearch(table, detail.search))
+                                        .map((table) => (
+                                          <div
+                                            key={table.id}
+                                            className="min-w-0 rounded-lg border bg-card p-3 shadow-xs"
+                                          >
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                              <span className="min-w-0 font-mono text-sm font-medium break-all">
+                                                {table.schema_name}.{table.table_name}
+                                              </span>
+                                              <Badge
+                                                variant="secondary"
+                                                className="font-mono text-[10px] tracking-wide uppercase"
+                                              >
+                                                {TABLE_KIND_LABEL[table.table_kind]}
+                                              </Badge>
+                                            </div>
+                                            <ul className="space-y-1">
+                                              {table.columns.map((column) => (
+                                                <li
+                                                  key={column.name}
+                                                  className="flex min-w-0 items-baseline gap-2 text-sm"
+                                                >
+                                                  <span className="shrink-0">{column.name}</span>
+                                                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                                                    {column.data_type}
+                                                  </span>
+                                                  {column.has_samples && (
+                                                    <span className="min-w-0 truncate text-xs text-muted-foreground">
+                                                      {column.samples !== null
+                                                        ? column.samples.map(String).join(", ")
+                                                        : "sampled"}
+                                                    </span>
+                                                  )}
+                                                </li>
+                                              ))}
+                                            </ul>
+                                          </div>
+                                        ))}
+                                    </div>
+                                  </div>
+                                )
+                              )}
+                            </TableCell>
+                          </TableRow>
                         )}
-                      </td>
-                    </tr>
-                  )}
-                  {pick.open && (
-                    <tr>
-                      <td colSpan={7} className={styles.tablesDetail}>
-                        <TablePicker
-                          row={row}
-                          pick={pick}
-                          onSearch={(search) => patchPicker(row.id, { search })}
-                          onTick={(tables, ticked) => setTicked(row.id, tables, ticked)}
-                          onSave={(patterns) => handleSaveTables(row.id, patterns)}
-                        />
-                      </td>
-                    </tr>
-                  )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </Sheet>
-      )}
-    </div>
+                        {pick.open && (
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableCell colSpan={7} className="p-4 whitespace-normal">
+                              <TablePicker
+                                row={row}
+                                pick={pick}
+                                onSearch={(search) => patchPicker(row.id, { search })}
+                                onTick={(tables, ticked) => setTicked(row.id, tables, ticked)}
+                                onSave={(patterns) => handleSaveTables(row.id, patterns)}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </TooltipProvider>
   );
 }
 
@@ -1134,10 +1290,10 @@ interface TablePickerProps {
  */
 function TablePicker({ row, pick, onSearch, onTick, onSave }: TablePickerProps) {
   if (pick.loading) {
-    return <p className={styles.tablesDetailNote}>Reading tables from the database…</p>;
+    return <PanelNote busy>Reading tables from the database…</PanelNote>;
   }
   if (pick.error !== null) {
-    return <p className={`${styles.tablesDetailNote} ${styles.critical}`}>{pick.error}</p>;
+    return <PanelNote critical>{pick.error}</PanelNote>;
   }
   const catalog = pick.catalog;
   if (catalog === null) return null;
@@ -1152,73 +1308,83 @@ function TablePicker({ row, pick, onSearch, onTick, onSave }: TablePickerProps) 
   const globs = (row.table_patterns ?? []).filter(isGlob);
 
   return (
-    <div className={styles.picker}>
-      <div className={styles.tablesSummaryRow}>
-        <span className={`${styles.pickerMeter} ${over ? styles.critical : ""}`} role="status">
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span
+          className={cn(
+            "font-mono text-sm tabular-nums",
+            over ? "font-medium text-destructive" : "text-muted-foreground",
+          )}
+          role="status"
+        >
           {ticked.length} of {catalog.max_tables} tables · {tickedColumns} of{" "}
           {catalog.max_columns} columns
           {over ? " — over the scan limit" : ""}
         </span>
-        <input
-          type="search"
-          className={styles.tablesSearch}
-          placeholder={`Filter ${catalog.tables.length} tables…`}
-          aria-label="Filter tables"
-          value={pick.search}
-          onChange={(event) => onSearch(event.target.value)}
-        />
+        <InputGroup className="w-full bg-background sm:w-64">
+          <InputGroupAddon>
+            <Search aria-hidden="true" />
+          </InputGroupAddon>
+          <InputGroupInput
+            type="search"
+            placeholder={`Filter ${catalog.tables.length} tables…`}
+            aria-label="Filter tables"
+            value={pick.search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+        </InputGroup>
       </div>
-      <p className={styles.tablesDetailNote}>
+      <p className="max-w-3xl text-sm text-muted-foreground">
         Tick the tables agents should be able to query. A scan reads their structure and sample
         values, so leave out tables holding credentials or personal data.
         {globs.length > 0 && ` Saving replaces the patterns ${globs.join(", ")} with the tables ticked.`}
       </p>
-      <div className={styles.pickerTools}>
-        <button type="button" className={styles.tablesLink} onClick={() => onTick(shown.map((t) => t.table), true)}>
+      <div className="flex flex-wrap gap-1">
+        <Button type="button" variant="ghost" size="xs" onClick={() => onTick(shown.map((t) => t.table), true)}>
           Tick {needle === "" ? "all" : "shown"}
-        </button>
-        <button type="button" className={styles.tablesLink} onClick={() => onTick(shown.map((t) => t.table), false)}>
+        </Button>
+        <Button type="button" variant="ghost" size="xs" onClick={() => onTick(shown.map((t) => t.table), false)}>
           Untick {needle === "" ? "all" : "shown"}
-        </button>
+        </Button>
       </div>
-      <div className={styles.pickerList}>
+      <div className="grid max-h-90 grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 overflow-y-auto rounded-lg border bg-card p-2">
         {shown.map((t) => (
-          <label key={t.table} className={styles.pickerItem}>
-            <input
-              type="checkbox"
+          <label
+            key={t.table}
+            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+          >
+            <Checkbox
               checked={pick.selected.has(t.table)}
-              onChange={(event) => onTick([t.table], event.target.checked)}
+              onCheckedChange={(checked) => onTick([t.table], checked === true)}
             />
-            <span className={styles.pickerName}>{t.table}</span>
-            <span className={styles.pickerCols}>{t.columns}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-sm">{t.table}</span>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">{t.columns}</span>
           </label>
         ))}
       </div>
-      <div className={styles.rowActions}>
-        <button
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
           type="button"
-          className={styles.actionBtn}
+          size="sm"
           disabled={pick.saving || ticked.length === 0 || over}
           onClick={() => onSave(ticked.map((t) => t.table))}
         >
+          {pick.saving && <Loader2 className="animate-spin" aria-hidden="true" />}
           {pick.saving ? "Saving…" : `Save ${ticked.length} ${ticked.length === 1 ? "table" : "tables"}`}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={styles.actionBtn}
+          variant="outline"
+          size="sm"
           disabled={pick.saving || !allFit || row.table_patterns === null}
           title={allFit ? undefined : "The whole database is over the scan limit"}
           onClick={() => onSave(null)}
         >
           Scan every table
-        </button>
+        </Button>
       </div>
-      {pick.saveError !== null && (
-        <p className={`${styles.rowNote} ${styles.critical}`}>{pick.saveError}</p>
-      )}
-      {pick.saved && (
-        <p className={`${styles.rowNote} ${styles.good}`}>Saved. Run Scan to index these tables.</p>
-      )}
+      {pick.saveError !== null && <Note tone="critical">{pick.saveError}</Note>}
+      {pick.saved && <Note tone="good">Saved. Run Scan to index these tables.</Note>}
     </div>
   );
 }
