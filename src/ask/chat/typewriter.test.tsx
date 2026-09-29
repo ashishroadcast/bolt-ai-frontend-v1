@@ -188,4 +188,54 @@ describe("useTypewriter", () => {
     const other = renderHook(() => useTypewriter(unread, SHORT, true));
     expect(other.result.current).toBe(0);
   });
+
+  describe("while the page is out of sight", () => {
+    function setVisibility(state: "visible" | "hidden") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+    }
+
+    afterEach(() => {
+      setVisibility("visible");
+    });
+
+    // A background tab never runs animation frames, so a reveal started
+    // there left the answer blank until the reader came back.
+    it("shows the whole answer at once when it arrives in a hidden tab", () => {
+      const clock = fakeClock();
+      setVisibility("hidden");
+      const id = nextId();
+      const { result } = renderHook(() => useTypewriter(id, SHORT, true));
+
+      expect(result.current).toBe(SHORT.length);
+      expect(clock.scheduled).toBe(0);
+    });
+
+    it("stays whole when the reader comes back, rather than typing it then", () => {
+      fakeClock();
+      setVisibility("hidden");
+      const id = nextId();
+      const first = renderHook(() => useTypewriter(id, SHORT, true));
+      expect(first.result.current).toBe(SHORT.length);
+      first.unmount();
+
+      setVisibility("visible");
+      const again = renderHook(() => useTypewriter(id, SHORT, true));
+      expect(again.result.current).toBe(SHORT.length);
+    });
+
+    it("finishes a reveal that was part-way through when the tab is hidden", () => {
+      const clock = fakeClock();
+      const id = nextId();
+      const { result } = renderHook(() => useTypewriter(id, SHORT, true));
+      clock.advance(50);
+      expect(result.current).toBeLessThan(SHORT.length);
+
+      setVisibility("hidden");
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+
+      expect(result.current).toBe(SHORT.length);
+    });
+  });
 });

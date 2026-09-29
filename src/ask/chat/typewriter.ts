@@ -62,12 +62,24 @@ export function motionIsWelcome(): boolean {
 }
 
 /**
+ * Whether the page is out of sight — a background tab, a minimised window,
+ * a hidden panel. Browsers stop `requestAnimationFrame` there, so a reveal
+ * started while hidden never advances: the answer had arrived, and was
+ * saved, but read as blank until the reader came back and then made them
+ * watch it type. A run takes the better part of a minute, and switching tab
+ * while it thinks is the normal thing to do.
+ */
+function pageIsHidden(): boolean {
+  return typeof document !== "undefined" && document.visibilityState === "hidden";
+}
+
+/**
  * How many characters of `text` may be shown right now.
  *
  * Returns `text.length` immediately — no animation frame, no flash of
- * empty answer — whenever `animate` is false or this answer has already
- * been revealed once. A conversation reopened from history takes that
- * path for every message in it.
+ * empty answer — whenever `animate` is false, the page is hidden, or this
+ * answer has already been revealed once. A conversation reopened from
+ * history takes that path for every message in it.
  */
 export function useTypewriter(messageId: string, text: string, animate: boolean): number {
   const [shown, setShown] = useState(() => revealedChars.get(messageId) ?? 0);
@@ -75,9 +87,17 @@ export function useTypewriter(messageId: string, text: string, animate: boolean)
   // answer that has nothing left to reveal must be complete on its very
   // first paint, and a state update to say so would show an empty answer
   // for one frame first.
-  const isComplete = !animate || (revealedChars.get(messageId) ?? 0) >= text.length;
+  const hidden = animate && pageIsHidden();
+  const isComplete = !animate || hidden || (revealedChars.get(messageId) ?? 0) >= text.length;
 
   useEffect(() => {
+    if (hidden) {
+      // Nobody saw it arrive, so there is nothing to reveal: recorded as
+      // read, the answer is whole when the reader comes back rather than
+      // starting to type then.
+      revealedChars.set(messageId, text.length);
+      return;
+    }
     if (isComplete) return;
 
     let frame = 0;
@@ -92,9 +112,22 @@ export function useTypewriter(messageId: string, text: string, animate: boolean)
       if (next < text.length) frame = requestAnimationFrame(step);
     }
 
+    // Hidden part-way through: the paused frames would leave the rest
+    // unrevealed until the reader returns, so it is shown whole now.
+    function onVisibilityChange() {
+      if (!pageIsHidden()) return;
+      cancelAnimationFrame(frame);
+      revealedChars.set(messageId, text.length);
+      setShown(text.length);
+    }
+
     frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [messageId, text, isComplete]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [messageId, text, isComplete, hidden]);
 
   return isComplete ? text.length : Math.min(shown, text.length);
 }
