@@ -1,6 +1,20 @@
-import { Terminal } from "lucide-react";
-import { Fragment, useEffect, useState } from "react";
+import { AlertCircle, ChevronDown, Terminal } from "lucide-react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
 import { useAgents } from "../agents/useAgents.ts";
@@ -13,7 +27,6 @@ import {
   type CodeExecutionOutcome,
   type CodeExecutionSummary,
 } from "./codeExecutionsApi.ts";
-import styles from "./CodeExecutionsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -92,6 +105,22 @@ const UNKNOWN_OUTCOME = {
 function describe(outcome: CodeExecutionOutcome) {
   return OUTCOMES[outcome] ?? UNKNOWN_OUTCOME;
 }
+
+/** One labelled box in an expanded row — the program, its two streams, and
+ * what it wrote. */
+function Pane({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <h4 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</h4>
+      {children}
+    </div>
+  );
+}
+
+/* Model-written code is unbounded and its lines are long. It scrolls inside
+   its own box — both axes — rather than widening the table or the page. */
+const PRE_CLASS =
+  "m-0 max-h-80 overflow-auto rounded-md border bg-card px-3 py-2 font-mono text-xs leading-relaxed text-foreground [tab-size:4]";
 
 interface RowState {
   loading: boolean;
@@ -187,8 +216,23 @@ export function CodeExecutionsRoute() {
         title="Code executions"
         description="Every program an agent ran in the sandbox to compute or reshape an answer — what it ran, what came back, and how long it took."
       />
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden="true" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
+
+        {loading && loadError === null && rows.length === 0 && (
+          <Card aria-busy="true">
+            <CardContent className="flex flex-col gap-3">
+              {[0, 1, 2].map((key) => (
+                <Skeleton key={key} aria-hidden="true" className="h-10 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {!loading && loadError === null && rows.length === 0 && (
           <EmptyState
@@ -201,28 +245,32 @@ export function CodeExecutionsRoute() {
         )}
 
         {rows.length > 0 && (
-          <section className={styles.sheet}>
-            <header className={styles.sheetHead}>
-              <h3>Code executions</h3>
-              <span className={styles.sub}>
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <CardTitle>
+                <h3>Code executions</h3>
+              </CardTitle>
+              <CardDescription className="tabular-nums">
                 {rows.length} {rows.length === 1 ? "run" : "runs"}
-              </span>
-            </header>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Outcome</th>
-                    <th>Agent</th>
-                    <th>Conversation</th>
-                    <th>Mode</th>
-                    <th className={styles.num}>Took</th>
-                    <th className={styles.num}>Files</th>
-                    <th>When</th>
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6">Outcome</TableHead>
+                    <TableHead>Agent</TableHead>
+                    <TableHead>Conversation</TableHead>
+                    <TableHead>Mode</TableHead>
+                    <TableHead className="text-right">Took</TableHead>
+                    <TableHead className="text-right">Files</TableHead>
+                    <TableHead>When</TableHead>
+                    <TableHead className="pr-6">
+                      <span className="sr-only">Details</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((execution) => {
                     const state = rowState(execution.id);
                     const isOpen = expanded === execution.id;
@@ -231,96 +279,138 @@ export function CodeExecutionsRoute() {
                       agentNameById.get(execution.agent_id) ?? `Agent #${execution.agent_id}`;
                     return (
                       <Fragment key={execution.id}>
-                        <tr>
-                          <td>
+                        <TableRow className={cn(isOpen && "border-b-0 bg-muted/50")}>
+                          <TableCell className="py-3 pl-6 align-top">
                             <StatusPill tone={outcome.tone} label={outcome.label} />
-                            <div className={styles.exitCode}>exit {execution.exit_status}</div>
-                          </td>
-                          <td>
-                            <Link to={`/agents/${execution.agent_id}`} className={styles.agentLink}>
+                            {/* The raw exit code under the pill: the label is what an
+                                operator reads, the number is what they quote in a bug
+                                report. Both, never one. */}
+                            <div className="mt-1 font-mono text-xs text-muted-foreground tabular-nums">
+                              exit {execution.exit_status}
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-3 align-top">
+                            <Link
+                              to={`/agents/${execution.agent_id}`}
+                              className="font-medium text-primary underline-offset-4 hover:underline"
+                            >
                               {agentName}
                             </Link>
-                          </td>
-                          <td className={styles.mono}>#{execution.conversation_id}</td>
-                          <td className={styles.mono}>{execution.mode}</td>
-                          <td className={styles.num}>{formatDuration(execution.duration_ms)}</td>
-                          <td className={styles.num}>{execution.artifact_count}</td>
-                          <td className={styles.when}>{formatWhen(execution.created_at)}</td>
-                          <td>
-                            <button
+                          </TableCell>
+                          <TableCell className="py-3 align-top font-mono text-muted-foreground tabular-nums">
+                            #{execution.conversation_id}
+                          </TableCell>
+                          <TableCell className="py-3 align-top font-mono text-muted-foreground">
+                            {execution.mode}
+                          </TableCell>
+                          <TableCell className="py-3 text-right align-top font-mono tabular-nums">
+                            {formatDuration(execution.duration_ms)}
+                          </TableCell>
+                          <TableCell className="py-3 text-right align-top font-mono tabular-nums">
+                            {execution.artifact_count}
+                          </TableCell>
+                          <TableCell className="py-3 align-top text-muted-foreground">
+                            {formatWhen(execution.created_at)}
+                          </TableCell>
+                          <TableCell className="py-2 pr-6 text-right align-top">
+                            <Button
                               type="button"
-                              className={styles.actionBtn}
+                              variant="ghost"
+                              size="sm"
                               aria-expanded={isOpen}
                               onClick={() => void handleToggle(execution.id)}
                             >
                               {isOpen ? "Hide code" : "Show code"}
-                            </button>
-                          </td>
-                        </tr>
+                              <ChevronDown
+                                aria-hidden="true"
+                                className={cn("transition-transform", isOpen && "rotate-180")}
+                              />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
                         {isOpen && (
-                          <tr className={styles.detailRow}>
-                            <td colSpan={8}>
-                              <p className={styles.outcomeNote}>{outcome.note}</p>
-                              {state.loading && <p className={styles.rowNote}>Loading…</p>}
-                              {state.error !== null && (
-                                <p className={`${styles.rowNote} ${styles.critical}`}>
-                                  {state.error}
-                                </p>
-                              )}
-                              {state.detail !== null && (
-                                <div className={styles.detail}>
-                                  <div className={styles.pane}>
-                                    <h4>Code</h4>
-                                    <pre className={styles.code} data-testid="execution-code">
-                                      {state.detail.code}
-                                    </pre>
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            <TableCell colSpan={8} className="px-6 pt-1 pb-5 whitespace-normal">
+                              {/* width 0 / min-width 100%: the panes fill the row but
+                                  add nothing to the table's own width, so a long line
+                                  of code scrolls inside its box instead of stretching
+                                  every column above it. */}
+                              <div className="flex w-0 min-w-full flex-col gap-3">
+                                <p className="text-sm text-muted-foreground">{outcome.note}</p>
+                                {state.loading && (
+                                  <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Spinner aria-hidden="true" />
+                                    Loading…
+                                  </p>
+                                )}
+                                {state.error !== null && (
+                                  <p className="text-sm text-destructive">{state.error}</p>
+                                )}
+                                {state.detail !== null && (
+                                  // Two columns on a wide screen, one on a narrow one: code
+                                  // and its output are read together, and stacking them on
+                                  // a laptop would put the answer a scroll away from the
+                                  // program that produced it.
+                                  <div className="grid gap-4 lg:grid-cols-2">
+                                    <Pane title="Code">
+                                      <pre className={cn(PRE_CLASS, "whitespace-pre")} data-testid="execution-code">
+                                        {state.detail.code}
+                                      </pre>
+                                    </Pane>
+                                    <Pane title="stdout">
+                                      <pre className={cn(PRE_CLASS, "break-words whitespace-pre-wrap")}>
+                                        {state.detail.stdout ?? "(nothing written)"}
+                                      </pre>
+                                    </Pane>
+                                    <Pane title="stderr">
+                                      <pre
+                                        className={cn(
+                                          PRE_CLASS,
+                                          "break-words whitespace-pre-wrap",
+                                          state.detail.stderr !== null &&
+                                            "border-destructive/30 bg-destructive/5 text-destructive",
+                                        )}
+                                      >
+                                        {state.detail.stderr ?? "(nothing written)"}
+                                      </pre>
+                                    </Pane>
+                                    <Pane title="Files produced">
+                                      {state.detail.artifacts.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground">
+                                          None — this run printed its answer rather than writing a
+                                          file.
+                                        </p>
+                                      ) : (
+                                        <ul className="flex flex-col gap-1.5 text-sm">
+                                          {state.detail.artifacts.map((artifact) => (
+                                            <li key={artifact.id} className="flex flex-wrap items-baseline gap-x-2">
+                                              <Link
+                                                to="/artifacts"
+                                                className="font-medium text-primary underline-offset-4 hover:underline"
+                                              >
+                                                {artifact.filename}
+                                              </Link>
+                                              <span className="font-mono text-xs text-muted-foreground">
+                                                {artifact.content_type}
+                                              </span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </Pane>
                                   </div>
-                                  <div className={styles.pane}>
-                                    <h4>stdout</h4>
-                                    <pre className={styles.output}>
-                                      {state.detail.stdout ?? "(nothing written)"}
-                                    </pre>
-                                  </div>
-                                  <div className={styles.pane}>
-                                    <h4>stderr</h4>
-                                    <pre className={`${styles.output} ${styles.errOutput}`}>
-                                      {state.detail.stderr ?? "(nothing written)"}
-                                    </pre>
-                                  </div>
-                                  <div className={styles.pane}>
-                                    <h4>Files produced</h4>
-                                    {state.detail.artifacts.length === 0 ? (
-                                      <p className={styles.rowNote}>
-                                        None — this run printed its answer rather than writing a
-                                        file.
-                                      </p>
-                                    ) : (
-                                      <ul className={styles.artifacts}>
-                                        {state.detail.artifacts.map((artifact) => (
-                                          <li key={artifact.id}>
-                                            <Link to="/artifacts" className={styles.agentLink}>
-                                              {artifact.filename}
-                                            </Link>
-                                            <span className={styles.contentType}>
-                                              {artifact.content_type}
-                                            </span>
-                                          </li>
-                                        ))}
-                                      </ul>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                          </tr>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
                         )}
                       </Fragment>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
     </>
