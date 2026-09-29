@@ -1,8 +1,13 @@
 import { useState, type FormEvent } from "react";
-import { Lock, Unlock, X } from "lucide-react";
+import { CircleAlert, Lock, Unlock, X } from "lucide-react";
 import { GatewayError } from "../ask/http/errors.ts";
 import { setDocumentClassification, type DocumentRecord, type TagNode } from "./documentsApi.ts";
-import styles from "./ClassifyDialog.module.css";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Field, FieldContent, FieldLabel, FieldTitle } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 /*
  * Editing one document's filing and its access, in one place, because
@@ -22,6 +27,11 @@ import styles from "./ClassifyDialog.module.css";
  * Access is a two-state radio plus a code, not a free text field that
  * happens to accept the empty string: "Everyone" has to be a thing you
  * choose, visibly, rather than the result of clearing a box.
+ *
+ * The parent mounts this only while it is open, so the dialog is always
+ * `open` and closing it (Cancel, the close button, Escape) is `onClose`.
+ * A click outside does NOT close it: this is a form, and a stray click on
+ * the scrim must not throw away a half-filed document.
  */
 
 interface ClassifyDialogProps {
@@ -42,6 +52,8 @@ function errorMessage(err: unknown): string {
     ? err.message
     : "Couldn't reach the gateway. Check your connection and try again.";
 }
+
+const hintCode = "rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground";
 
 export function ClassifyDialog({
   document: row,
@@ -92,142 +104,176 @@ export function ClassifyDialog({
   const blankRestriction = restricted && permission.trim() === "";
 
   return (
-    <div className={styles.scrim} role="dialog" aria-modal="true" aria-label={`Classify ${row.filename}`}>
-      <form className={styles.panel} onSubmit={(event) => void handleSubmit(event)}>
-        <header className={styles.head}>
-          <div>
-            <p className={styles.kicker}>Classification</p>
-            <h2 className={styles.title}>{row.filename}</h2>
-          </div>
-          <button type="button" className={styles.close} onClick={onClose} aria-label="Close">
-            <X size={16} strokeWidth={2} />
-          </button>
-        </header>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      {/* Named "Classify <file>" rather than by the visible title alone
+          (the bare filename): `aria-labelledby` is dropped so the
+          explicit label is the dialog's name, as it always was. */}
+      <DialogContent
+        aria-label={`Classify ${row.filename}`}
+        aria-labelledby={undefined}
+        onInteractOutside={(event) => event.preventDefault()}
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
+      >
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void handleSubmit(event)}>
+          <DialogHeader className="shrink-0 gap-1 border-b px-6 pt-5 pb-4 pr-12 text-left">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Classification</p>
+            <DialogTitle className="text-base wrap-anywhere">{row.filename}</DialogTitle>
+          </DialogHeader>
 
-        <section className={styles.section}>
-          <h3 className={styles.sectionTitle}>Filed under</h3>
-          <p className={styles.hint}>
-            One path per entry, deepest level last — <code>ops/closing/cash-handling</code>. A document can sit in
-            more than one place. Filtering by <code>ops</code> finds everything below it.
-          </p>
+          {/* The body scrolls; the header and the Save/Cancel footer stay
+              pinned, so the decision is always one click away. */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <section className="space-y-3 border-b px-6 py-5">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">Filed under</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  One path per entry, deepest level last — <code className={hintCode}>ops/closing/cash-handling</code>.
+                  A document can sit in more than one place. Filtering by <code className={hintCode}>ops</code> finds
+                  everything below it.
+                </p>
+              </div>
 
-          {tags.length > 0 && (
-            <ul className={styles.chips}>
-              {tags.map((tag) => (
-                <li key={tag} className={styles.chip}>
-                  <span className={styles.chipPath}>{tag}</span>
-                  <button
-                    type="button"
-                    className={styles.chipRemove}
-                    onClick={() => setTags(tags.filter((each) => each !== tag))}
-                    aria-label={`Remove ${tag}`}
-                  >
-                    <X size={11} strokeWidth={2.5} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+              {tags.length > 0 && (
+                <ul className="flex flex-wrap gap-1.5">
+                  {tags.map((tag) => (
+                    <li
+                      key={tag}
+                      className="inline-flex items-center gap-0.5 rounded-md border border-primary/20 bg-primary/10 py-0.5 pr-0.5 pl-2 text-primary"
+                    >
+                      <span className="font-mono text-xs">{tag}</span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="size-5 text-primary hover:bg-primary/15 hover:text-primary"
+                        onClick={() => setTags(tags.filter((each) => each !== tag))}
+                        aria-label={`Remove ${tag}`}
+                      >
+                        <X aria-hidden="true" />
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
 
-          <div className={styles.addRow}>
-            <label className={styles.visuallyHidden} htmlFor="classify-tag">
-              Add a classification
-            </label>
-            <input
-              id="classify-tag"
-              className={styles.input}
-              list="classify-tag-suggestions"
-              placeholder="ops/closing/cash-handling"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") return;
-                // Enter adds a tag; it must not submit the form, or the
-                // half-typed path would be saved as nothing.
-                event.preventDefault();
-                addDraftTag();
-              }}
-            />
-            <datalist id="classify-tag-suggestions">
-              {knownTags.map((node) => (
-                <option key={node.path} value={node.path} />
-              ))}
-            </datalist>
-            <button type="button" className={styles.secondary} onClick={addDraftTag} disabled={draft.trim() === ""}>
-              Add
-            </button>
-          </div>
-        </section>
+              <div className="flex gap-2">
+                <label className="sr-only" htmlFor="classify-tag">
+                  Add a classification
+                </label>
+                <Input
+                  id="classify-tag"
+                  className="font-mono"
+                  list="classify-tag-suggestions"
+                  placeholder="ops/closing/cash-handling"
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    // Enter adds a tag; it must not submit the form, or the
+                    // half-typed path would be saved as nothing.
+                    event.preventDefault();
+                    addDraftTag();
+                  }}
+                />
+                <datalist id="classify-tag-suggestions">
+                  {knownTags.map((node) => (
+                    <option key={node.path} value={node.path} />
+                  ))}
+                </datalist>
+                <Button type="button" variant="outline" onClick={addDraftTag} disabled={draft.trim() === ""}>
+                  Add
+                </Button>
+              </div>
+            </section>
 
-        <section className={styles.section}>
-          <h3 className={styles.sectionTitle}>Who can see it</h3>
-          <p className={styles.hint}>
-            This decides what the agent may quote too, not just who sees the file listed here.
-          </p>
+            <section className="space-y-3 px-6 py-5">
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold">Who can see it</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  This decides what the agent may quote too, not just who sees the file listed here.
+                </p>
+              </div>
 
-          <div className={styles.choices}>
-            <label className={styles.choice}>
-              <input
-                type="radio"
+              <RadioGroup
                 name="access"
-                checked={!restricted}
-                onChange={() => setRestricted(false)}
-              />
-              <Unlock size={13} strokeWidth={2} aria-hidden="true" />
-              <span>Everyone who can read documents</span>
-            </label>
-            <label className={styles.choice}>
-              <input
-                type="radio"
-                name="access"
-                checked={restricted}
-                onChange={() => setRestricted(true)}
-              />
-              <Lock size={13} strokeWidth={2} aria-hidden="true" />
-              <span>Only people holding a permission</span>
-            </label>
+                className="gap-2"
+                value={restricted ? "restricted" : "everyone"}
+                onValueChange={(value) => setRestricted(value === "restricted")}
+              >
+                <FieldLabel htmlFor="classify-access-everyone">
+                  <Field orientation="horizontal">
+                    <RadioGroupItem value="everyone" id="classify-access-everyone" />
+                    <FieldContent>
+                      <FieldTitle>
+                        <Unlock className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        Everyone who can read documents
+                      </FieldTitle>
+                    </FieldContent>
+                  </Field>
+                </FieldLabel>
+                <FieldLabel htmlFor="classify-access-restricted">
+                  <Field orientation="horizontal">
+                    <RadioGroupItem value="restricted" id="classify-access-restricted" />
+                    <FieldContent>
+                      <FieldTitle>
+                        <Lock className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        Only people holding a permission
+                      </FieldTitle>
+                    </FieldContent>
+                  </Field>
+                </FieldLabel>
+              </RadioGroup>
+
+              {restricted && (
+                <div>
+                  <label className="sr-only" htmlFor="classify-permission">
+                    Permission code
+                  </label>
+                  <Input
+                    id="classify-permission"
+                    className="font-mono"
+                    list="classify-permission-suggestions"
+                    placeholder="finance.reports"
+                    value={permission}
+                    onChange={(event) => setPermission(event.target.value)}
+                  />
+                  <datalist id="classify-permission-suggestions">
+                    {knownPermissions.map((code) => (
+                      <option key={code} value={code} />
+                    ))}
+                  </datalist>
+                </div>
+              )}
+              {blankRestriction && (
+                <p className="text-sm text-warning">Name the permission code, or choose “Everyone” instead.</p>
+              )}
+            </section>
+
+            {error !== null && (
+              <div className="px-6 pb-5">
+                <Alert variant="destructive">
+                  <CircleAlert aria-hidden="true" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              </div>
+            )}
           </div>
 
-          {restricted && (
-            <div className={styles.addRow}>
-              <label className={styles.visuallyHidden} htmlFor="classify-permission">
-                Permission code
-              </label>
-              <input
-                id="classify-permission"
-                className={styles.input}
-                list="classify-permission-suggestions"
-                placeholder="finance.reports"
-                value={permission}
-                onChange={(event) => setPermission(event.target.value)}
-              />
-              <datalist id="classify-permission-suggestions">
-                {knownPermissions.map((code) => (
-                  <option key={code} value={code} />
-                ))}
-              </datalist>
-            </div>
-          )}
-          {blankRestriction && (
-            <p className={styles.warn}>Name the permission code, or choose “Everyone” instead.</p>
-          )}
-        </section>
-
-        {error !== null && (
-          <p role="alert" className={styles.error}>
-            {error}
-          </p>
-        )}
-
-        <footer className={styles.foot}>
-          <button type="button" className={styles.secondary} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className={styles.primary} disabled={saving || blankRestriction}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </footer>
-      </form>
-    </div>
+          <DialogFooter className="shrink-0 border-t px-6 py-4">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving || blankRestriction}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

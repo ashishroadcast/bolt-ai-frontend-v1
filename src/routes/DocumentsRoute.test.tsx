@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
+import { installRadixPolyfills } from "../test/radix.ts";
 import { DocumentsRoute } from "./DocumentsRoute.tsx";
 import type { DataSource } from "./datasourcesApi.ts";
 import type { DocumentRecord, TagTree } from "./documentsApi.ts";
@@ -133,6 +134,10 @@ function renderDocumentsRoute() {
 
 describe("DocumentsRoute", () => {
   beforeEach(() => {
+    // The Chunks and Classify views are Radix Dialogs, and Classify's
+    // access choice a Radix RadioGroup, which measures itself with
+    // ResizeObserver.
+    installRadixPolyfills();
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 

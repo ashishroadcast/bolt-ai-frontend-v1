@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GatewayError } from "../ask/http/errors.ts";
+import { installRadixPolyfills } from "../test/radix.ts";
 import { ChunksPanel } from "./ChunksPanel.tsx";
 import * as documentsApi from "./documentsApi.ts";
 import type { DocumentChunk, DocumentChunkPage, DocumentRecord } from "./documentsApi.ts";
@@ -49,6 +48,8 @@ describe("ChunksPanel", () => {
   let listSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    // The panel is a Radix Dialog.
+    installRadixPolyfills();
     listSpy = vi.spyOn(documentsApi, "listDocumentChunks");
   });
 
@@ -177,20 +178,23 @@ describe("ChunksPanel", () => {
     await screen.findByText("recovered chunk");
   });
 
-  it("contains long or wide chunk content inside its own scroll region, never the page body", () => {
-    // A class assertion alone can't prove the rule still exists — read the
-    // actual stylesheet so this fails if the scroll containment is ever
-    // dropped from `.text` (one chunk's own body, which can be far wider
-    // than the panel when it's a transcribed markdown table) or from
-    // `.body` (the panel's own scroll region for a long chunk list).
-    const css = readFileSync(join(import.meta.dirname, "ChunksPanel.module.css"), "utf8");
+  it("contains long or wide chunk content inside its own scroll region, never the page body", async () => {
+    listSpy.mockResolvedValue(page({ items: [chunk({ text: "| Item | Price |\n| Dosa | 80 |", kind: "table" })] }));
 
-    const textRule = css.slice(css.indexOf(".text {"), css.indexOf(".text {") + 400);
-    expect(textRule).toContain("overflow: auto");
-    expect(textRule).toContain("max-height");
+    render(<ChunksPanel document={doc()} onClose={() => {}} />);
+    const [card] = await screen.findAllByTestId("chunk-card");
 
-    const bodyRule = css.slice(css.indexOf(".body {"), css.indexOf(".body {") + 300);
-    expect(bodyRule).toContain("overflow-y: auto");
+    // The styling is Tailwind utilities now, so the rule lives in the
+    // markup: one chunk's own body (far wider than the panel when it's a
+    // transcribed markdown table) scrolls on both axes inside a bounded
+    // height, and the chunk list is the panel's own vertical scroll region.
+    const text = card!.querySelector("pre")!;
+    expect(text).toHaveClass("overflow-auto", "whitespace-pre");
+    expect(text.className).toMatch(/(^|\s)max-h-\S+/);
+
+    const body = document.querySelector('[data-slot="chunks-scroll"]')!;
+    expect(body).toHaveClass("overflow-y-auto", "min-h-0");
+    expect(body).toContainElement(card!);
   });
 
   it("calls onClose from the close control", async () => {
