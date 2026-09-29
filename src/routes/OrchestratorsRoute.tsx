@@ -1,4 +1,22 @@
 import { useState } from "react";
+import { CircleAlert, LoaderCircle, Network, Pencil, Trash2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { EmptyState } from "../components/EmptyState.tsx";
 import { createOrchestrator, deleteOrchestrator, updateOrchestrator } from "../agents/api.ts";
 import { OrchestratorForm, toCreateInput, type OrchestratorFormValues } from "../agents/OrchestratorForm.tsx";
 import { PageHeader } from "../agents/PageHeader.tsx";
@@ -8,11 +26,13 @@ import { useAgents } from "../agents/useAgents.ts";
 import { selectableChatConfigs, useLlmConfigs } from "../agents/useLlmConfigs.ts";
 import { useOrchestrators } from "../agents/useOrchestrators.ts";
 import { GatewayError } from "../ask/http/errors.ts";
-import styles from "./OrchestratorsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
 }
+
+/** Name · Members · Mode · actions. */
+const COLUMN_COUNT = 4;
 
 interface RowProps {
   orchestrator: Orchestrator;
@@ -88,83 +108,111 @@ function OrchestratorRow({
 
   if (editing) {
     return (
-      <div className={styles.rowEditing}>
-        <OrchestratorForm
-          agents={agentsForForm}
-          llmConfigs={llmConfigsForForm}
-          editing={orchestrator}
-          submitLabel="Save changes"
-          submitting={saving}
-          formError={saveError}
-          onCancel={onCancelEdit}
-          onSubmit={(values) => void handleSave(values)}
-        />
-      </div>
+      <TableRow className="bg-muted/30 hover:bg-muted/30">
+        <TableCell colSpan={COLUMN_COUNT} className="p-0 whitespace-normal">
+          {/* Pinned to the visible width of the card (`cqw`, against the
+              card's container) so a table that scrolls sideways on a phone
+              never scrolls the form out of view with it. */}
+          <div className="sticky left-0 w-[100cqw] p-4 sm:p-6">
+            <OrchestratorForm
+              agents={agentsForForm}
+              llmConfigs={llmConfigsForForm}
+              editing={orchestrator}
+              submitLabel="Save changes"
+              submitting={saving}
+              formError={saveError}
+              onCancel={onCancelEdit}
+              onSubmit={(values) => void handleSave(values)}
+            />
+          </div>
+        </TableCell>
+      </TableRow>
     );
   }
 
   return (
-    <div className={styles.row}>
-      <div>
-        <div className={styles.name}>{orchestrator.name}</div>
-        {orchestrator.description !== null && orchestrator.description !== "" && (
-          <div className={styles.description}>{orchestrator.description}</div>
-        )}
-      </div>
-      <div className={styles.description}>
-        {memberNames.length > 0 ? memberNames.join(", ") : "No members"}
-      </div>
-      <div className={styles.modeCell}>
-        <span className={styles.modeIcon} aria-hidden="true">
-          <explanation.icon size={14} strokeWidth={2.25} />
-        </span>
-        <span className={styles.modeText}>
-          <b>{explanation.label}</b>
-          <span>{explanation.detail}</span>
-        </span>
-      </div>
-      <div className={styles.rowActions}>
-        <button type="button" className={styles.actionBtn} onClick={onEdit}>
-          Edit
-        </button>
-        {!confirmingDelete && (
-          <button type="button" className={styles.deleteBtn} onClick={() => setConfirmingDelete(true)}>
-            Delete
-          </button>
-        )}
-      </div>
-
-      {confirmingDelete && (
-        <div className={styles.confirmRow}>
-          <span className={styles.confirmText}>
-            Delete {orchestrator.name}? This can't be undone.
-          </span>
-          <button
-            type="button"
-            className={styles.confirmBtn}
-            onClick={() => void handleConfirmDelete()}
-            disabled={deleting}
-          >
-            {deleting ? "Deleting…" : "Confirm delete"}
-          </button>
-          <button
-            type="button"
-            className={styles.actionBtn}
-            onClick={() => setConfirmingDelete(false)}
-            disabled={deleting}
-          >
-            Cancel
-          </button>
-        </div>
-      )}
+    <>
+      <TableRow>
+        <TableCell className="min-w-44 py-3 pl-6 align-top whitespace-normal">
+          <div className="font-medium">{orchestrator.name}</div>
+          {orchestrator.description !== null && orchestrator.description !== "" && (
+            <div className="mt-0.5 text-sm text-muted-foreground">{orchestrator.description}</div>
+          )}
+        </TableCell>
+        <TableCell className="min-w-40 py-3 align-top whitespace-normal text-muted-foreground">
+          {memberNames.length > 0 ? memberNames.join(", ") : "No members"}
+        </TableCell>
+        <TableCell className="min-w-56 py-3 align-top whitespace-normal">
+          <div className="flex items-start gap-2.5">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <explanation.icon className="size-4" />
+            </span>
+            <span className="grid min-w-0 gap-0.5">
+              <b className="text-sm font-medium">{explanation.label}</b>
+              <span className="text-sm text-muted-foreground">{explanation.detail}</span>
+            </span>
+          </div>
+        </TableCell>
+        <TableCell className="py-3 pr-6 text-right align-top">
+          <div className="flex justify-end gap-1">
+            <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
+              <Pencil />
+              Edit
+            </Button>
+            {/* Delete asks a second, explicit time before anything is sent
+                — the dialog is that confirmation, not an extra step. */}
+            <AlertDialog
+              open={confirmingDelete}
+              onOpenChange={(open) => {
+                if (!deleting) setConfirmingDelete(open);
+              }}
+            >
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                >
+                  <Trash2 />
+                  Delete
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {orchestrator.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>This can&apos;t be undone.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                  {/* A plain button, not AlertDialogAction: that one closes
+                      the dialog on click, before the DELETE has answered. */}
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => void handleConfirmDelete()}
+                    disabled={deleting}
+                  >
+                    {deleting && <LoaderCircle className="animate-spin" />}
+                    {deleting ? "Deleting…" : "Confirm delete"}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        </TableCell>
+      </TableRow>
       {deleteError !== null && (
-        <div className={styles.confirmRow}>
-          <span role="alert" className={styles.confirmText}>
-            {deleteError}
-          </span>
-        </div>
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={COLUMN_COUNT} className="px-6 pt-0 pb-3 whitespace-normal">
+            <p role="alert" className="flex items-center gap-2 text-sm text-destructive">
+              <CircleAlert className="size-4 shrink-0" />
+              {deleteError}
+            </p>
+          </TableCell>
+        </TableRow>
       )}
-    </div>
+    </>
   );
 }
 
@@ -221,6 +269,8 @@ export function OrchestratorsRoute() {
     }
   }
 
+  const isEmpty = !loading && error === null && orchestrators.length === 0;
+
   return (
     <>
       <PageHeader
@@ -230,70 +280,103 @@ export function OrchestratorsRoute() {
         actionLabel={creating ? undefined : "New orchestrator"}
         onAction={() => setCreating(true)}
       />
-      <div className={styles.body}>
+      <div className="flex flex-col gap-6">
         {creating && (
-          <OrchestratorForm
-            agents={agents}
-            llmConfigs={modelChoices}
-            submitLabel="Create orchestrator"
-            submitting={createSubmitting}
-            formError={createError}
-            onCancel={() => {
-              setCreating(false);
-              setCreateError(null);
-            }}
-            onSubmit={(values) => void handleCreate(values)}
-          />
+          <Card>
+            <CardHeader>
+              <h3 className="leading-none font-semibold">New orchestrator</h3>
+            </CardHeader>
+            <CardContent>
+              <OrchestratorForm
+                agents={agents}
+                llmConfigs={modelChoices}
+                submitLabel="Create orchestrator"
+                submitting={createSubmitting}
+                formError={createError}
+                onCancel={() => {
+                  setCreating(false);
+                  setCreateError(null);
+                }}
+                onSubmit={(values) => void handleCreate(values)}
+              />
+            </CardContent>
+          </Card>
         )}
 
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Orchestrators</h3>
-            {!loading && error === null && (
-              <span className={styles.sub}>
-                {orchestrators.length} {orchestrators.length === 1 ? "orchestrator" : "orchestrators"}
-              </span>
-            )}
-          </header>
+        {isEmpty ? (
+          <EmptyState
+            icon={Network}
+            title="No orchestrators yet"
+            body="Create one to route questions to a best-fit agent, or run several agents and synthesise one answer."
+          />
+        ) : (
+          <Card className="@container gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <h3 className="leading-none font-semibold">Orchestrators</h3>
+              {!loading && error === null && (
+                <CardAction>
+                  <Badge variant="secondary" className="tabular-nums">
+                    {orchestrators.length} {orchestrators.length === 1 ? "orchestrator" : "orchestrators"}
+                  </Badge>
+                </CardAction>
+              )}
+            </CardHeader>
 
-          {loading && <p className={styles.loading}>Loading orchestrators…</p>}
-          {!loading && error !== null && (
-            <p role="alert" className={styles.error}>
-              {error}
-            </p>
-          )}
-          {!loading && error === null && orchestrators.length === 0 && (
-            <p className={styles.empty}>
-              No orchestrators yet. Create one to route questions to a best-fit agent, or run several
-              agents and synthesise one answer.
-            </p>
-          )}
-          {!loading && error === null && orchestrators.length > 0 && (
-            <div className={styles.list}>
-              {orchestrators.map((orchestrator) => (
-                <OrchestratorRow
-                  key={orchestrator.id}
-                  orchestrator={orchestrator}
-                  agentNameById={agentNameById}
-                  agentsForForm={agents}
-                  llmConfigsForForm={modelChoices}
-                  editing={editingId === orchestrator.id}
-                  onEdit={() => setEditingId(orchestrator.id)}
-                  onCancelEdit={() => setEditingId(null)}
-                  onSaved={(updated) => {
-                    setOrchestrators(
-                      orchestrators.map((candidate) => (candidate.id === updated.id ? updated : candidate)),
-                    );
-                    setEditingId(null);
-                  }}
-                  onDeleted={(id) => {
-                    setOrchestrators(orchestrators.filter((candidate) => candidate.id !== id));
-                  }}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+            {loading && (
+              <div className="grid gap-3 p-6" aria-busy="true">
+                <span className="sr-only">Loading orchestrators…</span>
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-4/5" />
+              </div>
+            )}
+            {!loading && error !== null && (
+              <div className="p-6">
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              </div>
+            )}
+            {!loading && error === null && orchestrators.length > 0 && (
+              <Table>
+                <TableHeader className="bg-muted/40">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6 text-muted-foreground">Name</TableHead>
+                    <TableHead className="text-muted-foreground">Members</TableHead>
+                    <TableHead className="text-muted-foreground">Mode</TableHead>
+                    <TableHead className="pr-6 text-right text-muted-foreground">
+                      <span className="sr-only">Actions</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orchestrators.map((orchestrator) => (
+                    <OrchestratorRow
+                      key={orchestrator.id}
+                      orchestrator={orchestrator}
+                      agentNameById={agentNameById}
+                      agentsForForm={agents}
+                      llmConfigsForForm={modelChoices}
+                      editing={editingId === orchestrator.id}
+                      onEdit={() => setEditingId(orchestrator.id)}
+                      onCancelEdit={() => setEditingId(null)}
+                      onSaved={(updated) => {
+                        setOrchestrators(
+                          orchestrators.map((candidate) => (candidate.id === updated.id ? updated : candidate)),
+                        );
+                        setEditingId(null);
+                      }}
+                      onDeleted={(id) => {
+                        setOrchestrators(orchestrators.filter((candidate) => candidate.id !== id));
+                      }}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+        )}
       </div>
     </>
   );

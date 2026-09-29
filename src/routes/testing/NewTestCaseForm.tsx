@@ -1,7 +1,13 @@
 import { useState, type FormEvent } from "react";
+import { CircleAlert, LoaderCircle, Plus } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "./api.ts";
 import { SUITE_PHASES, type AgentTestCaseCreate, type SuitePhase } from "./types.ts";
-import styles from "./NewTestCaseForm.module.css";
 
 interface NewTestCaseFormProps {
   /** The agent this case is authored against. Always the agent whose Test
@@ -44,58 +50,67 @@ export function NewTestCaseForm({ agentId, onSubmit }: NewTestCaseFormProps) {
   }
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit}>
-      <h3 className={styles.title}>New test case</h3>
+    <form onSubmit={handleSubmit}>
+      <Card className="gap-5">
+        <CardHeader>
+          <h3 className="leading-none font-semibold">New test case</h3>
+        </CardHeader>
 
-      <div className={styles.field}>
-        <label htmlFor="new-case-phase">Phase</label>
-        <select
-          id="new-case-phase"
-          className={styles.select}
-          value={phase}
-          onChange={(event) => setPhase(event.target.value as SuitePhase)}
-        >
-          {SUITE_PHASES.map((suitePhase) => (
-            <option key={suitePhase} value={suitePhase}>
-              {suitePhase}
-            </option>
-          ))}
-        </select>
-      </div>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-2 sm:max-w-56 *:data-[slot=native-select-wrapper]:w-full">
+            <Label htmlFor="new-case-phase">Phase</Label>
+            <NativeSelect
+              id="new-case-phase"
+              value={phase}
+              onChange={(event) => setPhase(event.target.value as SuitePhase)}
+            >
+              {SUITE_PHASES.map((suitePhase) => (
+                <NativeSelectOption key={suitePhase} value={suitePhase}>
+                  {suitePhase}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </div>
 
-      <div className={styles.field}>
-        <label htmlFor="new-case-question">Question</label>
-        <textarea
-          id="new-case-question"
-          className={styles.textarea}
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          required
-        />
-      </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid content-start gap-2">
+              <Label htmlFor="new-case-question">Question</Label>
+              <Textarea
+                id="new-case-question"
+                className="min-h-20"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                required
+              />
+            </div>
 
-      <div className={styles.field}>
-        <label htmlFor="new-case-expected">Expected</label>
-        <textarea
-          id="new-case-expected"
-          className={styles.textarea}
-          value={expected}
-          onChange={(event) => setExpected(event.target.value)}
-          required
-        />
-      </div>
+            <div className="grid content-start gap-2">
+              <Label htmlFor="new-case-expected">Expected</Label>
+              <Textarea
+                id="new-case-expected"
+                className="min-h-20"
+                value={expected}
+                onChange={(event) => setExpected(event.target.value)}
+                required
+              />
+            </div>
+          </div>
 
-      {error !== null && (
-        <p className={styles.error} role="alert">
-          {error}
-        </p>
-      )}
+          {error !== null && (
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
 
-      <div className={styles.actions}>
-        <button type="submit" className={styles.submit} disabled={submitting}>
-          {submitting ? "Adding…" : "Add case"}
-        </button>
-      </div>
+        <CardFooter>
+          <Button type="submit" disabled={submitting}>
+            {submitting ? <LoaderCircle className="animate-spin" /> : <Plus />}
+            {submitting ? "Adding…" : "Add case"}
+          </Button>
+        </CardFooter>
+      </Card>
     </form>
   );
 }

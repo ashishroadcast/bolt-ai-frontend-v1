@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
+import { installRadixPolyfills } from "../test/radix.ts";
 import { OrchestratorsRoute } from "./OrchestratorsRoute.tsx";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -61,6 +62,9 @@ describe("OrchestratorsRoute", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    // The form's Radix checkboxes/radios (and the delete AlertDialog) reach
+    // for ResizeObserver, which jsdom lacks.
+    installRadixPolyfills();
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
@@ -266,6 +270,9 @@ describe("choosing a model for an orchestrator", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    // The form's Radix checkboxes/radios (and the delete AlertDialog) reach
+    // for ResizeObserver, which jsdom lacks.
+    installRadixPolyfills();
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });

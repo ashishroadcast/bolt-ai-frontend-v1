@@ -1,8 +1,16 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { CircleAlert, LoaderCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { cn } from "@/lib/utils";
 import { explainOrchestratorMode } from "./orchestratorMode.ts";
 import type { LLMConfig } from "../routes/llmConfigsApi.ts";
 import type { AgentSummary, Orchestrator, OrchestratorCreateInput, OrchestratorMode } from "./types.ts";
-import styles from "./OrchestratorForm.module.css";
 
 export interface OrchestratorFormValues {
   name: string;
@@ -38,6 +46,13 @@ interface OrchestratorFormProps {
 }
 
 const MODES: OrchestratorMode[] = ["single", "coordinate"];
+
+/** The small caption above a group of controls that isn't a single input
+ * (the mode choice, the member list) — styled like a `Label`, but not one,
+ * since there is no one control for it to name. */
+const GROUP_CAPTION = "text-sm leading-none font-medium";
+
+const HELP_TEXT = "text-sm text-muted-foreground";
 
 /**
  * Shared by create and edit — the same fields, the same live "what this
@@ -90,85 +105,82 @@ export function OrchestratorForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={handleSubmit}>
+    <form className="grid gap-6" onSubmit={handleSubmit}>
       {formError !== null && (
-        <p role="alert" className={styles.formError}>
-          {formError}
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
       )}
 
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="orch-name">
-          Name
-        </label>
-        <input
-          id="orch-name"
-          className={styles.input}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          disabled={submitting}
-        />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid content-start gap-2">
+          <Label htmlFor="orch-name">Name</Label>
+          <Input
+            id="orch-name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            required
+            disabled={submitting}
+          />
+        </div>
+
+        <div className="grid content-start gap-2">
+          <Label htmlFor="orch-description">Description</Label>
+          <Input
+            id="orch-description"
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            disabled={submitting}
+          />
+        </div>
       </div>
 
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="orch-description">
-          Description
-        </label>
-        <input
-          id="orch-description"
-          className={styles.input}
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
+      <div className="grid gap-3">
+        <span className={GROUP_CAPTION}>Mode</span>
+        <RadioGroup
+          className="grid gap-3 sm:grid-cols-2"
+          aria-label="Orchestrator mode"
+          value={mode}
+          onValueChange={(value) => setMode(value as OrchestratorMode)}
           disabled={submitting}
-        />
-      </div>
-
-      <div className={styles.field}>
-        <span className={styles.label}>Mode</span>
-        <div className={styles.modeGroup} role="radiogroup" aria-label="Orchestrator mode">
+        >
           {MODES.map((candidate) => {
             const explanation = explainOrchestratorMode(candidate, memberAgentIds.length);
-            const isOn = mode === candidate;
             return (
               <label
                 key={candidate}
-                className={`${styles.modeOption} ${isOn ? styles.modeOptionOn : ""}`}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 has-disabled:cursor-not-allowed has-disabled:opacity-60 has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/5"
               >
-                <input
-                  type="radio"
-                  name="orch-mode"
-                  value={candidate}
-                  checked={isOn}
-                  onChange={() => setMode(candidate)}
-                  disabled={submitting}
-                />
-                <span className={styles.modeGlyph} aria-hidden="true">
-                  <explanation.icon size={14} strokeWidth={2.25} />
+                <RadioGroupItem value={candidate} className="mt-1" />
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <explanation.icon className="size-4" />
                 </span>
-                <span className={styles.modeText}>
-                  <b>{explanation.label}</b>
-                  <span>{explanation.detail}</span>
+                <span className="grid min-w-0 gap-0.5">
+                  <b className="text-sm font-medium">{explanation.label}</b>
+                  <span className="text-sm text-muted-foreground">{explanation.detail}</span>
                 </span>
               </label>
             );
           })}
-        </div>
+        </RadioGroup>
       </div>
 
-      <div className={styles.field}>
-        <span className={styles.label}>Member agents</span>
-        <div className={styles.memberList}>
-          {agents.length === 0 && <p className={styles.helpText}>No agents exist to add yet.</p>}
+      <div className="grid gap-3">
+        <span className={GROUP_CAPTION}>Member agents</span>
+        <div className="grid max-h-56 gap-1 overflow-y-auto rounded-lg border p-2 sm:grid-cols-2">
+          {agents.length === 0 && <p className={cn(HELP_TEXT, "px-2 py-1")}>No agents exist to add yet.</p>}
           {agents.map((agent) => (
             <label
               key={agent.id}
-              className={`${styles.memberOption} ${agent.is_active ? "" : styles.inactive}`}
+              className={cn(
+                "flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-accent/50",
+                !agent.is_active && "text-muted-foreground",
+              )}
             >
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={memberAgentIds.includes(agent.id)}
-                onChange={() => toggleMember(agent.id)}
+                onCheckedChange={() => toggleMember(agent.id)}
                 disabled={submitting}
               />
               {agent.name}
@@ -176,14 +188,12 @@ export function OrchestratorForm({
             </label>
           ))}
         </div>
-        <p className={styles.helpText}>At least one agent is required.</p>
+        <p className={HELP_TEXT}>At least one agent is required.</p>
       </div>
 
       {editing === undefined && (
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="orch-llm-config">
-            Model
-          </label>
+        <div className="grid gap-2">
+          <Label htmlFor="orch-llm-config">Model</Label>
           {/* A picker, not a number to guess.
               This field used to be a bare numeric input under help text
               reading "no endpoint lists LLM configs, so this has to be
@@ -191,30 +201,34 @@ export function OrchestratorForm({
               fleet already reads the same `listLlmConfigs` this form now
               does. An operator was being asked to know a database id. */}
           {llmConfigs === null ? (
-            <p className={styles.helpText}>Loading models…</p>
+            <p className={cn(HELP_TEXT, "flex items-center gap-2")}>
+              <LoaderCircle className="size-4 animate-spin" />
+              Loading models…
+            </p>
           ) : llmConfigs.length === 0 ? (
-            <p className={styles.helpText}>
+            <p className={HELP_TEXT}>
               No chat models are set up yet. Add one on the Models screen, then come back — an
               orchestrator needs a model to route and synthesise with.
             </p>
           ) : (
             <>
-              <select
-                id="orch-llm-config"
-                className={styles.select}
-                value={llmConfigId}
-                onChange={(event) => setLlmConfigId(event.target.value)}
-                required
-                disabled={submitting}
-              >
-                {llmConfigs.map((config) => (
-                  <option key={config.id} value={String(config.id)}>
-                    {config.name} — {config.model}
-                    {config.is_default ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-              <p className={styles.helpText}>
+              <div className="md:max-w-md *:data-[slot=native-select-wrapper]:w-full">
+                <NativeSelect
+                  id="orch-llm-config"
+                  value={llmConfigId}
+                  onChange={(event) => setLlmConfigId(event.target.value)}
+                  required
+                  disabled={submitting}
+                >
+                  {llmConfigs.map((config) => (
+                    <NativeSelectOption key={config.id} value={String(config.id)}>
+                      {config.name} — {config.model}
+                      {config.is_default ? " (default)" : ""}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+              <p className={HELP_TEXT}>
                 What this orchestrator uses to pick an agent, and to write the combined answer in
                 coordinate mode. Its member agents keep their own models.
               </p>
@@ -224,22 +238,23 @@ export function OrchestratorForm({
       )}
 
       {editing !== undefined && (
-        <div className={styles.field}>
-          <span className={styles.label}>LLM config id</span>
-          <p className={styles.helpText}>
-            {editing.llm_config_id} — can't be changed after creation; the update endpoint doesn't
-            accept this field.
+        <div className="grid gap-2">
+          <span className={GROUP_CAPTION}>LLM config id</span>
+          <p className={HELP_TEXT}>
+            <span className="font-mono text-foreground tabular-nums">{editing.llm_config_id}</span> — can&apos;t be
+            changed after creation; the update endpoint doesn&apos;t accept this field.
           </p>
         </div>
       )}
 
-      <div className={styles.actions}>
-        <button type="submit" className={styles.submit} disabled={submitting}>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting && <LoaderCircle className="animate-spin" />}
           {submitting ? "Saving…" : submitLabel}
-        </button>
-        <button type="button" className={styles.cancel} onClick={onCancel} disabled={submitting}>
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
