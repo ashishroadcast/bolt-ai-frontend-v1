@@ -1,5 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
+import {
+  AlertCircle,
+  Check,
+  Database,
+  Loader2,
+  Lock,
+  Plus,
+  Unlink,
+  Workflow,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { attachMcpServer, detachMcpServer, getAgent, updateAgent } from "../../agents/api.ts";
 import type { AgentDetail, AgentPatchInput, CodeExecutionCapability } from "../../agents/types.ts";
 import { StatusPill } from "../../agents/StatusPill.tsx";
@@ -8,7 +20,27 @@ import { listDatasources, type DataSource } from "../datasourcesApi.ts";
 import { listLlmConfigs, type LLMConfig } from "../llmConfigsApi.ts";
 import { listMcpServers, type McpServer } from "../mcpServersApi.ts";
 import type { AgentDetailContext } from "../AgentDetailRoute.tsx";
-import styles from "./ConfigTab.module.css";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  NativeSelect,
+  NativeSelectOptGroup,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -400,14 +432,23 @@ export function ConfigTab() {
 
   if (loadError !== null) {
     return (
-      <p role="alert" className={styles.alert}>
-        {loadError}
-      </p>
+      <Alert variant="destructive">
+        <AlertCircle aria-hidden="true" />
+        <AlertTitle>Couldn&apos;t load this agent&apos;s configuration</AlertTitle>
+        <AlertDescription>{loadError}</AlertDescription>
+      </Alert>
     );
   }
 
   if (detail === null) {
-    return <p className={styles.status}>Loading configuration…</p>;
+    return (
+      <div className="flex flex-col gap-6" aria-busy="true">
+        <span className="sr-only">Loading configuration…</span>
+        <Skeleton className="h-4 w-full max-w-lg" aria-hidden="true" />
+        <Skeleton className="h-64 w-full rounded-xl" aria-hidden="true" />
+        <Skeleton className="h-80 w-full rounded-xl" aria-hidden="true" />
+      </div>
+    );
   }
 
   const boundIds = new Set(detail.mcp_server_ids);
@@ -426,36 +467,48 @@ export function ConfigTab() {
   const jevOn = hasCapability(detail.pipeline_config, CAPABILITIES.find((c) => c.key === "jev")!);
 
   function statusFor(field: string) {
-    if (savingField === field) return <span className={styles.saving}>Saving…</span>;
-    if (savedField === field && saveError === null) return <span className={styles.saved}>Saved</span>;
+    if (savingField === field) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-muted-foreground">
+          <Loader2 aria-hidden="true" className="size-3 animate-spin" />
+          Saving…
+        </span>
+      );
+    }
+    if (savedField === field && saveError === null) {
+      return (
+        <span className="inline-flex items-center gap-1 text-xs whitespace-nowrap text-success">
+          <Check aria-hidden="true" className="size-3" />
+          Saved
+        </span>
+      );
+    }
     return null;
   }
 
   return (
-    <div className={styles.page}>
-      <p className={styles.body}>
+    <div className="flex flex-col gap-6 pb-6">
+      <p className="max-w-prose text-sm text-muted-foreground">
         What {agent.name} reads from, which model answers each phase, and which tools it can
         call. Saves as you go.
       </p>
 
       {saveError !== null && (
-        <p role="alert" className={styles.alert}>
-          {saveError}
-        </p>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden="true" />
+          <AlertDescription>{saveError}</AlertDescription>
+        </Alert>
       )}
 
-      <section className={styles.sheet}>
-        <header className={styles.sheetHead}>
-          <h3>Data &amp; execution</h3>
-        </header>
-        <div className={styles.controlGrid}>
-          <div className={styles.control}>
-            <label className={styles.label} htmlFor="config-datasource">
+      <Card className="gap-0 overflow-hidden py-0">
+        <SectionHeader icon={Database} title="Data & execution" />
+        <CardContent className="grid gap-x-8 gap-y-6 p-4 sm:p-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="flex min-w-0 flex-col gap-2">
+            <FieldLabel htmlFor="config-datasource" status={statusFor("datasource")}>
               Datasource
-            </label>
-            <select
+            </FieldLabel>
+            <FieldSelect
               id="config-datasource"
-              className={styles.select}
               value={detail.datasource_id === null ? "" : String(detail.datasource_id)}
               disabled={savingField === "datasource"}
               onChange={(event) => {
@@ -463,27 +516,28 @@ export function ConfigTab() {
                 void save("datasource", { datasource_id: raw === "" ? null : Number(raw) });
               }}
             >
-              <option value="">Not connected</option>
+              <NativeSelectOption value="">Not connected</NativeSelectOption>
               {datasources.map((datasource) => (
-                <option key={datasource.id} value={datasource.id}>
+                <NativeSelectOption key={datasource.id} value={datasource.id}>
                   {/* The type is a qualifier, not part of the name — a row
                       that arrives without one must read as "Reporting
                       warehouse", never "Reporting warehouse (undefined)". */}
                   {datasource.type ? `${datasource.name} (${datasource.type})` : datasource.name}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-            <p className={styles.help}>What this agent queries and cites.</p>
-            {statusFor("datasource")}
+            </FieldSelect>
+            <p className="text-sm text-muted-foreground">What this agent queries and cites.</p>
           </div>
 
-          <div className={styles.control}>
-            <label className={styles.label} htmlFor="config-secondary-datasource">
+          <div className="flex min-w-0 flex-col gap-2">
+            <FieldLabel
+              htmlFor="config-secondary-datasource"
+              status={statusFor("secondary-datasource")}
+            >
               Second datasource
-            </label>
-            <select
+            </FieldLabel>
+            <FieldSelect
               id="config-secondary-datasource"
-              className={styles.select}
               value={
                 detail.secondary_datasource_id === null
                   ? ""
@@ -497,7 +551,7 @@ export function ConfigTab() {
                 });
               }}
             >
-              <option value="">None</option>
+              <NativeSelectOption value="">None</NativeSelectOption>
               {/* The one already chosen above is filtered out, and so is
                   anything of its kind: each tool resolves its connector by
                   TYPE, so a second datasource of the same type is not a
@@ -512,25 +566,23 @@ export function ConfigTab() {
                       datasource.type !== primaryDatasourceType),
                 )
                 .map((datasource) => (
-                  <option key={datasource.id} value={datasource.id}>
+                  <NativeSelectOption key={datasource.id} value={datasource.id}>
                     {datasource.type ? `${datasource.name} (${datasource.type})` : datasource.name}
-                  </option>
+                  </NativeSelectOption>
                 ))}
-            </select>
-            <p className={styles.help}>
+            </FieldSelect>
+            <p className="text-sm text-muted-foreground">
               A second store of a different kind, queried in the same run — a SQL warehouse
               for who and what, a Redis store for current state, joined on the id they share.
             </p>
-            {statusFor("secondary-datasource")}
           </div>
 
-          <div className={styles.control}>
-            <label className={styles.label} htmlFor="config-code-execution">
+          <div className="flex min-w-0 flex-col gap-2">
+            <FieldLabel htmlFor="config-code-execution" status={statusFor("code_execution")}>
               Code execution
-            </label>
-            <select
+            </FieldLabel>
+            <FieldSelect
               id="config-code-execution"
-              className={styles.select}
               value={detail.code_execution}
               disabled={savingField === "code_execution"}
               onChange={(event) => {
@@ -540,102 +592,154 @@ export function ConfigTab() {
               }}
             >
               {CODE_EXECUTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
+                <NativeSelectOption key={option.value} value={option.value}>
                   {option.label}
-                </option>
+                </NativeSelectOption>
               ))}
-            </select>
-            <p className={styles.help}>
+            </FieldSelect>
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
               {CODE_EXECUTION_OPTIONS.find((o) => o.value === detail.code_execution)?.help}{" "}
               <StatusPill tone={CODE_EXECUTION_TONE[detail.code_execution]} label={detail.code_execution} />
             </p>
-            {statusFor("code_execution")}
           </div>
-        </div>
+        </CardContent>
 
         {/* Capabilities are on or off, not chosen from a list. Their own band
-            rather than two more cells in the field grid above, where they read
+            rather than more cells in the field grid above, where they read
             as fields that happen to look different. */}
-        <div className={styles.capabilities}>
-          {CAPABILITIES.map((capability) => {
-            const on = hasCapability(detail.pipeline_config, capability);
-            const consequence = on ? capability.effect : (capability.offEffect ?? "");
-            return (
-              <div key={capability.key} className={styles.switchRow}>
+        <div className="border-t bg-muted/40 px-4 sm:px-6 py-5">
+          <h4 className="mb-3 text-sm font-medium">Capabilities</h4>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {CAPABILITIES.map((capability) => {
+              const on = hasCapability(detail.pipeline_config, capability);
+              const consequence = on ? capability.effect : (capability.offEffect ?? "");
+              const id = `config-capability-${capability.key}`;
+              return (
+                <div
+                  key={capability.key}
+                  className={cn(
+                    "flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 shadow-xs transition-colors",
+                    on && "border-primary/30",
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <Switch
+                      id={id}
+                      className="mt-0.5"
+                      checked={on}
+                      aria-label={capability.label}
+                      disabled={savingField === capability.key}
+                      onCheckedChange={() => {
+                        // The whole object, not a merge on the server: PATCH
+                        // replaces pipeline_config wholesale, so sending only
+                        // the changed key would silently drop every other
+                        // capability this agent has.
+                        void save(capability.key, {
+                          pipeline_config: { ...detail.pipeline_config, [capability.key]: !on },
+                        });
+                      }}
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Label htmlFor={id} className="cursor-pointer">
+                          {capability.label}
+                        </Label>
+                        {statusFor(capability.key)}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{capability.help}</p>
+                    </div>
+                  </div>
+                  {/* A live fact about this agent, not prose — it appears
+                      only while the capability is in the state it
+                      describes, so four of them cannot crowd out the
+                      controls they annotate. */}
+                  {consequence !== "" && (
+                    <p className="ml-11 border-l-2 border-primary/30 pl-2 text-xs leading-relaxed text-muted-foreground">
+                      {consequence}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="gap-0 overflow-hidden py-0">
+        <SectionHeader
+          icon={Workflow}
+          title="Phases"
+          meta={
+            <Badge variant="secondary" className="tabular-nums">
+              {mode === "single" ? "single model" : `${boundCount} of ${PHASES.length} models pinned`}
+            </Badge>
+          }
+        />
+        <CardContent className="flex flex-col gap-4 p-4 sm:p-6">
+          {/* A choice between two, both always visible: which one is on, and
+              what the other would cost, are the whole decision. */}
+          <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Run mode">
+            {RUN_MODES.map((option) => {
+              const checked = mode === option.value;
+              return (
                 <button
+                  key={option.value}
                   type="button"
-                  role="switch"
-                  aria-checked={on}
-                  aria-label={capability.label}
-                  className={styles.switch}
-                  disabled={savingField === capability.key}
+                  role="radio"
+                  aria-checked={checked}
+                  disabled={savingField === "pipeline_mode"}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50",
+                    checked
+                      ? "cursor-default border-primary bg-primary/5"
+                      : "cursor-pointer hover:border-foreground/20 hover:bg-accent/60",
+                  )}
                   onClick={() => {
-                    // The whole object, not a merge on the server: PATCH
-                    // replaces pipeline_config wholesale, so sending only
-                    // the changed key would silently drop every other
-                    // capability this agent has.
-                    void save(capability.key, {
-                      pipeline_config: { ...detail.pipeline_config, [capability.key]: !on },
+                    if (mode === option.value) return;
+                    // pipeline_config replaces wholesale, so every capability
+                    // and reasoning choice rides along unchanged.
+                    void save("pipeline_mode", {
+                      pipeline_config: { ...detail.pipeline_config, pipeline_mode: option.value },
                     });
                   }}
                 >
-                  <span className={styles.switchTrack} data-on={on} />
-                  <span className={styles.switchText}>
-                    <span className={styles.switchLabel}>{capability.label}</span>
-                    <span className={styles.switchHelp}>{capability.help}</span>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border shadow-xs",
+                      checked ? "border-primary" : "border-input bg-background",
+                    )}
+                  >
+                    {checked && <span className="size-2 rounded-full bg-primary" />}
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-1">
+                    <span className="text-sm font-medium">{option.label}</span>
+                    <span className="text-sm text-muted-foreground">{option.help}</span>
                   </span>
                 </button>
-                {consequence !== "" && <p className={styles.effect}>{consequence}</p>}
-                {statusFor(capability.key)}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+              );
+            })}
+          </div>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+            {mode === "single"
+              ? "Every model call in a run goes to the execute model below."
+              : "Reasoning is per phase, and it is where a run spends its time."}{" "}
+            {statusFor("pipeline_mode")}
+          </p>
+        </CardContent>
 
-      <section className={styles.sheet}>
-        <header className={styles.sheetHead}>
-          <h3>Phases</h3>
-          <span className={styles.sub}>
-            {mode === "single" ? "single model" : `${boundCount} of ${PHASES.length} models pinned`}
-          </span>
-        </header>
-        {/* A choice between two, both always visible: which one is on, and
-            what the other would cost, are the whole decision. */}
-        <div className={styles.modes} role="radiogroup" aria-label="Run mode">
-          {RUN_MODES.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={mode === option.value}
-              className={styles.mode}
-              disabled={savingField === "pipeline_mode"}
-              onClick={() => {
-                if (mode === option.value) return;
-                // pipeline_config replaces wholesale, so every capability
-                // and reasoning choice rides along unchanged.
-                void save("pipeline_mode", {
-                  pipeline_config: { ...detail.pipeline_config, pipeline_mode: option.value },
-                });
-              }}
-            >
-              <span className={styles.modeLabel}>{option.label}</span>
-              <span className={styles.modeHelp}>{option.help}</span>
-            </button>
-          ))}
-        </div>
-        {/* "in order" is no longer worth saying — the rail shows it. */}
-        <p className={styles.sheetNote}>
-          {mode === "single"
-            ? "Every model call in a run goes to the execute model below."
-            : "Reasoning is per phase, and it is where a run spends its time."}{" "}
-          {statusFor("pipeline_mode")}
-        </p>
         {/* A rail, not a table: the numbers are the run's actual order — the
             single most useful thing to know about these five rows, and what a
-            four-column table of identical dropdowns said nothing about. */}
-        <ol className={styles.pipeline}>
+            four-column table of identical dropdowns said nothing about.
+
+            The digits are drawn by a CSS counter (counter-reset here,
+            counter() on each marker) rather than rendered as text: the <ol>
+            already carries the ordinal for assistive tech, and a bare "2" in
+            the markup collides with any getByText("2") elsewhere on the
+            page, which is exactly how it broke a tool-servers test the first
+            time. The connector line is drawn on each step, so it cannot fall
+            out of alignment with the markers. */}
+        <ol className="border-t px-4 sm:px-6 py-2 [counter-reset:step]">
           {PHASES.map((phase) => {
             const bound = detail.llm_bindings[phase];
             const lock = phaseLock(
@@ -645,189 +749,313 @@ export function ConfigTab() {
             );
             const field = `binding-${phase}`;
             const singleRole = mode === "single" ? singleModelRole(phase, jevOn) : null;
+            // A phase single-model mode does not call a model for: still
+            // listed, so the order stays legible, but receded behind the one
+            // that answers.
+            const idle = singleRole !== null;
             return (
-              <li key={phase} className={styles.step} data-idle={singleRole !== null}>
-                {/* Empty on purpose — the digit is drawn by a CSS counter (see
-                    the module's own comment). The <ol> carries the ordinal for
-                    assistive tech, so a text node here would be redundant to a
-                    reader and ambiguous to a getByText query. */}
-                <span className={styles.stepMarker} data-pinned={bound !== undefined} />
+              <li
+                key={phase}
+                data-idle={idle}
+                className="relative grid grid-cols-[1.75rem_minmax(0,1fr)] gap-x-4 py-4 not-first:border-t before:absolute before:inset-y-0 before:left-3.5 before:w-px before:bg-border first:before:top-7.5 last:before:bottom-[calc(100%-1.875rem)]"
+              >
+                {/* A phase with a model explicitly pinned is a decision
+                    someone made; the filled marker is what makes "2 of 5
+                    pinned" visible in the rail itself rather than only in
+                    the header badge. */}
+                <span
+                  aria-hidden="true"
+                  data-pinned={bound !== undefined}
+                  className={cn(
+                    "relative z-10 grid size-7 place-items-center rounded-full border font-mono text-xs font-semibold tabular-nums before:content-[counter(step)] before:[counter-increment:step]",
+                    bound !== undefined
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-primary/30 bg-accent text-primary",
+                    idle && "opacity-60",
+                  )}
+                />
 
-                <div className={styles.stepMain}>
-                  <span className={styles.name}>{phase}</span>
+                <div
+                  className={cn(
+                    "flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 pt-1",
+                    idle && "opacity-60",
+                  )}
+                >
+                  <span className="text-sm font-medium capitalize">{phase}</span>
                   {PHASE_REASONING[phase] !== undefined && (
-                    <span className={styles.phaseWhat}>{PHASE_REASONING[phase]!.what}</span>
+                    <span className="min-w-0 flex-[1_1_24ch] text-sm text-muted-foreground">
+                      {PHASE_REASONING[phase]!.what}
+                    </span>
                   )}
                 </div>
 
-                {singleRole !== null ? (
-                  // The phase's own model and reasoning are not in play, so
-                  // no control for them — only what the phase does instead.
-                  <div className={styles.stepControls}>
-                    <div className={styles.locked}>
-                      <span className={styles.lockedValue}>{singleRole.value}</span>
-                      <span className={styles.lockedWhy}>{singleRole.because}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className={styles.stepControls}>
-                    <select
-                      className={styles.select}
-                      aria-label={`Model for the ${phase} phase`}
-                      value={bound === undefined ? "" : String(bound)}
-                      disabled={savingField === field}
-                      onChange={(event) => {
-                        const raw = event.target.value;
-                        // llm_bindings replaces wholesale, so every other
-                        // phase is sent back unchanged; a merge-shaped
-                        // patch here would silently unbind the rest.
-                        const next = { ...detail.llm_bindings };
-                        if (raw === "") delete next[phase];
-                        else next[phase] = Number(raw);
-                        void save(field, { llm_bindings: next });
-                      }}
-                    >
-                      <option value="">Tenant default</option>
-                      {groupLlmConfigsByProvider(llmConfigs).map(([provider, configs]) => (
-                        <optgroup key={provider} label={provider}>
-                          {configs.map((config) => (
-                            <option key={config.id} value={config.id}>
-                              {config.name} · {config.model}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                {/* Always in the content column — never under the marker,
+                    which would break the rail's vertical line. */}
+                <div className="col-start-2 mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  {singleRole !== null ? (
+                    // The phase's own model and reasoning are not in play, so
+                    // no control for them — only what the phase does instead.
+                    <Locked value={singleRole.value} because={singleRole.because} />
+                  ) : (
+                    <>
+                      <FieldSelect
+                        wrapperClassName="w-full max-w-sm flex-[1_1_17rem]"
+                        aria-label={`Model for the ${phase} phase`}
+                        value={bound === undefined ? "" : String(bound)}
+                        disabled={savingField === field}
+                        onChange={(event) => {
+                          const raw = event.target.value;
+                          // llm_bindings replaces wholesale, so every other
+                          // phase is sent back unchanged; a merge-shaped
+                          // patch here would silently unbind the rest.
+                          const next = { ...detail.llm_bindings };
+                          if (raw === "") delete next[phase];
+                          else next[phase] = Number(raw);
+                          void save(field, { llm_bindings: next });
+                        }}
+                      >
+                        <NativeSelectOption value="">Tenant default</NativeSelectOption>
+                        {groupLlmConfigsByProvider(llmConfigs).map(([provider, configs]) => (
+                          <NativeSelectOptGroup key={provider} label={provider}>
+                            {configs.map((config) => (
+                              <NativeSelectOption key={config.id} value={config.id}>
+                                {config.name} · {config.model}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelectOptGroup>
+                        ))}
+                      </FieldSelect>
 
-                    {bound !== undefined && llmConfigs.every((config) => config.id !== bound) && (
-                      <span className={styles.dangling}>{llmConfigLabel(bound, llmConfigs)}</span>
-                    )}
+                      {bound !== undefined && llmConfigs.every((config) => config.id !== bound) && (
+                        <Badge variant="warning" className="font-mono">
+                          {llmConfigLabel(bound, llmConfigs)}
+                        </Badge>
+                      )}
 
-                    {PHASE_REASONING[phase] === undefined ? (
-                      // The guardrail phase runs fixed checks, not a model
-                      // reasoning about anything.
-                      <span className={styles.notApplicable}>no reasoning step</span>
-                    ) : lock !== null ? (
-                      // Not a disabled dropdown: a disabled control still
-                      // reads as "your setting", and this is not the
-                      // operator's setting — it is a consequence of one
-                      // they made elsewhere. Showing the value with the
-                      // cause beside it says which control to go and change.
-                      <div className={styles.locked}>
-                        <span className={styles.lockedValue}>
-                          {REASONING_MODULES[lock.module]?.short ?? lock.module}
-                        </span>
-                        <span className={styles.lockedWhy}>Required by {lock.because}</span>
-                      </div>
-                    ) : (
-                      <div className={styles.reasoning}>
-                        <span className={styles.bindLabel}>Reasoning</span>
-                        <select
-                          className={styles.select}
-                          aria-label={`Reasoning for the ${phase} phase`}
-                          value={phaseReasoning(detail.pipeline_config, phase)}
-                          disabled={savingField === `reasoning-${phase}`}
-                          onChange={(event) => {
-                            // pipeline_config replaces wholesale, so the
-                            // other capabilities and the other phases are
-                            // all sent back with it.
-                            const current = detail.pipeline_config.reasoning_modules;
-                            const modules =
-                              typeof current === "object" && current !== null
-                                ? { ...(current as Record<string, unknown>) }
-                                : {};
-                            modules[phase] = event.target.value;
-                            void save(`reasoning-${phase}`, {
-                              pipeline_config: {
-                                ...detail.pipeline_config,
-                                reasoning_modules: modules,
-                              },
-                            });
-                          }}
-                        >
-                          {PHASE_REASONING[phase]!.choices.map((value) => (
-                            <option key={value} value={value}>
-                              {REASONING_MODULES[value]?.short ?? value}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                      {PHASE_REASONING[phase] === undefined ? (
+                        // The guardrail phase runs fixed checks, not a model
+                        // reasoning about anything.
+                        <span className="text-sm text-muted-foreground">no reasoning step</span>
+                      ) : lock !== null ? (
+                        // Not a disabled dropdown: a disabled control still
+                        // reads as "your setting", and this is not the
+                        // operator's setting — it is a consequence of one
+                        // they made elsewhere. Showing the value with the
+                        // cause beside it says which control to go and change.
+                        <Locked
+                          locked
+                          value={REASONING_MODULES[lock.module]?.short ?? lock.module}
+                          because={`Required by ${lock.because}`}
+                        />
+                      ) : (
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="text-xs font-medium text-muted-foreground">Reasoning</span>
+                          <FieldSelect
+                            wrapperClassName="w-44"
+                            aria-label={`Reasoning for the ${phase} phase`}
+                            value={phaseReasoning(detail.pipeline_config, phase)}
+                            disabled={savingField === `reasoning-${phase}`}
+                            onChange={(event) => {
+                              // pipeline_config replaces wholesale, so the
+                              // other capabilities and the other phases are
+                              // all sent back with it.
+                              const current = detail.pipeline_config.reasoning_modules;
+                              const modules =
+                                typeof current === "object" && current !== null
+                                  ? { ...(current as Record<string, unknown>) }
+                                  : {};
+                              modules[phase] = event.target.value;
+                              void save(`reasoning-${phase}`, {
+                                pipeline_config: {
+                                  ...detail.pipeline_config,
+                                  reasoning_modules: modules,
+                                },
+                              });
+                            }}
+                          >
+                            {PHASE_REASONING[phase]!.choices.map((value) => (
+                              <NativeSelectOption key={value} value={value}>
+                                {REASONING_MODULES[value]?.short ?? value}
+                              </NativeSelectOption>
+                            ))}
+                          </FieldSelect>
+                        </div>
+                      )}
 
-                    <span className={styles.statusCell}>
-                      {statusFor(field)}
-                      {statusFor(`reasoning-${phase}`)}
-                    </span>
-                  </div>
-                )}
+                      <span className="flex items-center gap-2">
+                        {statusFor(field)}
+                        {statusFor(`reasoning-${phase}`)}
+                      </span>
+                    </>
+                  )}
+                </div>
               </li>
             );
           })}
         </ol>
         {compiledPhases.length > 0 && (
-          <p className={styles.compiledNote}>
+          <p className="border-t px-4 sm:px-6 py-4 text-sm text-muted-foreground">
             Compiled programs from the learning loop: {compiledPhases.join(", ")}.
           </p>
         )}
-      </section>
+      </Card>
 
-      <section className={styles.sheet}>
-        <header className={styles.sheetHead}>
-          <h3>Tool servers</h3>
-          <span className={styles.sub}>
-            {boundIds.size} of {mcpServers.length} bound
-          </span>
-        </header>
+      <Card className="gap-0 overflow-hidden py-0">
+        <SectionHeader
+          icon={Wrench}
+          title="Tool servers"
+          meta={
+            <Badge variant="secondary" className="tabular-nums">
+              {boundIds.size} of {mcpServers.length} bound
+            </Badge>
+          }
+        />
         {mcpServers.length === 0 ? (
-          <p className={styles.empty}>
-            This tenant has no MCP servers yet. Add one under Connections → MCP servers, then bind it
-            here.
-          </p>
+          <CardContent className="p-4 sm:p-6">
+            <p className="text-sm text-muted-foreground">
+              This tenant has no MCP servers yet. Add one under Connections → MCP servers, then bind
+              it here.
+            </p>
+          </CardContent>
         ) : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Server</th>
-                  <th>Tools</th>
-                  <th>Status</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {mcpServers.map((server) => {
-                  const isBound = boundIds.has(server.id);
-                  const field = `mcp-${server.id}`;
-                  return (
-                    <tr key={server.id}>
-                      <td className={styles.name}>{server.name}</td>
-                      <td>{server.discovered_tools.length}</td>
-                      <td>
-                        <StatusPill
-                          tone={server.is_active ? "good" : "neutral"}
-                          label={server.is_active ? "Active" : "Inactive"}
-                        />
-                      </td>
-                      <td className={styles.statusCell}>
-                        {statusFor(field) ?? (
-                          <button
-                            type="button"
-                            className={isBound ? styles.unbind : styles.bind}
-                            disabled={savingField === field}
-                            onClick={() => void toggleMcpServer(server, !isBound)}
-                          >
-                            {isBound ? "Detach" : "Attach"}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4 sm:pl-6">Server</TableHead>
+                <TableHead>Tools</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-4 sm:pr-6">
+                  <span className="sr-only">Binding</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mcpServers.map((server) => {
+                const isBound = boundIds.has(server.id);
+                const field = `mcp-${server.id}`;
+                return (
+                  <TableRow key={server.id}>
+                    <TableCell className="pl-4 sm:pl-6 font-medium">{server.name}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground tabular-nums">
+                      {server.discovered_tools.length}
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill
+                        tone={server.is_active ? "good" : "neutral"}
+                        label={server.is_active ? "Active" : "Inactive"}
+                      />
+                    </TableCell>
+                    <TableCell className="pr-4 sm:pr-6 text-right">
+                      {statusFor(field) ?? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isBound ? "ghost" : "outline"}
+                          disabled={savingField === field}
+                          onClick={() => void toggleMcpServer(server, !isBound)}
+                        >
+                          {isBound ? <Unlink aria-hidden="true" /> : <Plus aria-hidden="true" />}
+                          {isBound ? "Detach" : "Attach"}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         )}
-      </section>
+      </Card>
+    </div>
+  );
+}
+
+/** A section's title band: a top edge that reads at a glance when several
+ * cards are stacked, with the section's count on the right. */
+function SectionHeader({
+  icon: Icon,
+  title,
+  meta,
+}: {
+  icon: LucideIcon;
+  title: string;
+  meta?: ReactNode;
+}) {
+  return (
+    <CardHeader className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 px-4 py-4 sm:px-6 [.border-b]:pb-4">
+      <h3 className="flex items-center gap-2 leading-none font-semibold">
+        <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+        {title}
+      </h3>
+      {meta !== undefined && <CardAction className="self-center">{meta}</CardAction>}
+    </CardHeader>
+  );
+}
+
+function FieldLabel({
+  htmlFor,
+  status,
+  children,
+}: {
+  htmlFor: string;
+  status: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-4 items-center justify-between gap-2">
+      <Label htmlFor={htmlFor}>{children}</Label>
+      {status}
+    </div>
+  );
+}
+
+/**
+ * A `NativeSelect` that fills its column up to a cap. The shadcn wrapper is
+ * `w-fit`, which would size every select to its longest option — 260-odd
+ * model names make that the width of the page. Capped rather than stretched
+ * all the same: a control is never much wider than its longest plausible
+ * value, and five full-width dropdowns are what made every phase row look
+ * identical.
+ */
+function FieldSelect({
+  wrapperClassName,
+  className,
+  ...props
+}: ComponentProps<typeof NativeSelect> & { wrapperClassName?: string }) {
+  return (
+    <div
+      className={cn(
+        "w-full max-w-md min-w-0 [&>[data-slot=native-select-wrapper]]:w-full",
+        wrapperClassName,
+      )}
+    >
+      <NativeSelect className={cn("bg-background", className)} {...props} />
+    </div>
+  );
+}
+
+/**
+ * A value that is not the operator's to pick here, and why. Deliberately
+ * NOT a disabled select — a disabled control still reads as "your setting",
+ * and this is a consequence of a choice made elsewhere. The badge states
+ * the value; the line beside it names the cause.
+ */
+function Locked({
+  value,
+  because,
+  locked = false,
+}: {
+  value: string;
+  because: string;
+  locked?: boolean;
+}) {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <Badge variant="outline" className="bg-muted/60 text-muted-foreground">
+        {locked && <Lock aria-hidden="true" />}
+        {value}
+      </Badge>
+      <span className="min-w-0 text-xs text-muted-foreground">{because}</span>
     </div>
   );
 }

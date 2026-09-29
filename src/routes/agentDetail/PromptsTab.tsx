@@ -6,7 +6,9 @@ import { TrainingSignalPanel } from "../testing/TrainingSignalPanel.tsx";
 import { PROMPT_PHASES, type AgentTestCase, type PromptSnapshot } from "../testing/types.ts";
 import type { AgentDetailContext } from "../AgentDetailRoute.tsx";
 import { PhasePromptPanel } from "./PhasePromptPanel.tsx";
-import styles from "./PromptsTab.module.css";
+import { AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
 
 /**
  * Where someone reads and moves the prompt that serves live traffic for
@@ -86,21 +88,32 @@ export function PromptsTab() {
   const openCases = casesForPhase(agentCases, openPhase);
 
   return (
-    <div className={styles.page}>
-      <p className={styles.body}>
+    // The training-signal panel sits under the phase split as its own block
+    // rather than inside it: it is about the agent, not about whichever
+    // phase happens to be open.
+    <div className="flex flex-col gap-6 pb-6">
+      <p className="max-w-prose text-sm text-muted-foreground">
         The instructions each phase of a run actually follows. Editing here saves a new version;
         nothing you save reaches production until it is promoted and its test suite passes — or
         until you override that here.
       </p>
 
       {loadError !== null && (
-        <p className={styles.alert} role="alert">
-          {loadError}
-        </p>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden="true" />
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       )}
 
-      <div className={styles.split}>
-        <nav className={styles.phaseList} aria-label="Prompt phases">
+      {/* Phase list beside the open phase, not five stacked cards. A fixed
+          rail on desktop so the panel's measure doesn't shift as phase names
+          change length; a sideways-scrolling strip above the panel on a
+          narrower screen, so five rows don't push the prompt off the fold. */}
+      <div className="grid items-start gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Prompt phases"
+          className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1 shadow-sm lg:flex-col lg:overflow-visible"
+        >
           {PROMPT_PHASES.map((phase) => {
             const phaseCases = casesForPhase(agentCases, phase);
             const live = promptByPhase.get(phase) ?? null;
@@ -110,11 +123,23 @@ export function PromptsTab() {
                 key={phase}
                 type="button"
                 aria-current={isOpen ? "true" : undefined}
-                className={`${styles.phaseItem} ${isOpen ? styles.phaseItemOn : ""}`}
+                // The open phase is marked by a filled band and a leading
+                // rule, not colour alone — it also survives the band being
+                // the only thing distinguishing two adjacent rows.
+                className={cn(
+                  "flex shrink-0 flex-col items-start gap-0.5 rounded-lg border-l-2 px-3 py-2 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:w-full",
+                  isOpen
+                    ? "border-primary bg-accent text-foreground"
+                    : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
                 onClick={() => setOpenPhase(phase)}
               >
-                <span className={styles.phaseName}>{phase}</span>
-                <span className={styles.phaseMeta}>
+                <span
+                  className={cn("text-sm font-medium capitalize", isOpen && "text-primary")}
+                >
+                  {phase}
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums">
                   {live === null
                     ? "—"
                     : live.is_fallback
