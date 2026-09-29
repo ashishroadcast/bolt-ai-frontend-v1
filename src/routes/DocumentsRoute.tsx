@@ -246,7 +246,7 @@ function TagRail({
 
   return (
     <nav
-      className="flex flex-col gap-0.5 rounded-xl border bg-card p-2 text-card-foreground shadow-sm xl:sticky xl:top-0"
+      className="flex flex-col gap-0.5 rounded-xl border bg-card p-2 text-card-foreground shadow-sm max-2xl:max-h-64 max-2xl:overflow-y-auto 2xl:sticky 2xl:top-0"
       aria-label="Classification"
     >
       <p className="px-2 pt-1 pb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Filed under</p>
@@ -737,12 +737,13 @@ export function DocumentsRoute() {
         )}
 
         {/* Two zones: the rail navigates the hierarchy, the right column
-            holds one card per branch below the selection. Below `xl` (the
-            console sidebar takes 16rem of it) the rail stacks above the
-            cards rather than squeezing them into a column too narrow for
-            their tables. */}
+            holds one card per branch below the selection. Below `2xl` (the
+            console sidebar takes 16rem of it; at 1280px the tables were
+            still cut off) the rail stacks above the cards, height-capped
+            and scrolling itself, rather than squeezing them into a column
+            too narrow for their tables. */}
         {(rows.length > 0 || tree.nodes.length > 0) && (
-          <div className="grid items-start gap-6 xl:grid-cols-[14rem_minmax(0,1fr)]">
+          <div className="grid items-start gap-6 2xl:grid-cols-[14rem_minmax(0,1fr)]">
             <TagRail
               tree={tree}
               selected={untaggedOnly ? null : selectedTag}
