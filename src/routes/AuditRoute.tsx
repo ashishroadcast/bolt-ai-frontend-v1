@@ -1,11 +1,23 @@
-import { ScrollText } from "lucide-react";
+import { AlertCircle, ScrollText } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { listAuditEntries, type ConfigAuditAction, type ConfigAuditEntry } from "./auditApi.ts";
-import styles from "./AuditRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -88,24 +100,45 @@ export function AuditRoute() {
         title="Audit"
         description="Who changed what, when — every configuration write this tenant has made, straight from config_audit."
       />
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden="true" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
 
-        <div className={styles.filterRow}>
-          <label htmlFor="audit-entity-type">Entity type</label>
-          <select
+        {/* Always rendered, in the same place, whatever the result — a filter
+            that narrowed the log to nothing must still be there to undo. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Label htmlFor="audit-entity-type" className="text-muted-foreground">
+            Entity type
+          </Label>
+          <NativeSelect
             id="audit-entity-type"
+            size="sm"
             value={entityTypeFilter}
             onChange={(e) => setEntityTypeFilter(e.target.value)}
+            className="min-w-40 bg-card"
           >
-            <option value="">All</option>
+            <NativeSelectOption value="">All</NativeSelectOption>
             {knownEntityTypes.map((type) => (
-              <option key={type} value={type}>
+              <NativeSelectOption key={type} value={type}>
                 {type}
-              </option>
+              </NativeSelectOption>
             ))}
-          </select>
+          </NativeSelect>
         </div>
+
+        {loading && loadError === null && entries === null && (
+          <Card aria-busy="true">
+            <CardContent className="flex flex-col gap-3">
+              {[0, 1, 2].map((key) => (
+                <Skeleton key={key} aria-hidden="true" className="h-10 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {!loading && loadError === null && rows.length === 0 && (
           <EmptyState
@@ -116,46 +149,60 @@ export function AuditRoute() {
         )}
 
         {rows.length > 0 && (
-          <section className={styles.sheet}>
-            <header className={styles.sheetHead}>
-              <h3>Audit log</h3>
-              <span className={styles.sub}>
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <CardTitle>
+                <h3>Audit log</h3>
+              </CardTitle>
+              <CardDescription className="tabular-nums">
                 {rows.length} {rows.length === 1 ? "entry" : "entries"}
-              </span>
-            </header>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Entity</th>
-                    <th>Action</th>
-                    <th>Actor</th>
-                    <th>When</th>
-                    <th>Changed</th>
-                  </tr>
-                </thead>
-                <tbody>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6">Entity</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Actor</TableHead>
+                    <TableHead>When</TableHead>
+                    <TableHead className="pr-6">Changed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((entry) => (
-                    <tr key={entry.id}>
-                      <td className={styles.entity}>
+                    <TableRow key={entry.id}>
+                      <TableCell className="py-3 pl-6 align-top font-mono text-xs font-medium">
                         {entry.entity_type} #{entry.entity_id}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell className="py-3 align-top">
                         <StatusPill tone={ACTION_TONE[entry.action]} label={entry.action} />
-                      </td>
-                      <td className={styles.actor}>User #{entry.actor_user_id}</td>
-                      <td className={styles.when}>{formatWhen(entry.created_at)}</td>
-                      <td>
-                        <pre className={styles.payload} data-testid="audit-payload">
+                      </TableCell>
+                      <TableCell className="py-3 align-top font-mono text-xs text-muted-foreground">
+                        User #{entry.actor_user_id}
+                      </TableCell>
+                      <TableCell className="py-3 align-top text-muted-foreground">
+                        {formatWhen(entry.created_at)}
+                      </TableCell>
+                      <TableCell className="py-3 pr-6 align-top">
+                        {/* A changed_fields payload is arbitrary JSON — no length
+                            bound server-side — so it scrolls inside its own box in
+                            both directions rather than the page (task brief: "an
+                            audit payload ... scrolls inside its own container,
+                            never the page body"). */}
+                        <pre
+                          className="m-0 max-h-[120px] max-w-[36ch] overflow-auto rounded-md border bg-muted px-2 py-1.5 font-mono text-xs whitespace-pre"
+                          data-testid="audit-payload"
+                        >
                           {JSON.stringify(entry.changed_fields, null, 2)}
                         </pre>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
     </>

@@ -1,4 +1,41 @@
+import {
+  AlertCircle,
+  ChevronRight,
+  KeyRound,
+  Lock,
+  Plus,
+  Power,
+  PowerOff,
+  Star,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { StatusPill, type StatusPillTone } from "../agents/StatusPill.tsx";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
@@ -20,11 +57,23 @@ import {
   type CodeExecutionCapability,
   type SettingsSnapshot,
 } from "./settingsApi.ts";
-import styles from "./SettingsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
 }
+
+/** NativeSelect's wrapper is `w-fit`; in a form column the select should
+ * span the column like the inputs beside it. */
+const FULL_WIDTH_SELECT = "[&>[data-slot=native-select-wrapper]]:w-full";
+
+/** One Ask display option: the whole row is the checkbox's label, so the
+ * title and its explanation are both the click target and its accessible
+ * name. Tinted when on, dimmed when a parent organisation has locked it. */
+const TOGGLE_CLASS =
+  "cursor-pointer items-start gap-3 rounded-lg border p-4 leading-normal font-normal select-auto has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-70 has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5";
+
+const FACT_CLASS = "rounded-lg border bg-muted/30 p-4";
+const FACT_VALUE_CLASS = "mt-1 flex flex-wrap items-center gap-2 text-2xl font-semibold tabular-nums";
 
 /**
  * OpenRouter quotes USD *per token*, which lands on screen as 0.00000027
@@ -349,21 +398,19 @@ function CreateLlmConfigForm({
   }
 
   return (
-    <form className={styles.form} onSubmit={(event) => void handleSubmit(event)}>
+    <form className="flex flex-col gap-5" onSubmit={(event) => void handleSubmit(event)}>
       {formError !== null && (
-        <p role="alert" className={styles.formError}>
-          {formError}
-        </p>
+        <Alert variant="destructive">
+          <AlertCircle aria-hidden="true" />
+          <AlertDescription>{formError}</AlertDescription>
+        </Alert>
       )}
 
-      <div className={styles.formGrid}>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-name">
-            Name
-          </label>
-          <input
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid content-start gap-2">
+          <Label htmlFor="llm-name">Name</Label>
+          <Input
             id="llm-name"
-            className={styles.input}
             value={form.name}
             onChange={(event) => patch({ name: event.target.value })}
             disabled={submitting}
@@ -371,13 +418,10 @@ function CreateLlmConfigForm({
           />
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-provider">
-            Provider
-          </label>
-          <select
+        <div className={cn("grid content-start gap-2", FULL_WIDTH_SELECT)}>
+          <Label htmlFor="llm-provider">Provider</Label>
+          <NativeSelect
             id="llm-provider"
-            className={styles.input}
             value={providerChoice}
             onChange={(event) => {
               const next = event.target.value;
@@ -391,15 +435,14 @@ function CreateLlmConfigForm({
             disabled={submitting}
           >
             {KNOWN_PROVIDERS.map((option) => (
-              <option key={option.value} value={option.value}>
+              <NativeSelectOption key={option.value} value={option.value}>
                 {option.label}
-              </option>
+              </NativeSelectOption>
             ))}
-            <option value={CUSTOM_PROVIDER}>Custom Endpoint</option>
-          </select>
+            <NativeSelectOption value={CUSTOM_PROVIDER}>Custom Endpoint</NativeSelectOption>
+          </NativeSelect>
           {providerChoice === CUSTOM_PROVIDER && (
-            <input
-              className={`${styles.input} ${styles.customProviderName}`}
+            <Input
               placeholder="Provider name"
               aria-label="Custom provider name"
               value={form.provider}
@@ -409,13 +452,11 @@ function CreateLlmConfigForm({
           )}
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-model">
-            Model
-          </label>
-          <input
+        <div className="grid content-start gap-2">
+          <Label htmlFor="llm-model">Model</Label>
+          <Input
             id="llm-model"
-            className={styles.input}
+            className="font-mono"
             placeholder="anthropic/claude-sonnet-4.5"
             value={form.model}
             onChange={(event) => patch({ model: event.target.value })}
@@ -427,16 +468,21 @@ function CreateLlmConfigForm({
             aria-controls="llm-model-catalogue"
           />
           {chosen !== null && (chosenContext !== null || chosenIn !== null || chosenOut !== null) && (
-            <p className={styles.modelChosen}>
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
               {chosenContext === null ? null : `${chosenContext} context`}
               {chosenIn === null ? null : ` · ${chosenIn} in`}
               {chosenOut === null ? null : ` · ${chosenOut} out`}
               {" per 1M tokens"}
             </p>
           )}
-          {catalogueLoading && <p className={styles.modelHint}>Finding models…</p>}
+          {catalogueLoading && (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner aria-hidden="true" className="size-3.5" />
+              Finding models…
+            </p>
+          )}
           {catalogueError === null ? null : (
-            <p className={styles.modelHint}>
+            <p className="text-sm text-warning">
               {catalogueError}{" "}
               {providerChoice === "openrouter"
                 ? "You can still type a model id by hand."
@@ -445,7 +491,7 @@ function CreateLlmConfigForm({
           )}
           {suggestions.length === 0 ? null : (
             <ul
-              className={styles.modelList}
+              className="max-h-64 divide-y overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md"
               id="llm-model-catalogue"
               role="listbox"
               aria-label="Model catalogue"
@@ -456,17 +502,22 @@ function CreateLlmConfigForm({
                 const outPrice = pricePerMillion(model.pricing?.completion);
                 return (
                   <li key={model.id}>
+                    {/* A grid, not a flex row: the price column has to line up
+                        down the list or the comparison the picker exists for
+                        does not happen. */}
                     <button
                       type="button"
                       role="option"
                       aria-selected={model.id === form.model}
-                      className={styles.modelOption}
+                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 px-3 py-2 text-left outline-none hover:bg-accent focus-visible:bg-accent disabled:cursor-default disabled:opacity-60"
                       onClick={() => patch({ model: model.id })}
                       disabled={submitting}
                     >
-                      <span className={styles.modelName}>{model.name}</span>
-                      <span className={styles.modelId}>{model.id}</span>
-                      <span className={styles.modelMeta}>
+                      <span className="col-start-1 row-start-1 truncate text-sm">{model.name}</span>
+                      <span className="col-start-1 row-start-2 truncate font-mono text-xs text-muted-foreground">
+                        {model.id}
+                      </span>
+                      <span className="col-start-2 row-span-2 row-start-1 self-center font-mono text-xs whitespace-nowrap text-muted-foreground tabular-nums">
                         {context === null ? "—" : context}
                         {inPrice === null ? "" : ` · ${inPrice} in`}
                         {outPrice === null ? "" : ` / ${outPrice} out`}
@@ -479,32 +530,27 @@ function CreateLlmConfigForm({
           )}
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-base-url">
-            Base URL
-          </label>
-          <input
+        <div className="grid content-start gap-2">
+          <Label htmlFor="llm-base-url">Base URL</Label>
+          <Input
             id="llm-base-url"
-            className={styles.input}
+            className="font-mono"
             placeholder={providerChoice === "openrouter" ? "Provider default" : "https://…/v1"}
             value={form.baseUrl}
             onChange={(event) => patch({ baseUrl: event.target.value })}
             disabled={submitting}
           />
           {providerLiveFetch && providerChoice !== "openrouter" && baseUrl !== "" && (
-            <p className={styles.fieldHint}>Model suggestions below come live from this endpoint.</p>
+            <p className="text-sm text-muted-foreground">Model suggestions below come live from this endpoint.</p>
           )}
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-api-key">
-            API key
-          </label>
-          <input
+        <div className="grid content-start gap-2">
+          <Label htmlFor="llm-api-key">API key</Label>
+          <Input
             id="llm-api-key"
             type="password"
             autoComplete="off"
-            className={styles.input}
             placeholder="Write-only — never shown again"
             value={form.apiKey}
             onChange={(event) => patch({ apiKey: event.target.value })}
@@ -512,40 +558,40 @@ function CreateLlmConfigForm({
           />
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="llm-kind">
-            Kind
-          </label>
-          <select
+        <div className={cn("grid content-start gap-2", FULL_WIDTH_SELECT)}>
+          <Label htmlFor="llm-kind">Kind</Label>
+          <NativeSelect
             id="llm-kind"
-            className={styles.input}
             value={form.kind}
             onChange={(event) => patch({ kind: event.target.value as LLMConfigKind })}
             disabled={submitting}
           >
-            <option value="chat">Chat</option>
-            <option value="embedding">Embedding</option>
-          </select>
+            <NativeSelectOption value="chat">Chat</NativeSelectOption>
+            <NativeSelectOption value="embedding">Embedding</NativeSelectOption>
+          </NativeSelect>
         </div>
       </div>
 
-      <label className={styles.checkboxRow}>
-        <input
-          type="checkbox"
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="llm-is-default"
           checked={form.isDefault}
-          onChange={(event) => patch({ isDefault: event.target.checked })}
+          onCheckedChange={(checked) => patch({ isDefault: checked === true })}
           disabled={submitting}
         />
-        Make this the tenant's default model
-      </label>
+        <Label htmlFor="llm-is-default" className="font-normal">
+          Make this the tenant's default model
+        </Label>
+      </div>
 
-      <div className={styles.actions}>
-        <button type="submit" className={styles.submit} disabled={submitting}>
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={submitting}>
+          {submitting && <Spinner aria-hidden="true" />}
           {submitting ? "Adding…" : "Add model"}
-        </button>
-        <button type="button" className={styles.cancel} onClick={onCancel} disabled={submitting}>
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -733,387 +779,487 @@ export function SettingsRoute() {
         title="Settings"
         description="Models and keys this tenant runs on, which agents may execute code, and the sandbox limits every run shares."
       />
-      <div className={styles.body}>
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>OpenRouter key</h3>
-            <StatusPill
-              tone={tenantKeySet ? "good" : "amber"}
-              label={tenantKeySet ? "Set" : "Not set"}
-            />
-          </header>
+      <div className="flex flex-col gap-6">
+        <section aria-labelledby="settings-key-title">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <h3 id="settings-key-title">OpenRouter key</h3>
+              </CardTitle>
+              <CardDescription>
+                One key for the whole tenant. Every model below runs on it — a model only needs its
+                own key if it should bill somewhere else.
+              </CardDescription>
+              <CardAction>
+                <StatusPill
+                  tone={tenantKeySet ? "good" : "amber"}
+                  label={tenantKeySet ? "Set" : "Not set"}
+                />
+              </CardAction>
+            </CardHeader>
 
-          <div className={styles.formWrap}>
-            <p className={styles.description}>
-              One key for the whole tenant. Every model below runs on it — a model only needs
-              its own key if it should bill somewhere else.
-            </p>
-
-            {defaultConfig === null ? (
-              <p role="alert" className={styles.error}>
-                No default model is set, so there is nowhere to store the key. Mark one of the
-                models below as the default first.
-              </p>
-            ) : (
-              <div className={styles.formGrid}>
-                <div className={styles.field}>
-                  <label className={styles.label} htmlFor="tenant-openrouter-key">
+            <CardContent className="flex flex-col gap-4">
+              {defaultConfig === null ? (
+                <Alert className="border-warning/30 bg-warning-soft text-warning">
+                  <TriangleAlert aria-hidden="true" />
+                  <AlertDescription className="text-warning">
+                    No default model is set, so there is nowhere to store the key. Mark one of the
+                    models below as the default first.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="flex max-w-2xl flex-col gap-2">
+                  <Label htmlFor="tenant-openrouter-key">
                     {tenantKeySet ? "Replace the key" : "API key"}
-                  </label>
-                  <input
-                    id="tenant-openrouter-key"
-                    className={styles.input}
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    placeholder="sk-or-..."
-                    value={keyDraft}
-                    disabled={keyBusy}
-                    onChange={(event) => {
-                      setKeyDraft(event.target.value);
-                      setKeySaved(false);
-                    }}
-                  />
-                  <p className={styles.rowNote}>
+                  </Label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      id="tenant-openrouter-key"
+                      className="font-mono sm:max-w-md"
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      placeholder="sk-or-..."
+                      value={keyDraft}
+                      disabled={keyBusy}
+                      onChange={(event) => {
+                        setKeyDraft(event.target.value);
+                        setKeySaved(false);
+                      }}
+                    />
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        disabled={keyBusy || keyDraft.trim() === ""}
+                        onClick={() => void handleSaveKey()}
+                      >
+                        {keyBusy ? <Spinner aria-hidden="true" /> : <KeyRound aria-hidden="true" />}
+                        {keyBusy ? "Saving…" : "Save key"}
+                      </Button>
+                      {keySaved && <StatusPill tone="good" label="Saved" />}
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
                     {/* Never rendered back — the API reports only whether one is stored. */}
                     Write-only. Stored encrypted; it is never shown again.
                   </p>
                 </div>
+              )}
 
-                <div className={styles.actions}>
-                  <button
-                    type="button"
-                    className={styles.submit}
-                    disabled={keyBusy || keyDraft.trim() === ""}
-                    onClick={() => void handleSaveKey()}
-                  >
-                    {keyBusy ? "Saving…" : "Save key"}
-                  </button>
-                  {keySaved && <StatusPill tone="good" label="Saved" />}
-                </div>
+              {keyError !== null && (
+                <Alert variant="destructive">
+                  <AlertCircle aria-hidden="true" />
+                  <AlertDescription>{keyError}</AlertDescription>
+                </Alert>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section aria-labelledby="settings-models-title">
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <CardTitle>
+                <h3 id="settings-models-title">Models &amp; keys</h3>
+              </CardTitle>
+              {configs !== null && configsError === null && (
+                <CardDescription className="tabular-nums">
+                  {rows.length} {rows.length === 1 ? "model" : "models"}
+                </CardDescription>
+              )}
+              {!creating && (
+                <CardAction>
+                  <Button type="button" size="sm" onClick={() => setCreating(true)}>
+                    <Plus aria-hidden="true" />
+                    Add a model
+                  </Button>
+                </CardAction>
+              )}
+            </CardHeader>
+
+            {creating && (
+              <div className="border-b bg-muted/30 px-6 py-5">
+                <h4 className="mb-4 text-sm font-medium">New model</h4>
+                <CreateLlmConfigForm
+                  onCreated={(created) => {
+                    setConfigs([...(configs ?? []), created]);
+                    setCreating(false);
+                  }}
+                  onCancel={() => setCreating(false)}
+                />
               </div>
             )}
 
-            {keyError !== null && (
-              <p role="alert" className={styles.formError}>
-                {keyError}
+            {configs === null && configsError === null && (
+              <p className="flex items-center gap-2 px-6 py-5 text-sm text-muted-foreground">
+                <Spinner aria-hidden="true" />
+                Loading models…
               </p>
             )}
-          </div>
+            {configsError !== null && (
+              <div className="px-6 py-5">
+                <Alert variant="destructive">
+                  <AlertCircle aria-hidden="true" />
+                  <AlertDescription>{configsError}</AlertDescription>
+                </Alert>
+              </div>
+            )}
+            {configs !== null && configsError === null && rows.length === 0 && (
+              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+                No models configured yet. Add one with a tenant OpenRouter key to let agents run.
+              </p>
+            )}
+            {rows.length > 0 && (
+              <div className="divide-y">
+                {groupByProvider(rows).map((group) => (
+                  <details
+                    key={group.provider}
+                    className="group/provider"
+                    open={openProviders[group.provider] ?? defaultOpenFor(group)}
+                    onToggle={(event) => {
+                      const isOpen = event.currentTarget.open;
+                      setOpenProviders((prev) => ({ ...prev, [group.provider]: isOpen }));
+                    }}
+                  >
+                    {/* list-none + the webkit marker rule: the browser's own
+                        disclosure triangle is replaced by the chevron below, so
+                        the two never show up twice. */}
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-6 py-3 select-none hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
+                      <ChevronRight
+                        aria-hidden="true"
+                        className="size-4 text-muted-foreground transition-transform group-open/provider:rotate-90"
+                      />
+                      <span className="text-sm font-medium capitalize">{group.provider}</span>
+                      <span className="ml-auto font-mono text-xs text-muted-foreground tabular-nums">
+                        {group.configs.length} {group.configs.length === 1 ? "model" : "models"}
+                        {" · "}
+                        {group.activeCount} active
+                      </span>
+                    </summary>
+                    <div className="border-t">
+                      <Table>
+                        <TableHeader className="bg-muted/50">
+                          <TableRow className="hover:bg-transparent">
+                            <TableHead className="pl-6">Name</TableHead>
+                            <TableHead>Model</TableHead>
+                            <TableHead>Kind</TableHead>
+                            <TableHead>Key</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="pr-6 text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.configs.map((config) => {
+                            const state = rowState(config.id);
+                            return (
+                              <TableRow key={config.id}>
+                                <TableCell className="pl-6 font-medium">{config.name}</TableCell>
+                                <TableCell className="font-mono text-xs text-muted-foreground">
+                                  {config.model}
+                                </TableCell>
+                                <TableCell className="text-muted-foreground">{config.kind}</TableCell>
+                                <TableCell>
+                                  {/* "Missing" was a lie for the ~260 catalogue rows: a config with
+                                      no key of its own borrows the tenant's at run time and works
+                                      perfectly. It is only missing when the tenant has none either. */}
+                                  {config.has_api_key ? (
+                                    <StatusPill tone="good" label="Own key" />
+                                  ) : tenantKeySet ? (
+                                    <StatusPill tone="neutral" label="Tenant key" />
+                                  ) : (
+                                    <StatusPill tone="amber" label="Missing" />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center gap-1.5">
+                                    {config.is_default && <StatusPill tone="good" label="Default" />}
+                                    <StatusPill
+                                      tone={config.is_active ? "neutral" : "amber"}
+                                      label={config.is_active ? "Active" : "Inactive"}
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="pr-6">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      disabled={state.busy}
+                                      onClick={() => void handleToggleActive(config)}
+                                    >
+                                      {config.is_active ? (
+                                        <PowerOff aria-hidden="true" />
+                                      ) : (
+                                        <Power aria-hidden="true" />
+                                      )}
+                                      {config.is_active ? "Deactivate" : "Activate"}
+                                    </Button>
+                                    {!config.is_default && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        disabled={state.busy}
+                                        onClick={() => void handleSetDefault(config)}
+                                      >
+                                        <Star aria-hidden="true" />
+                                        Set default
+                                      </Button>
+                                    )}
+                                    {!state.confirmingDelete && (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                        disabled={state.busy}
+                                        onClick={() => patchRow(config.id, { confirmingDelete: true })}
+                                      >
+                                        <Trash2 aria-hidden="true" />
+                                        Remove
+                                      </Button>
+                                    )}
+                                    {state.confirmingDelete && (
+                                      <>
+                                        <Button
+                                          type="button"
+                                          variant="destructive"
+                                          size="sm"
+                                          disabled={state.busy}
+                                          onClick={() => void handleDelete(config.id)}
+                                        >
+                                          {state.busy && <Spinner aria-hidden="true" />}
+                                          {state.busy ? "Removing…" : "Confirm"}
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          disabled={state.busy}
+                                          onClick={() => patchRow(config.id, { confirmingDelete: false })}
+                                        >
+                                          Cancel
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
+                                  {state.error !== null && (
+                                    <p className="mt-1 text-right text-xs whitespace-normal text-destructive">
+                                      {state.error}
+                                    </p>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </Card>
         </section>
 
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Models &amp; keys</h3>
-            {configs !== null && configsError === null && (
-              <span className={styles.sub}>
-                {rows.length} {rows.length === 1 ? "model" : "models"}
-              </span>
-            )}
-            {!creating && (
-              <button type="button" className={styles.addBtn} onClick={() => setCreating(true)}>
-                Add a model
-              </button>
-            )}
-          </header>
+        <section aria-labelledby="settings-ask-title">
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                <h3 id="settings-ask-title">Ask — what readers see</h3>
+              </CardTitle>
+              <CardDescription>
+                {settings?.ask.set_by_ancestor === true
+                  ? "Set for every organisation by your parent organisation"
+                  : "Applies to this organisation and every one under it"}
+              </CardDescription>
+              {settings?.ask.set_by_ancestor === true && (
+                <CardAction>
+                  <Badge variant="outline">
+                    <Lock aria-hidden="true" />
+                    Locked
+                  </Badge>
+                </CardAction>
+              )}
+            </CardHeader>
 
-          {creating && (
-            <div className={styles.formWrap}>
-              <CreateLlmConfigForm
-                onCreated={(created) => {
-                  setConfigs([...(configs ?? []), created]);
-                  setCreating(false);
-                }}
-                onCancel={() => setCreating(false)}
-              />
-            </div>
-          )}
+            <CardContent className="flex flex-col gap-4">
+              <p className="max-w-3xl text-sm text-muted-foreground">
+                Ask answers in one or two sentences. These add the working behind it — useful
+                while you are building an agent, noise for everyone else, so both are off by
+                default.
+              </p>
 
-          {configs === null && configsError === null && <p className={styles.loading}>Loading models…</p>}
-          {configsError !== null && (
-            <p role="alert" className={styles.error}>
-              {configsError}
-            </p>
-          )}
-          {configs !== null && configsError === null && rows.length === 0 && (
-            <p className={styles.empty}>
-              No models configured yet. Add one with a tenant OpenRouter key to let agents run.
-            </p>
-          )}
-          {rows.length > 0 &&
-            groupByProvider(rows).map((group) => (
-              <details
-                key={group.provider}
-                className={styles.providerGroup}
-                open={openProviders[group.provider] ?? defaultOpenFor(group)}
-                onToggle={(event) => {
-                  const isOpen = event.currentTarget.open;
-                  setOpenProviders((prev) => ({ ...prev, [group.provider]: isOpen }));
-                }}
-              >
-                <summary className={styles.providerSummary}>
-                  <span className={styles.providerName}>{group.provider}</span>
-                  <span className={styles.providerMeta}>
-                    {group.configs.length} {group.configs.length === 1 ? "model" : "models"}
-                    {" · "}
-                    {group.activeCount} active
-                  </span>
-                </summary>
-                <div className={styles.tableWrap}>
-                  <table className={styles.table}>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Model</th>
-                        <th>Kind</th>
-                        <th>Key</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.configs.map((config) => {
-                        const state = rowState(config.id);
-                        return (
-                          <tr key={config.id}>
-                            <td className={styles.name}>{config.name}</td>
-                            <td className={styles.description}>{config.model}</td>
-                            <td className={styles.description}>{config.kind}</td>
-                            <td>
-                              {/* "Missing" was a lie for the ~260 catalogue rows: a config with
-                                  no key of its own borrows the tenant's at run time and works
-                                  perfectly. It is only missing when the tenant has none either. */}
-                              {config.has_api_key ? (
-                                <StatusPill tone="good" label="Own key" />
-                              ) : tenantKeySet ? (
-                                <StatusPill tone="neutral" label="Tenant key" />
-                              ) : (
-                                <StatusPill tone="amber" label="Missing" />
-                              )}
-                            </td>
-                            <td>
-                              <div className={styles.statusCell}>
-                                {config.is_default && <StatusPill tone="good" label="Default" />}
-                                <StatusPill
-                                  tone={config.is_active ? "neutral" : "amber"}
-                                  label={config.is_active ? "Active" : "Inactive"}
-                                />
-                              </div>
-                            </td>
-                            <td>
-                              <div className={styles.rowActions}>
-                                <button
-                                  type="button"
-                                  className={styles.actionBtn}
-                                  disabled={state.busy}
-                                  onClick={() => void handleToggleActive(config)}
-                                >
-                                  {config.is_active ? "Deactivate" : "Activate"}
-                                </button>
-                                {!config.is_default && (
-                                  <button
-                                    type="button"
-                                    className={styles.actionBtn}
-                                    disabled={state.busy}
-                                    onClick={() => void handleSetDefault(config)}
-                                  >
-                                    Set default
-                                  </button>
-                                )}
-                                {!state.confirmingDelete && (
-                                  <button
-                                    type="button"
-                                    className={`${styles.actionBtn} ${styles.danger}`}
-                                    disabled={state.busy}
-                                    onClick={() => patchRow(config.id, { confirmingDelete: true })}
-                                  >
-                                    Remove
-                                  </button>
-                                )}
-                                {state.confirmingDelete && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      className={`${styles.actionBtn} ${styles.danger}`}
-                                      disabled={state.busy}
-                                      onClick={() => void handleDelete(config.id)}
-                                    >
-                                      {state.busy ? "Removing…" : "Confirm"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className={styles.actionBtn}
-                                      disabled={state.busy}
-                                      onClick={() => patchRow(config.id, { confirmingDelete: false })}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                              {state.error !== null && <p className={styles.rowNote}>{state.error}</p>}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {settingsError === null && settings === null && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner aria-hidden="true" />
+                  Loading…
+                </p>
+              )}
+              {askError !== null && (
+                <Alert variant="destructive">
+                  <AlertCircle aria-hidden="true" />
+                  <AlertDescription>{askError}</AlertDescription>
+                </Alert>
+              )}
+              {settings?.ask.set_by_ancestor === true && (
+                // A standing explanation, not an event — role="note" rather
+                // than the Alert's default role="alert", which would be
+                // announced as if something had just gone wrong.
+                <Alert role="note" className="bg-muted/50">
+                  <Lock aria-hidden="true" />
+                  <AlertDescription>
+                    Your parent organisation decides what readers see here, for every organisation
+                    under it. Ask an admin there to change it.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {settings !== null && (
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <Label className={TOGGLE_CLASS}>
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={settings.ask.show_reasoning}
+                      disabled={askSaving || settings.ask.set_by_ancestor === true}
+                      onCheckedChange={(checked) => void saveAsk({ show_reasoning: checked === true })}
+                    />
+                    <span className="grid gap-1">
+                      <span className="font-medium">Reasoning steps</span>
+                      <span className="text-muted-foreground">
+                        The phase-by-phase card, live as the run happens. Off, readers see a single
+                        line saying it is thinking and how long it has been.
+                      </span>
+                    </span>
+                  </Label>
+                  <Label className={TOGGLE_CLASS}>
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={settings.ask.show_query_results}
+                      disabled={askSaving || settings.ask.set_by_ancestor === true}
+                      onCheckedChange={(checked) => void saveAsk({ show_query_results: checked === true })}
+                    />
+                    <span className="grid gap-1">
+                      <span className="font-medium">Query result tables</span>
+                      <span className="text-muted-foreground">
+                        The raw rows a query returned, shown with the answer. A fleet-wide read is
+                        hundreds of rows, which is why this is off by default. Charts, stats and
+                        summaries are the answer and always show; whether an agent draws them is its
+                        own Generative UI setting.
+                      </span>
+                    </span>
+                  </Label>
                 </div>
-              </details>
-            ))}
+              )}
+            </CardContent>
+          </Card>
         </section>
 
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Ask — what readers see</h3>
-            <span className={styles.sub}>
-              {settings?.ask.set_by_ancestor === true
-                ? "set for every organisation by your parent organisation"
-                : "applies to this organisation and every one under it"}
-            </span>
-          </header>
+        <section aria-labelledby="settings-agents-title">
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <CardTitle>
+                <h3 id="settings-agents-title">Agents — code execution</h3>
+              </CardTitle>
+              {settings !== null && (
+                <CardDescription className="tabular-nums">
+                  {settings.agents.length} {settings.agents.length === 1 ? "agent" : "agents"}
+                </CardDescription>
+              )}
+            </CardHeader>
 
-          <p className={styles.sub}>
-            Ask answers in one or two sentences. These add the working behind it — useful
-            while you are building an agent, noise for everyone else, so both are off by
-            default.
-          </p>
-
-          {settingsError === null && settings === null && (
-            <p className={styles.loading}>Loading…</p>
-          )}
-          {askError !== null && (
-            <p role="alert" className={styles.error}>
-              {askError}
-            </p>
-          )}
-          {settings?.ask.set_by_ancestor === true && (
-            <p className={styles.sub}>
-              Your parent organisation decides what readers see here, for every organisation
-              under it. Ask an admin there to change it.
-            </p>
-          )}
-          {settings !== null && (
-            <div className={styles.toggles}>
-              <label className={styles.toggle}>
-                <input
-                  type="checkbox"
-                  checked={settings.ask.show_reasoning}
-                  disabled={askSaving || settings.ask.set_by_ancestor === true}
-                  onChange={(event) => void saveAsk({ show_reasoning: event.target.checked })}
-                />
-                <span>
-                  <strong>Reasoning steps</strong>
-                  <span className={styles.sub}>
-                    The phase-by-phase card, live as the run happens. Off, readers see a single
-                    line saying it is thinking and how long it has been.
-                  </span>
-                </span>
-              </label>
-              <label className={styles.toggle}>
-                <input
-                  type="checkbox"
-                  checked={settings.ask.show_query_results}
-                  disabled={askSaving || settings.ask.set_by_ancestor === true}
-                  onChange={(event) => void saveAsk({ show_query_results: event.target.checked })}
-                />
-                <span>
-                  <strong>Query result tables</strong>
-                  <span className={styles.sub}>
-                    The raw rows a query returned, shown with the answer. A fleet-wide read is
-                    hundreds of rows, which is why this is off by default. Charts, stats and
-                    summaries are the answer and always show; whether an agent draws them is its
-                    own Generative UI setting.
-                  </span>
-                </span>
-              </label>
-            </div>
-          )}
-        </section>
-
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Agents — code execution</h3>
-            {settings !== null && (
-              <span className={styles.sub}>
-                {settings.agents.length} {settings.agents.length === 1 ? "agent" : "agents"}
-              </span>
+            {settingsError !== null && (
+              <div className="px-6 py-5">
+                <Alert variant="destructive">
+                  <AlertCircle aria-hidden="true" />
+                  <AlertDescription>{settingsError}</AlertDescription>
+                </Alert>
+              </div>
             )}
-          </header>
-
-          {settingsError !== null && (
-            <p role="alert" className={styles.error}>
-              {settingsError}
-            </p>
-          )}
-          {settingsError === null && settings === null && (
-            <p className={styles.loading}>Loading agents…</p>
-          )}
-          {settingsError === null && settings !== null && settings.agents.length === 0 && (
-            <p className={styles.empty}>No agents exist for this tenant yet.</p>
-          )}
-          {settingsError === null && settings !== null && settings.agents.length > 0 && (
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Agent</th>
-                    <th>Code execution</th>
-                  </tr>
-                </thead>
-                <tbody>
+            {settingsError === null && settings === null && (
+              <p className="flex items-center gap-2 px-6 py-5 text-sm text-muted-foreground">
+                <Spinner aria-hidden="true" />
+                Loading agents…
+              </p>
+            )}
+            {settingsError === null && settings !== null && settings.agents.length === 0 && (
+              <p className="px-6 py-8 text-center text-sm text-muted-foreground">
+                No agents exist for this tenant yet.
+              </p>
+            )}
+            {settingsError === null && settings !== null && settings.agents.length > 0 && (
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6">Agent</TableHead>
+                    <TableHead className="pr-6">Code execution</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {settings.agents.map((agent) => (
-                    <tr key={agent.id}>
-                      <td className={styles.name}>{agent.name}</td>
-                      <td>
+                    <TableRow key={agent.id}>
+                      <TableCell className="pl-6 font-medium">{agent.name}</TableCell>
+                      <TableCell className="pr-6">
                         <StatusPill
                           tone={CODE_EXECUTION_TONE[agent.code_execution]}
                           label={CODE_EXECUTION_LABEL[agent.code_execution]}
                         />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
         </section>
 
-        <section className={styles.sheet}>
-          <header className={styles.sheetHead}>
-            <h3>Sandbox limits</h3>
-            <span className={styles.sub}>Effective, read-only</span>
-          </header>
-          <p className={styles.sandboxNote}>
-            Set once for the whole service (<code>app/config.py</code>), not per tenant — shown here
-            as fact, not as something this screen can change.
-          </p>
-          {settingsError === null && settings === null && (
-            <p className={styles.loading}>Loading sandbox limits…</p>
-          )}
-          {settingsError === null && settings !== null && (
-            <dl className={styles.factGrid}>
-              <div className={styles.fact}>
-                <dt>Max executions per run</dt>
-                <dd>{settings.sandbox.max_executions_per_run}</dd>
-              </div>
-              <div className={styles.fact}>
-                <dt>Max concurrent executions per user</dt>
-                <dd>
-                  {settings.sandbox.max_concurrent_executions_per_user}
-                  {!settings.sandbox.concurrency_configured && (
-                    <span className={styles.factBadge}>
-                      <StatusPill tone="amber" label="Not configured" />
-                    </span>
-                  )}
-                </dd>
-              </div>
-              <div className={styles.fact}>
-                <dt>Execution slot TTL</dt>
-                <dd>{settings.sandbox.concurrent_slot_ttl_seconds}s</dd>
-              </div>
-            </dl>
-          )}
+        <section aria-labelledby="settings-sandbox-title">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <h3 id="settings-sandbox-title">Sandbox limits</h3>
+                <Badge variant="outline" className="font-normal text-muted-foreground">
+                  Effective, read-only
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                Set once for the whole service (
+                <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs text-foreground">
+                  app/config.py
+                </code>
+                ), not per tenant — shown here as fact, not as something this screen can change.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {settingsError === null && settings === null && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner aria-hidden="true" />
+                  Loading sandbox limits…
+                </p>
+              )}
+              {settingsError === null && settings !== null && (
+                <dl className="grid gap-4 sm:grid-cols-3">
+                  <div className={FACT_CLASS}>
+                    <dt className="text-sm text-muted-foreground">Max executions per run</dt>
+                    <dd className={FACT_VALUE_CLASS}>{settings.sandbox.max_executions_per_run}</dd>
+                  </div>
+                  <div className={FACT_CLASS}>
+                    <dt className="text-sm text-muted-foreground">Max concurrent executions per user</dt>
+                    <dd className={FACT_VALUE_CLASS}>
+                      {settings.sandbox.max_concurrent_executions_per_user}
+                      {!settings.sandbox.concurrency_configured && (
+                        <StatusPill tone="amber" label="Not configured" />
+                      )}
+                    </dd>
+                  </div>
+                  <div className={FACT_CLASS}>
+                    <dt className="text-sm text-muted-foreground">Execution slot TTL</dt>
+                    <dd className={FACT_VALUE_CLASS}>{settings.sandbox.concurrent_slot_ttl_seconds}s</dd>
+                  </div>
+                </dl>
+              )}
+            </CardContent>
+          </Card>
         </section>
       </div>
     </>

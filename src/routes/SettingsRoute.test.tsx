@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setSession } from "../auth/session.ts";
+import { installRadixPolyfills } from "../test/radix.ts";
 import { SettingsRoute } from "./SettingsRoute.tsx";
 import type { CatalogueModel, LLMConfig } from "./llmConfigsApi.ts";
 import type { SettingsSnapshot } from "./settingsApi.ts";
@@ -169,6 +170,9 @@ function renderSettings(fetchMock: ReturnType<typeof vi.fn>) {
 
 describe("SettingsRoute", () => {
   beforeEach(() => {
+    // The Add-a-model form's "default model" checkbox is a Radix Checkbox,
+    // which measures itself with ResizeObserver inside a <form> — jsdom has none.
+    installRadixPolyfills();
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
   });
 
@@ -187,6 +191,33 @@ describe("SettingsRoute", () => {
     expect(await screen.findByText(/Your parent organisation decides what readers see here/)).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Reasoning steps/ })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: /Query result tables/ })).toBeDisabled();
+  });
+
+  it("saves an Ask display toggle and shows what the server stored", async () => {
+    const base = routeFetch();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input instanceof Request && input.method === "PATCH" && input.url.includes("/agent/settings/ask")) {
+        const body = JSON.parse(await input.clone().text()) as Record<string, boolean>;
+        return jsonResponse({ show_reasoning: false, show_query_results: false, ...body });
+      }
+      return base(input);
+    });
+    renderSettings(fetchMock);
+
+    const toggle = await screen.findByRole("checkbox", { name: /Reasoning steps/ });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle).toBeChecked());
+    // Exactly one write: the row is the checkbox's <label>, and a click on
+    // the box itself must not also be re-dispatched through the label.
+    const patches = fetchMock.mock.calls.filter(
+      ([input]) => input instanceof Request && input.method === "PATCH",
+    );
+    expect(patches).toHaveLength(1);
+    const patch = patches[0]![0] as Request;
+    expect(patch.url).toContain("/agent/settings/ask");
+    expect(JSON.parse(await patch.clone().text())).toEqual({ show_reasoning: true });
   });
 
   it("lists configured models with their key, default and active status", async () => {

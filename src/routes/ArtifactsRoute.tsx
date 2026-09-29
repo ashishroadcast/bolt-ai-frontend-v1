@@ -1,12 +1,24 @@
-import { FileArchive } from "lucide-react";
+import { AlertCircle, Download, ExternalLink, FileArchive } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { useAgents } from "../agents/useAgents.ts";
 import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { getArtifactDownload, listArtifacts, type ArtifactDownload, type ArtifactSummary } from "./artifactsApi.ts";
-import styles from "./ArtifactsRoute.module.css";
 
 function errorMessage(err: unknown): string {
   return err instanceof GatewayError ? err.message : "Couldn't reach the agent service.";
@@ -119,8 +131,23 @@ export function ArtifactsRoute() {
         title="Artifacts"
         description="Charts and CSVs an agent's code produced while answering a question — what made each one, and when."
       />
-      <div className={styles.body}>
-        {loadError !== null && <p className={styles.loadError}>{loadError}</p>}
+      <div className="flex flex-col gap-6">
+        {loadError !== null && (
+          <Alert variant="destructive">
+            <AlertCircle aria-hidden="true" />
+            <AlertDescription>{loadError}</AlertDescription>
+          </Alert>
+        )}
+
+        {loading && loadError === null && rows.length === 0 && (
+          <Card aria-busy="true">
+            <CardContent className="flex flex-col gap-3">
+              {[0, 1, 2].map((key) => (
+                <Skeleton key={key} aria-hidden="true" className="h-10 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {!loading && loadError === null && rows.length === 0 && (
           <EmptyState
@@ -133,74 +160,104 @@ export function ArtifactsRoute() {
         )}
 
         {rows.length > 0 && (
-          <section className={styles.sheet}>
-            <header className={styles.sheetHead}>
-              <h3>Artifacts</h3>
-              <span className={styles.sub}>
+          <Card className="gap-0 overflow-hidden py-0">
+            <CardHeader className="border-b py-4 [.border-b]:pb-4">
+              <CardTitle>
+                <h3>Artifacts</h3>
+              </CardTitle>
+              <CardDescription className="tabular-nums">
                 {rows.length} {rows.length === 1 ? "artifact" : "artifacts"}
-              </span>
-            </header>
-            <div className={styles.tableWrap}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>File</th>
-                    <th>Produced by</th>
-                    <th>When</th>
-                    <th className={styles.num}>Size</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0">
+              <Table>
+                <TableHeader className="bg-muted/50">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="pl-6">File</TableHead>
+                    <TableHead>Produced by</TableHead>
+                    <TableHead>When</TableHead>
+                    <TableHead className="text-right">Size</TableHead>
+                    <TableHead className="pr-6">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map((artifact) => {
                     const state = rowState(artifact.id);
                     const agentName = agentNameById.get(artifact.agent_id) ?? `Agent #${artifact.agent_id}`;
                     return (
-                      <tr key={artifact.id}>
-                        <td>
-                          <div className={styles.filename} data-testid="artifact-filename" title={artifact.filename}>
+                      <TableRow key={artifact.id}>
+                        <TableCell className="py-3 pl-6 align-top">
+                          {/* A filename has no length limit server-side
+                              (app.sandbox.artifacts._sanitize_filename cleans the
+                              charset, not the length) — it scrolls inside its own
+                              cell rather than widening the page (task brief). */}
+                          <div
+                            className="max-w-[32ch] overflow-x-auto font-medium whitespace-nowrap"
+                            data-testid="artifact-filename"
+                            title={artifact.filename}
+                          >
                             {artifact.filename}
                           </div>
-                          <div className={styles.contentType}>{artifact.content_type}</div>
-                        </td>
-                        <td>
-                          <Link to={`/agents/${artifact.agent_id}`} className={styles.agentLink}>
+                          <div className="mt-0.5 font-mono text-xs text-muted-foreground">
+                            {artifact.content_type}
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-3 align-top">
+                          <Link
+                            to={`/agents/${artifact.agent_id}`}
+                            className="font-medium text-primary underline-offset-4 hover:underline"
+                          >
                             {agentName}
                           </Link>
-                        </td>
-                        <td className={styles.when}>{formatWhen(artifact.created_at)}</td>
-                        <td className={styles.num}>{formatBytes(artifact.size_bytes)}</td>
-                        <td>
-                          <button
+                        </TableCell>
+                        <TableCell className="py-3 align-top text-muted-foreground">
+                          {formatWhen(artifact.created_at)}
+                        </TableCell>
+                        <TableCell className="py-3 text-right align-top font-mono text-muted-foreground tabular-nums">
+                          {formatBytes(artifact.size_bytes)}
+                        </TableCell>
+                        <TableCell className="py-3 pr-6 align-top whitespace-normal">
+                          <Button
                             type="button"
-                            className={styles.actionBtn}
+                            variant="ghost"
+                            size="sm"
+                            className="-ml-2.5"
                             disabled={state.resolving}
                             onClick={() => void handleDownload(artifact.id)}
                           >
+                            {state.resolving ? <Spinner aria-hidden="true" /> : <Download aria-hidden="true" />}
                             {state.resolving ? "Resolving…" : "Download"}
-                          </button>
+                          </Button>
                           {state.download !== null && (
-                            <div className={styles.downloadPanel}>
-                              <code className={styles.downloadUrl}>{state.download.url}</code>
-                              <p className={styles.downloadNote}>
+                            <div className="mt-2 max-w-[34ch]">
+                              <code className="block overflow-x-auto rounded-md border bg-muted px-2 py-1.5 font-mono text-xs whitespace-nowrap">
+                                {state.download.url}
+                              </code>
+                              <p className="mt-1.5 text-xs text-muted-foreground">
                                 Expires in {Math.round(state.download.expires_in / 60)} min —{" "}
-                                <a href={state.download.url} target="_blank" rel="noopener noreferrer">
+                                <a
+                                  href={state.download.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-4 hover:underline"
+                                >
                                   open again
+                                  <ExternalLink aria-hidden="true" className="size-3" />
                                 </a>
                               </p>
                             </div>
                           )}
                           {state.error !== null && (
-                            <p className={`${styles.rowNote} ${styles.critical}`}>{state.error}</p>
+                            <p className="mt-1.5 max-w-[34ch] text-xs text-destructive">{state.error}</p>
                           )}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
       </div>
     </>
