@@ -16,7 +16,26 @@ import type {
   PromptPhase,
   PromptSnapshot,
 } from "../testing/types.ts";
-import styles from "./PhasePromptPanel.module.css";
+import {
+  AlertCircle,
+  Check,
+  CircleArrowUp,
+  CircleCheck,
+  Copy,
+  Info,
+  Loader2,
+  Save,
+  Sparkles,
+  Undo2,
+} from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 
 interface PhasePromptPanelProps {
   phase: PromptPhase;
@@ -181,228 +200,319 @@ export function PhasePromptPanel({
   }
 
   return (
-    <section className={styles.panel} aria-label={`${phase} prompt`}>
-      <header className={styles.head}>
-        <h3 className={styles.phase}>{phase}</h3>
-        <span className={styles.serving}>
-          {live !== null && !live.is_fallback ? (
-            `v${live.version} · ${live.alias}`
-          ) : live !== null ? (
-            "signature default · unregistered"
-          ) : servingVersion !== null ? (
-            `v${servingVersion} · ${serving!.alias} (as of last run)`
-          ) : (
-            "not yet observed"
-          )}
-        </span>
-        <SuiteSizeBadge activeCount={activeCount} />
-      </header>
-
-      <div className={styles.promptBlock}>
-        <div className={styles.promptBar}>
-          <span className={styles.promptLabel}>
-            {isDirty
-              ? "Instructions · edited, unsaved"
-              : live !== null && live.is_fallback
-                ? "Signature default"
-                : "Serving instructions"}
-          </span>
-          {live !== null && editorText !== "" && (
-            <button type="button" className={styles.copyBtn} onClick={() => void copyServing()}>
-              {copied ? "Copied" : "Copy"}
-            </button>
-          )}
-        </div>
-
-        {registryLoading && <p className={styles.promptStatus}>Reading the prompt registry…</p>}
-
-        {registryError !== null && (
-          <p className={styles.promptStatus} role="alert">
-            Couldn&apos;t read the serving prompt — {registryError}
-          </p>
-        )}
-
-        {live !== null && (
-          <textarea
-            className={styles.promptEditor}
-            aria-label={`${phase} instructions`}
-            spellCheck={false}
-            value={editorText}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        )}
-
-        {live !== null && live.instructions === "" && draft === "" && (
-          <p className={styles.promptStatus}>
-            Nothing is registered for this phase, so it resolves to an empty instruction block.
-            {phase === "guardrail"
-              ? " This agent cannot run at all until a guardrail is registered."
-              : " It runs on the signature's own built-in default."}
-          </p>
-        )}
-
-        {live !== null && (
-          <div className={styles.saveRow}>
-            <button
-              type="button"
-              className={styles.saveBtn}
-              onClick={() => void handleSave()}
-              disabled={saving || editorText.trim() === "" || !isDirty}
-            >
-              {saving ? "Saving…" : "Save as new version"}
-            </button>
-            {isDirty && (
-              <button
-                type="button"
-                className={styles.revertBtn}
-                onClick={() => setDraft(live.instructions)}
-                disabled={saving}
-              >
-                Revert to serving
-              </button>
+    <section className="min-w-0" aria-label={`${phase} prompt`}>
+      <Card className="gap-0 py-0">
+        <CardHeader className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-4 sm:px-6 [.border-b]:pb-4">
+          <h3 className="text-base leading-none font-semibold capitalize">{phase}</h3>
+          <Badge variant="outline" className="font-mono font-normal text-muted-foreground tabular-nums">
+            {live !== null && !live.is_fallback ? (
+              `v${live.version} · ${live.alias}`
+            ) : live !== null ? (
+              "signature default · unregistered"
+            ) : servingVersion !== null ? (
+              `v${servingVersion} · ${serving!.alias} (as of last run)`
+            ) : (
+              "not yet observed"
             )}
-            <span className={styles.saveHint}>
+          </Badge>
+          <CardAction className="ml-auto self-center">
+            <SuiteSizeBadge activeCount={activeCount} />
+          </CardAction>
+        </CardHeader>
+
+        {/* ── The serving text ──────────────────────────────────────────
+            The point of this screen. It used to sit behind a <details> and
+            then inside a 90px scroller that cut it off mid-sentence; here it
+            has real height and wraps rather than clipping. */}
+        <CardContent className="flex flex-col gap-3 p-4 sm:p-6">
+          <div className="flex min-h-8 items-center gap-2">
+            <span className="text-sm font-medium">
               {isDirty
-                ? "Saving registers a new version. It does not go live until it is promoted."
-                : "Edit the text to save a new version."}
+                ? "Instructions · edited, unsaved"
+                : live !== null && live.is_fallback
+                  ? "Signature default"
+                  : "Serving instructions"}
             </span>
-          </div>
-        )}
-
-        {saveError !== null && (
-          <p className={styles.error} role="alert">
-            {saveError}
-          </p>
-        )}
-
-        {saved !== null && (
-          <p className={styles.savedNote} role="status">
-            Saved as v{saved.version} — not serving.{" "}
-            {saved.serving !== null
-              ? `v${saved.serving} is still live.`
-              : "Nothing is live for this phase yet."}{" "}
-            Promote v{saved.version} below to put it in front of traffic.
-          </p>
-        )}
-      </div>
-
-      {/* ── Tune ──────────────────────────────────────────────────── */}
-      <div className={styles.action}>
-        <div className={styles.actionHead}>
-          <h4>Tune</h4>
-          <button type="button" className={styles.tuneBtn} onClick={() => void handleTune()} disabled={tuning}>
-            {tuning ? "Tuning…" : "Tune this phase"}
-          </button>
-        </div>
-        <p className={styles.actionHelp}>
-          Compiles a new version from this phase&apos;s promoted exemplars and registers it. Nothing
-          serves it until it is promoted.
-        </p>
-        {tuneError !== null && (
-          <p className={styles.error} role="alert">
-            {tuneError}
-          </p>
-        )}
-        {tuned !== null && (
-          <div className={styles.candidate}>
-            <p className={styles.candidateTitle}>Registered v{tuned.version} — not yet serving</p>
-            <pre className={styles.promptText}>{tuned.instructions}</pre>
-          </div>
-        )}
-      </div>
-
-      {/* ── Promote ───────────────────────────────────────────────── */}
-      <div className={styles.action}>
-        <div className={styles.actionHead}>
-          <h4>Promote</h4>
-        </div>
-        <p className={styles.actionHelp}>
-          Moves the <code>production</code> alias to a registered version. The gate replays this
-          phase&apos;s suite first and refuses a candidate that regresses a case.
-        </p>
-        <div className={styles.promoteRow}>
-          <div className={styles.versionField}>
-            <label htmlFor={`candidate-${phase}`}>Candidate version</label>
-            <input
-              id={`candidate-${phase}`}
-              className={styles.versionInput}
-              inputMode="numeric"
-              placeholder="e.g. 18"
-              value={candidateInput}
-              onChange={(event) => setCandidateInput(event.target.value.replace(/[^0-9]/g, ""))}
-            />
-          </div>
-          <button
-            type="button"
-            className={styles.promoteBtn}
-            onClick={openConfirm}
-            disabled={candidateVersion === null}
-          >
-            Promote
-          </button>
-        </div>
-
-        {confirmOpen && (
-          <div className={styles.confirm}>
-            <p className={styles.confirmTitle}>Confirm promotion</p>
-            <p className={styles.confirmMove}>
-              production ({servingVersion !== null ? `v${servingVersion}` : "none"}) → v
-              {candidateVersion}
-            </p>
-            <div className={styles.confirmActions}>
-              <button
+            {live !== null && editorText !== "" && (
+              <Button
                 type="button"
-                className={styles.confirmBtn}
-                onClick={() => void confirmPromote(false)}
-                disabled={promoting}
+                variant="ghost"
+                size="sm"
+                className="ml-auto text-muted-foreground"
+                onClick={() => void copyServing()}
               >
-                {promoting ? "Promoting…" : "Confirm promote"}
-              </button>
-              <button
-                type="button"
-                className={styles.cancelBtn}
-                onClick={() => setConfirmOpen(false)}
-                disabled={promoting}
-              >
-                Cancel
-              </button>
+                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            )}
+          </div>
+
+          {registryLoading && (
+            <div className="flex flex-col gap-2" aria-busy="true">
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                Reading the prompt registry…
+              </p>
+              <Skeleton className="h-40 w-full" aria-hidden="true" />
             </div>
+          )}
+
+          {registryError !== null && (
+            <Alert variant="destructive">
+              <AlertCircle aria-hidden="true" />
+              <AlertDescription>
+                Couldn&apos;t read the serving prompt — {registryError}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Prose type in a sunk well, not mono: the instructions are read
+              as paragraphs long before they are edited, so the box must not
+              switch to a code face the moment it becomes editable. Tall
+              enough for most phase prompts outright; anything longer
+              scrolls inside the box, never the page. */}
+          {live !== null && (
+            <Textarea
+              className="max-h-[34rem] min-h-64 resize-y overflow-y-auto bg-muted/30 px-4 py-3 font-sans leading-relaxed md:text-sm"
+              aria-label={`${phase} instructions`}
+              spellCheck={false}
+              value={editorText}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          )}
+
+          {live !== null && live.instructions === "" && draft === "" && (
+            <p className="text-sm text-muted-foreground">
+              Nothing is registered for this phase, so it resolves to an empty instruction block.
+              {phase === "guardrail"
+                ? " This agent cannot run at all until a guardrail is registered."
+                : " It runs on the signature's own built-in default."}
+            </p>
+          )}
+
+          {live !== null && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {/* Deliberately not the primary colour: the primary button on
+                  this panel is Promote, the one action that changes what
+                  production serves. A save is a registration, and dressing
+                  it in the same colour would say otherwise. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleSave()}
+                disabled={saving || editorText.trim() === "" || !isDirty}
+              >
+                {saving ? (
+                  <Loader2 aria-hidden="true" className="animate-spin" />
+                ) : (
+                  <Save aria-hidden="true" />
+                )}
+                {saving ? "Saving…" : "Save as new version"}
+              </Button>
+              {isDirty && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDraft(live.instructions)}
+                  disabled={saving}
+                >
+                  <Undo2 aria-hidden="true" />
+                  Revert to serving
+                </Button>
+              )}
+              <span className="text-sm text-muted-foreground">
+                {isDirty
+                  ? "Saving registers a new version. It does not go live until it is promoted."
+                  : "Edit the text to save a new version."}
+              </span>
+            </div>
+          )}
+
+          {saveError !== null && (
+            <Alert variant="destructive">
+              <AlertCircle aria-hidden="true" />
+              <AlertDescription>{saveError}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* A status, not an alert: the save landed. Amber because what
+              landed is NOT live — the single most important thing this
+              panel can say after a save. */}
+          {saved !== null && (
+            <Alert role="status" className="border-warning/30 bg-warning-soft">
+              <Info aria-hidden="true" className="text-warning" />
+              <AlertDescription className="text-foreground">
+                Saved as v{saved.version} — not serving.{" "}
+                {saved.serving !== null
+                  ? `v${saved.serving} is still live.`
+                  : "Nothing is live for this phase yet."}{" "}
+                Promote v{saved.version} below to put it in front of traffic.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+
+        {/* ── Tune ─────────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-4 border-t p-4 sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <h4 className="text-sm font-semibold">Tune</h4>
+              <p className="max-w-prose text-sm text-muted-foreground">
+                Compiles a new version from this phase&apos;s promoted exemplars and registers it.
+                Nothing serves it until it is promoted.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleTune()}
+              disabled={tuning}
+            >
+              {tuning ? (
+                <Loader2 aria-hidden="true" className="animate-spin" />
+              ) : (
+                <Sparkles aria-hidden="true" />
+              )}
+              {tuning ? "Tuning…" : "Tune this phase"}
+            </Button>
           </div>
-        )}
+          {tuneError !== null && (
+            <Alert variant="destructive">
+              <AlertCircle aria-hidden="true" />
+              <AlertDescription>{tuneError}</AlertDescription>
+            </Alert>
+          )}
+          {tuned !== null && (
+            <div className="flex flex-col gap-2 border-l-2 border-primary pl-3">
+              <p className="text-sm font-medium text-primary tabular-nums">
+                Registered v{tuned.version} — not yet serving
+              </p>
+              {/* `pre` for the element, prose for the type: the
+                  instructions are written as paragraphs and their blank
+                  lines are meaningful. */}
+              <pre className="max-h-[26rem] overflow-y-auto rounded-md border bg-muted/40 px-4 py-3 font-sans text-sm leading-relaxed break-words whitespace-pre-wrap">
+                {tuned.instructions}
+              </pre>
+            </div>
+          )}
+        </div>
 
-        {promoteError !== null && (
-          <p className={styles.error} role="alert">
-            {promoteError}
-          </p>
-        )}
+        {/* ── Promote ──────────────────────────────────────────────────── */}
+        <div className="flex flex-col gap-4 border-t p-4 sm:p-6">
+          <div className="flex min-w-0 flex-col gap-1">
+            <h4 className="text-sm font-semibold">Promote</h4>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Moves the{" "}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">production</code>{" "}
+              alias to a registered version. The gate replays this phase&apos;s suite first and
+              refuses a candidate that regresses a case.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor={`candidate-${phase}`}>Candidate version</Label>
+              {/* Wide enough for its own placeholder and a four-digit
+                  version. The 68px this replaced clipped "version" to
+                  "versior" — the field was narrower than the word telling
+                  you what to put in it. */}
+              <Input
+                id={`candidate-${phase}`}
+                className="w-[15ch] font-mono tabular-nums"
+                inputMode="numeric"
+                placeholder="e.g. 18"
+                value={candidateInput}
+                onChange={(event) => setCandidateInput(event.target.value.replace(/[^0-9]/g, ""))}
+              />
+            </div>
+            <Button type="button" onClick={openConfirm} disabled={candidateVersion === null}>
+              <CircleArrowUp aria-hidden="true" />
+              Promote
+            </Button>
+          </div>
 
-        {refusal !== null && (
-          <div className={styles.refusalWrap}>
+          {/* The one gate between clicking Promote and the request firing.
+              Inline rather than a modal: a refusal lands right under it, and
+              the override it offers has to sit beside the move it
+              overrides. */}
+          {confirmOpen && (
+            <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-accent/60 p-4">
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-semibold">Confirm promotion</p>
+                <p className="font-mono text-sm tabular-nums">
+                  production ({servingVersion !== null ? `v${servingVersion}` : "none"}) → v
+                  {candidateVersion}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {/* The same variant as the Promote button that opened this
+                    step — confirming is still the promote action, not a
+                    second, distinct one. Override (in RefusalPanel) is the
+                    genuinely riskier action. */}
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => void confirmPromote(false)}
+                  disabled={promoting}
+                >
+                  {promoting && <Loader2 aria-hidden="true" className="animate-spin" />}
+                  {promoting ? "Promoting…" : "Confirm promote"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setConfirmOpen(false)}
+                  disabled={promoting}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {promoteError !== null && (
+            <Alert variant="destructive">
+              <AlertCircle aria-hidden="true" />
+              <AlertDescription>{promoteError}</AlertDescription>
+            </Alert>
+          )}
+
+          {refusal !== null && (
             <RefusalPanel
               reason={refusal.reason}
               regressedCases={refusal.regressed_cases}
               onOverride={() => void confirmPromote(true)}
               overriding={promoting}
             />
-          </div>
-        )}
+          )}
 
-        {result !== null && (
-          <div className={styles.result} role="status">
-            <p className={styles.resultTitle}>Promoted</p>
-            <p className={styles.resultMove}>
-              {result.from_version !== null ? `v${result.from_version}` : "none"} → v
-              {result.to_version}
-              {result.overridden ? " (overridden)" : ""}
-            </p>
-            {result.from_version !== null && (
-              <p className={styles.rollback}>
-                Roll back by promoting v{result.from_version} again — it stays resolvable.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+          {/* Copy rule: the button said Promote, the result says Promoted. */}
+          {result !== null && (
+            <div
+              className="flex gap-3 rounded-lg border border-success/30 bg-success-soft p-4"
+              role="status"
+            >
+              <CircleCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-success" />
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="text-sm font-semibold">Promoted</p>
+                <p className="font-mono text-sm text-muted-foreground tabular-nums">
+                  {result.from_version !== null ? `v${result.from_version}` : "none"} → v
+                  {result.to_version}
+                  {result.overridden ? " (overridden)" : ""}
+                </p>
+                {result.from_version !== null && (
+                  <p className="text-sm text-muted-foreground">
+                    Roll back by promoting v{result.from_version} again — it stays resolvable.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
     </section>
   );
 }
