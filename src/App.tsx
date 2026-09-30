@@ -20,6 +20,7 @@ import { ChannelsRoute } from "./routes/ChannelsRoute.tsx";
 import { ArtifactsRoute } from "./routes/ArtifactsRoute.tsx";
 import { CodeExecutionsRoute } from "./routes/CodeExecutionsRoute.tsx";
 import { AuditRoute } from "./routes/AuditRoute.tsx";
+import { UsageRoute } from "./routes/UsageRoute.tsx";
 import { McpServersRoute } from "./routes/McpServersRoute.tsx";
 import { ModelsRoute } from "./routes/ModelsRoute.tsx";
 
@@ -103,6 +104,8 @@ function App() {
             but not yet linked from the sidebar — see this task's report. */}
         <Route path="code-executions" element={<CodeExecutionsRoute />} />
         <Route path="audit" element={<AuditRoute />} />
+        {/* Tokens per organisation, for costing — GET /agent/usage. */}
+        <Route path="usage" element={<UsageRoute />} />
         {/* app.api.mcp_servers was mounted with no screen ever calling it —
             the last Connections surface that was planned and never built
             (this task's brief, Saurabh's own "where can i see mcp server

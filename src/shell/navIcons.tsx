@@ -1,6 +1,7 @@
 import {
   Boxes,
   Cable,
+  Coins,
   Database,
   FileText,
   FlaskConical,
@@ -49,5 +50,6 @@ export const NAV_ICONS: Record<
   "/artifacts": FolderDown,
   "/code-executions": Terminal,
   "/audit": ScrollText,
+  "/usage": Coins,
   "/settings": Settings,
 };

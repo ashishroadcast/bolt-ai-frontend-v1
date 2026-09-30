@@ -60,6 +60,7 @@ export const NAV_GROUPS: { label: string; items: RailItem[] }[] = [
       { to: "/artifacts", label: "Artifacts" },
       { to: "/code-executions", label: "Code runs" },
       { to: "/audit", label: "Audit" },
+      { to: "/usage", label: "Usage" },
       { to: "/settings", label: "Settings" },
     ],
   },
