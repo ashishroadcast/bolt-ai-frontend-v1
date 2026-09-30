@@ -38,6 +38,9 @@ const REPORT: UsageReport = {
   ],
   totals: { runs: 5, input_tokens: 2_001_000, output_tokens: 500_200, total_tokens: 2_501_200, cost_usd: 0, unpriced_calls: 7, document_cost_usd: 0 },
   known_prices: {},
+  rates: {},
+  rates_updated_at: null,
+  can_edit_rates: true,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -47,13 +50,23 @@ function jsonResponse(body: unknown, status = 200): Response {
 describe("UsageRoute", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let urls: URL[];
+  let report: UsageReport;
+  let puts: unknown[];
 
   beforeEach(() => {
     urls = [];
-    fetchMock = vi.fn((input: RequestInfo | URL) => {
-      const url = new URL((input as Request).url);
+    puts = [];
+    report = REPORT;
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const request = input as Request;
+      const url = new URL(request.url);
       urls.push(url);
-      return Promise.resolve(url.pathname.endsWith("/agent/usage") ? jsonResponse(REPORT) : jsonResponse({ detail: "unhandled" }, 500));
+      if (url.pathname.endsWith("/agent/usage/rates") && request.method === "PUT") {
+        const body = (await request.json()) as { rates: unknown };
+        puts.push(body.rates);
+        return jsonResponse({ rates: body.rates, updated_at: "2026-09-30T12:00:00Z" });
+      }
+      return url.pathname.endsWith("/agent/usage") ? jsonResponse(report) : jsonResponse({ detail: "unhandled" }, 500);
     });
     vi.stubGlobal("fetch", fetchMock);
     setSession({ kind: "apiKey", credential: "tok", user: { id: "1", email: "a@b.com", name: "A" } });
@@ -78,7 +91,8 @@ describe("UsageRoute", () => {
     const rows = await screen.findAllByTestId("usage-org-row");
     expect(rows).toHaveLength(2);
     expect(within(rows[0]).getByText("DP World Mundra")).toBeTruthy();
-    expect(within(rows[0]).getByText("25,00,000")).toBeTruthy();
+    expect(within(rows[0]).getByText("2.5M")).toBeTruthy();
+    expect(within(rows[0]).getByTitle("25,00,000 tokens")).toBeTruthy();
     const from = new Date(urls[0].searchParams.get("from")!);
     expect(from.getDate()).toBe(1);
   });
@@ -100,6 +114,40 @@ describe("UsageRoute", () => {
     fireEvent.change(screen.getByLabelText("Output rate for cc/claude-sonnet-4-6"), { target: { value: "15" } });
     // (2,001,000 × $3 + 500,200 × $15) / 1M
     await waitFor(() => expect(screen.getByTestId("usage-estimate").textContent).toBe("$13.51"));
+  });
+
+  it("saves rates to the server for everyone", async () => {
+    renderUsage();
+    await screen.findAllByTestId("usage-org-row");
+    const save = screen.getByTestId("usage-save-rates") as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Input rate for cc/claude-sonnet-4-6"), { target: { value: "3" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await waitFor(() => expect(puts).toEqual([{ "cc/claude-sonnet-4-6": { input: 3, output: 0 } }]));
+    expect(await screen.findByText(/Everyone in your organisation now sees these rates/)).toBeTruthy();
+    expect(save.disabled).toBe(true);
+  });
+
+  it("shows shared rates read-only to someone who cannot change them", async () => {
+    report = { ...REPORT, rates: { "cc/claude-sonnet-4-6": { input: 3, output: 15 } }, can_edit_rates: false };
+    renderUsage();
+    await screen.findAllByTestId("usage-org-row");
+    const input = screen.getByLabelText("Input rate for cc/claude-sonnet-4-6") as HTMLInputElement;
+    expect(input.value).toBe("3");
+    expect(input.readOnly).toBe(true);
+    expect(screen.queryByTestId("usage-save-rates")).toBeNull();
+    expect(screen.getByTestId("usage-estimate").textContent).toBe("$13.51");
+  });
+
+  it("offers rates this browser saved before, when the server has none", async () => {
+    localStorage.setItem("bolty.usage.rates.v1", JSON.stringify({ "cc/claude-sonnet-4-6": { input: 3, output: 15 } }));
+    renderUsage();
+    await screen.findAllByTestId("usage-org-row");
+    expect(screen.getByText(/saved in this browser before rates were shared/)).toBeTruthy();
+    fireEvent.click(screen.getByTestId("usage-save-rates"));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(localStorage.getItem("bolty.usage.rates.v1")).toBeNull();
   });
 
   it("filters organisations by name", async () => {

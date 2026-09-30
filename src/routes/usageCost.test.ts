@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelUsage } from "./usageApi.ts";
-import { estimate, formatUsd, loadRates, rateFor, saveRates } from "./usageCost.ts";
+import { clearLocalRates, estimate, formatTokens, formatUsd, loadLocalRates, rateFor } from "./usageCost.ts";
 
 const sonnet: ModelUsage = { model: "cc/claude-sonnet-4-6", calls: 3, input_tokens: 2_000_000, output_tokens: 500_000, cost_usd: 0, unpriced_calls: 3 };
 const qwen: ModelUsage = { model: "qwen/qwen3-coder", calls: 1, input_tokens: 1_000_000, output_tokens: 1_000_000, cost_usd: 0.5, unpriced_calls: 0 };
@@ -27,11 +27,20 @@ describe("usage cost", () => {
     expect(estimate([qwen], { [qwen.model]: { input: 1, output: 1 } }, known).usd).toBeCloseTo(2);
   });
 
-  it("keeps rates across visits and ignores anything malformed", () => {
-    saveRates({ a: { input: 1, output: 2 } });
-    expect(loadRates()).toEqual({ a: { input: 1, output: 2 } });
-    localStorage.setItem("bolty.usage.rates.v1", JSON.stringify({ a: { input: "x" }, b: null }));
-    expect(loadRates()).toEqual({});
+  it("reads rates a browser saved before they were shared, and forgets them after", () => {
+    localStorage.setItem("bolty.usage.rates.v1", JSON.stringify({ a: { input: 1, output: 2 }, b: { input: "x" }, c: null }));
+    expect(loadLocalRates()).toEqual({ a: { input: 1, output: 2 } });
+    clearLocalRates();
+    expect(loadLocalRates()).toEqual({});
+  });
+
+  it("writes tokens as k and M", () => {
+    expect(formatTokens(999)).toBe("999");
+    expect(formatTokens(1200)).toBe("1.2k");
+    expect(formatTokens(866_174)).toBe("866.2k");
+    expect(formatTokens(999_960)).toBe("1M");
+    expect(formatTokens(2_500_000)).toBe("2.5M");
+    expect(formatTokens(10_683_800)).toBe("10.7M");
   });
 
   it("shows small amounts to four places", () => {

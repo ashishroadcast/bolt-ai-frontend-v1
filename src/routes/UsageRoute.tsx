@@ -1,6 +1,7 @@
-import { AlertCircle, ChevronDown, ChevronRight, Coins } from "lucide-react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { AlertCircle, Check, ChevronDown, ChevronRight, Coins } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,8 +11,19 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader } from "../agents/PageHeader.tsx";
 import { GatewayError } from "../ask/http/errors.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
-import { getUsage, type OrganisationUsage, type UsageReport } from "./usageApi.ts";
-import { estimate, formatTokens, formatUsd, loadRates, rateFor, saveRates, type Rate, type Rates } from "./usageCost.ts";
+import { getUsage, saveUsageRates, type OrganisationUsage, type UsageReport } from "./usageApi.ts";
+import {
+  clearLocalRates,
+  estimate,
+  exactTokens,
+  formatCount,
+  formatTokens,
+  formatUsd,
+  loadLocalRates,
+  rateFor,
+  type Rate,
+  type Rates,
+} from "./usageCost.ts";
 
 export type Period = "this-month" | "last-month" | "last-7" | "last-30" | "custom";
 
@@ -96,8 +108,9 @@ function download(filename: string, text: string): void {
  * ones the run acted as, named from bolt-v2; each expands into its models.
  *
  * Costs are estimates: most calls come back unpriced (see `usageCost.ts`), so
- * the Rates card takes a USD-per-million rate per model, saved in this browser,
- * and every estimate follows it.
+ * the Rates card takes a USD-per-million rate per model. The rates are shared by
+ * the whole organisation tree (`PUT /agent/usage/rates`): the root
+ * organisation's admin sets them, everyone else sees the same numbers.
  */
 export function UsageRoute() {
   const [period, setPeriod] = useState<Period>("this-month");
@@ -108,7 +121,14 @@ export function UsageRoute() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [rates, setRates] = useState<Rates>(() => loadRates());
+  /** What the inputs show: the server's rates, plus any edit not saved yet. */
+  const [rates, setRates] = useState<Rates>({});
+  const [savedRates, setSavedRates] = useState<Rates>({});
+  const savedRatesRef = useRef<Rates>({});
+  const [fromBrowser, setFromBrowser] = useState(false);
+  const [savingRates, setSavingRates] = useState(false);
+  const [ratesMessage, setRatesMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const dirty = JSON.stringify(rates) !== JSON.stringify(savedRates);
 
   const range = useMemo(() => periodRange(period, new Date(), customFrom, customTo), [period, customFrom, customTo]);
 
@@ -119,7 +139,20 @@ export function UsageRoute() {
     setLoadError(null);
     getUsage(range.from, range.to)
       .then((body) => {
-        if (!cancelled) setReport(body);
+        if (cancelled) return;
+        setReport(body);
+        // A period change must not throw away an edit that has not been saved yet. The
+        // previous saved set is taken now: React runs the updater later, after the ref moves.
+        const previouslySaved = JSON.stringify(savedRatesRef.current);
+        setRates((current) => (JSON.stringify(current) !== previouslySaved ? current : body.rates));
+        setSavedRates(body.rates);
+        savedRatesRef.current = body.rates;
+        // Rates typed into this browser before they were shared: offered for saving, once.
+        const local = loadLocalRates();
+        if (body.can_edit_rates && Object.keys(body.rates).length === 0 && Object.keys(local).length > 0) {
+          setRates(local);
+          setFromBrowser(true);
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setLoadError(errorMessage(err));
@@ -159,9 +192,27 @@ export function UsageRoute() {
   function setRate(model: string, field: keyof Rate, value: string) {
     const current = rateFor(model, rates, known) ?? { input: 0, output: 0 };
     const parsed = Number(value);
-    const next: Rates = { ...rates, [model]: { ...current, [field]: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 } };
-    setRates(next);
-    saveRates(next);
+    setRates({ ...rates, [model]: { ...current, [field]: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 } });
+    setRatesMessage(null);
+  }
+
+  async function submitRates() {
+    setSavingRates(true);
+    setRatesMessage(null);
+    try {
+      const saved = await saveUsageRates(rates);
+      setSavedRates(saved.rates);
+      setRates(saved.rates);
+      savedRatesRef.current = saved.rates;
+      setReport((prev) => (prev ? { ...prev, rates: saved.rates, rates_updated_at: saved.updated_at } : prev));
+      clearLocalRates();
+      setFromBrowser(false);
+      setRatesMessage({ ok: true, text: "Saved. Everyone in your organisation now sees these rates." });
+    } catch (err: unknown) {
+      setRatesMessage({ ok: false, text: errorMessage(err) });
+    } finally {
+      setSavingRates(false);
+    }
   }
 
   function toggle(id: string) {
@@ -239,7 +290,9 @@ export function UsageRoute() {
             <Card>
               <CardHeader>
                 <CardDescription>Total tokens</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">{formatTokens(totals.total_tokens)}</CardTitle>
+                <CardTitle className="text-2xl tabular-nums" title={exactTokens(totals.total_tokens)}>
+                  {formatTokens(totals.total_tokens)}
+                </CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground">
                 {formatTokens(totals.input_tokens)} in · {formatTokens(totals.output_tokens)} out
@@ -248,9 +301,9 @@ export function UsageRoute() {
             <Card>
               <CardHeader>
                 <CardDescription>Agent runs</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">{formatTokens(totals.runs)}</CardTitle>
+                <CardTitle className="text-2xl tabular-nums">{formatCount(totals.runs)}</CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">{formatTokens(report.organisations.length)} organisations</CardContent>
+              <CardContent className="text-xs text-muted-foreground">{formatCount(report.organisations.length)} organisations</CardContent>
             </Card>
             <Card>
               <CardHeader>
@@ -268,7 +321,7 @@ export function UsageRoute() {
                 <CardDescription>Recorded by providers</CardDescription>
                 <CardTitle className="text-2xl tabular-nums">{formatUsd(totals.cost_usd + totals.document_cost_usd)}</CardTitle>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">{formatTokens(totals.unpriced_calls)} calls came back unpriced</CardContent>
+              <CardContent className="text-xs text-muted-foreground">{formatCount(totals.unpriced_calls)} calls came back unpriced</CardContent>
             </Card>
           </div>
         )}
@@ -319,10 +372,16 @@ export function UsageRoute() {
                           {org.name}
                           <div className="font-mono text-[11px] font-normal text-muted-foreground">{org.organisation_id}</div>
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTokens(org.runs)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTokens(org.input_tokens)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTokens(org.output_tokens)}</TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">{formatTokens(org.total_tokens)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatCount(org.runs)}</TableCell>
+                        <TableCell className="text-right tabular-nums" title={exactTokens(org.input_tokens)}>
+                          {formatTokens(org.input_tokens)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums" title={exactTokens(org.output_tokens)}>
+                          {formatTokens(org.output_tokens)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums" title={exactTokens(org.total_tokens)}>
+                          {formatTokens(org.total_tokens)}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatUsd(orgCost(org))}</TableCell>
                         <TableCell className="text-muted-foreground">{formatWhen(org.last_run_at)}</TableCell>
                       </TableRow>
@@ -331,10 +390,16 @@ export function UsageRoute() {
                           <TableRow key={`${org.organisation_id}:${model.model}`} className="bg-muted/40 text-xs" data-testid="usage-model-row">
                             <TableCell />
                             <TableCell className="font-mono">{model.model}</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatTokens(model.calls)} calls</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatTokens(model.input_tokens)}</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatTokens(model.output_tokens)}</TableCell>
-                            <TableCell className="text-right tabular-nums">{formatTokens(model.input_tokens + model.output_tokens)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatCount(model.calls)} calls</TableCell>
+                            <TableCell className="text-right tabular-nums" title={exactTokens(model.input_tokens)}>
+                              {formatTokens(model.input_tokens)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums" title={exactTokens(model.output_tokens)}>
+                              {formatTokens(model.output_tokens)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums" title={exactTokens(model.input_tokens + model.output_tokens)}>
+                              {formatTokens(model.input_tokens + model.output_tokens)}
+                            </TableCell>
                             <TableCell className="text-right tabular-nums">{formatUsd(estimate([model], rates, known).usd)}</TableCell>
                             <TableCell />
                           </TableRow>
@@ -349,11 +414,31 @@ export function UsageRoute() {
 
         {models.length > 0 && (
           <Card>
-            <CardHeader>
-              <CardTitle>Rates</CardTitle>
-              <CardDescription>USD per 1 million tokens, per model. Every estimate above uses these; they are saved in this browser.</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div className="flex flex-col gap-1.5">
+                <CardTitle>Rates</CardTitle>
+                <CardDescription>
+                  USD per 1 million tokens, per model, shared with everyone in your organisation.
+                  {report?.can_edit_rates ? " Every estimate above uses them." : " Set by your root organisation's admin."}
+                  {report?.rates_updated_at ? ` Last saved ${formatWhen(report.rates_updated_at)}.` : ""}
+                </CardDescription>
+              </div>
+              {report?.can_edit_rates && (
+                <Button size="sm" onClick={() => void submitRates()} disabled={!dirty || savingRates} data-testid="usage-save-rates">
+                  {savingRates ? "Saving…" : "Save rates"}
+                </Button>
+              )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col gap-3">
+              {fromBrowser && (
+                <p className="text-sm text-muted-foreground">These are the rates saved in this browser before rates were shared. Save them to share them.</p>
+              )}
+              {ratesMessage && (
+                <p className={ratesMessage.ok ? "flex items-center gap-1.5 text-sm text-primary" : "text-sm text-destructive"} role="status">
+                  {ratesMessage.ok && <Check className="size-4" aria-hidden="true" />}
+                  {ratesMessage.text}
+                </p>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -369,12 +454,14 @@ export function UsageRoute() {
                     return (
                       <TableRow key={model}>
                         <TableCell className="font-mono text-xs">{model}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatTokens(used.input + used.output)}</TableCell>
-                        <TableCell>
-                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Input rate for ${model}`} className="h-8" value={rate?.input ?? ""} placeholder="0.00" onChange={(e) => setRate(model, "input", e.target.value)} />
+                        <TableCell className="text-right tabular-nums" title={exactTokens(used.input + used.output)}>
+                          {formatTokens(used.input + used.output)}
                         </TableCell>
                         <TableCell>
-                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Output rate for ${model}`} className="h-8" value={rate?.output ?? ""} placeholder="0.00" onChange={(e) => setRate(model, "output", e.target.value)} />
+                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Input rate for ${model}`} className="h-8" value={rate?.input ?? ""} placeholder="0.00" readOnly={!report?.can_edit_rates} onChange={(e) => setRate(model, "input", e.target.value)} />
+                        </TableCell>
+                        <TableCell>
+                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Output rate for ${model}`} className="h-8" value={rate?.output ?? ""} placeholder="0.00" readOnly={!report?.can_edit_rates} onChange={(e) => setRate(model, "output", e.target.value)} />
                         </TableCell>
                       </TableRow>
                     );

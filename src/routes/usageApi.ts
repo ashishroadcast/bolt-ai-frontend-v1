@@ -43,6 +43,18 @@ export interface UsageReport {
   totals: UsageTotals;
   /** USD per 1,000,000 [input, output] tokens, for models the service has a list price for. */
   known_prices: Record<string, [number, number]>;
+  /** The organisation tree's shared rates, USD per 1,000,000 tokens. */
+  rates: Record<string, { input: number; output: number }>;
+  rates_updated_at: string | null;
+  /** Only someone acting as the root organisation changes the shared rates. */
+  can_edit_rates: boolean;
+}
+
+/** `PUT /agent/usage/rates` — replaces the tree's whole set of rates. */
+export function saveUsageRates(
+  rates: Record<string, { input: number; output: number }>,
+): Promise<{ rates: Record<string, { input: number; output: number }>; updated_at: string | null }> {
+  return gatewayClient.agentFetch(`/agent/usage/rates`, { method: "PUT", body: JSON.stringify({ rates }) });
 }
 
 /** `GET /agent/usage?from=…&to=…` — `[from, to)`, in the caller's own subtree. */

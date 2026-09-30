@@ -8,8 +8,8 @@ import type { ModelUsage } from "./usageApi.ts";
  * **Why rates are entered here at all.** The agent service records a cost only
  * when the provider priced the call, and the Claude models prod runs on
  * (through the omniroute gateway) come back unpriced — recorded cost is $0 for
- * most runs. Costing needs a rate per model; the operator enters it once and
- * every organisation's estimate follows.
+ * most runs. Costing needs a rate per model; the root organisation's admin
+ * enters it once (`PUT /agent/usage/rates`) and everyone's estimate follows.
  */
 
 /** USD per 1,000,000 tokens. */
@@ -20,10 +20,11 @@ export interface Rate {
 
 export type Rates = Record<string, Rate>;
 
+/** Where rates lived before they were shared on the server; read once, to carry them over. */
 const RATES_KEY = "bolty.usage.rates.v1";
 
-/** Saved rates, or `{}` — a private window or blocked storage just starts empty. */
-export function loadRates(): Rates {
+/** Rates this browser saved before they moved to the server, or `{}`. */
+export function loadLocalRates(): Rates {
   try {
     const raw = localStorage.getItem(RATES_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : {};
@@ -41,11 +42,12 @@ export function loadRates(): Rates {
   }
 }
 
-export function saveRates(rates: Rates): void {
+/** Forgets the browser copy once the server holds the rates. */
+export function clearLocalRates(): void {
   try {
-    localStorage.setItem(RATES_KEY, JSON.stringify(rates));
+    localStorage.removeItem(RATES_KEY);
   } catch {
-    // Storage unavailable: the rates still apply for this visit.
+    // Storage unavailable: nothing to clear.
   }
 }
 
@@ -88,6 +90,24 @@ export function formatUsd(usd: number): string {
   return `$${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(usd)}`;
 }
 
-export function formatTokens(n: number): string {
+/** Runs, calls, organisations — plain counts, grouped the Indian way. */
+export function formatCount(n: number): string {
   return new Intl.NumberFormat("en-IN").format(n);
+}
+
+/**
+ * Tokens as k (thousands) and M (millions): 866.2k, 10.7M. One decimal, dropped
+ * when it is zero; a value that would round up to 1000k is shown as 1M.
+ */
+export function formatTokens(n: number): string {
+  const abs = Math.abs(n);
+  const short = (value: number, unit: string) => `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value)}${unit}`;
+  if (abs < 1000) return String(n);
+  if (abs < 999_950) return short(n / 1000, "k");
+  return short(n / 1_000_000, "M");
+}
+
+/** The exact figure, for a tooltip beside a shortened one. */
+export function exactTokens(n: number): string {
+  return `${new Intl.NumberFormat("en-IN").format(n)} tokens`;
 }
