@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { ModelUsage } from "./usageApi.ts";
-import { clearLocalRates, estimate, formatTokens, formatUsd, loadLocalRates, rateFor } from "./usageCost.ts";
+import { clearLocalRates, estimate, formatInr, formatTokens, formatUsd, loadLocalRates, rateFor, rateInInr, rateInUsd } from "./usageCost.ts";
 
 const sonnet: ModelUsage = { model: "cc/claude-sonnet-4-6", calls: 3, input_tokens: 2_000_000, output_tokens: 500_000, cost_usd: 0, unpriced_calls: 3 };
 const qwen: ModelUsage = { model: "qwen/qwen3-coder", calls: 1, input_tokens: 1_000_000, output_tokens: 1_000_000, cost_usd: 0.5, unpriced_calls: 0 };
@@ -41,6 +41,19 @@ describe("usage cost", () => {
     expect(formatTokens(999_960)).toBe("1M");
     expect(formatTokens(2_500_000)).toBe("2.5M");
     expect(formatTokens(10_683_800)).toBe("10.7M");
+  });
+
+  it("writes rupees the Indian way", () => {
+    expect(formatInr(1234567.891)).toBe("₹12,34,567.89");
+    expect(formatInr(0)).toBe("₹0.00");
+    expect(formatInr(0.004)).toBe("₹0.0040");
+  });
+
+  it("converts rates between rupees and the dollars they are kept in", () => {
+    expect(rateInInr(3, 95.96)).toBe(287.88);
+    expect(rateInUsd(288, 96)).toBe(3);
+    // A rupee rate survives the round trip to the paisa.
+    expect(rateInInr(rateInUsd(123.45, 95.96), 95.96)).toBe(123.45);
   });
 
   it("shows small amounts to four places", () => {

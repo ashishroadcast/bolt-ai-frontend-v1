@@ -10,6 +10,11 @@ import type { ModelUsage } from "./usageApi.ts";
  * (through the omniroute gateway) come back unpriced — recorded cost is $0 for
  * most runs. Costing needs a rate per model; the root organisation's admin
  * enters it once (`PUT /agent/usage/rates`) and everyone's estimate follows.
+ *
+ * **Currency.** Rates and costs are kept in US dollars — vendors price in them,
+ * and so does every provider-recorded cost — and shown in rupees at the tree's
+ * exchange rate (`UsageReport.inr_per_usd`). Everything below that ends in
+ * `usd` is dollars; the screen converts only when it formats.
  */
 
 /** USD per 1,000,000 tokens. */
@@ -83,6 +88,22 @@ export function estimate(models: ModelUsage[], rates: Rates, known: Record<strin
     if (model.unpriced_calls > 0) unratedTokens += model.input_tokens + model.output_tokens;
   }
   return { usd, unratedTokens };
+}
+
+/** A USD-per-1M rate in rupees, to the paisa — what a Rates input shows. */
+export function rateInInr(usd: number, inrPerUsd: number): number {
+  return Math.round(usd * inrPerUsd * 100) / 100;
+}
+
+/** A rupee rate typed into the Rates card, back in the dollars the server keeps. */
+export function rateInUsd(inr: number, inrPerUsd: number): number {
+  return Math.round((inr / inrPerUsd) * 1_000_000) / 1_000_000;
+}
+
+/** Rupees, grouped the Indian way (₹12,34,567.00); small amounts to four places. */
+export function formatInr(inr: number): string {
+  if (inr > 0 && inr < 0.01) return `₹${inr.toFixed(4)}`;
+  return `₹${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(inr)}`;
 }
 
 export function formatUsd(usd: number): string {

@@ -48,13 +48,25 @@ export interface UsageReport {
   rates_updated_at: string | null;
   /** Only someone acting as the root organisation changes the shared rates. */
   can_edit_rates: boolean;
+  /** Rupees per US dollar the screen shows costs in: the tree's saved rate, or the service default. */
+  inr_per_usd: number;
+  inr_per_usd_saved: boolean;
 }
 
-/** `PUT /agent/usage/rates` — replaces the tree's whole set of rates. */
-export function saveUsageRates(
-  rates: Record<string, { input: number; output: number }>,
-): Promise<{ rates: Record<string, { input: number; output: number }>; updated_at: string | null }> {
-  return gatewayClient.agentFetch(`/agent/usage/rates`, { method: "PUT", body: JSON.stringify({ rates }) });
+export interface SavedRates {
+  rates: Record<string, { input: number; output: number }>;
+  updated_at: string | null;
+  inr_per_usd: number;
+  inr_per_usd_saved: boolean;
+}
+
+/**
+ * `PUT /agent/usage/rates` — replaces the tree's whole set of rates. The
+ * exchange rate is sent only when it changed; left out, the saved one stays.
+ */
+export function saveUsageRates(rates: Record<string, { input: number; output: number }>, inrPerUsd?: number): Promise<SavedRates> {
+  const body = inrPerUsd === undefined ? { rates } : { rates, inr_per_usd: inrPerUsd };
+  return gatewayClient.agentFetch<SavedRates>(`/agent/usage/rates`, { method: "PUT", body: JSON.stringify(body) });
 }
 
 /** `GET /agent/usage?from=…&to=…` — `[from, to)`, in the caller's own subtree. */

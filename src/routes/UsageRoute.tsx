@@ -17,10 +17,13 @@ import {
   estimate,
   exactTokens,
   formatCount,
+  formatInr,
   formatTokens,
   formatUsd,
   loadLocalRates,
   rateFor,
+  rateInInr,
+  rateInUsd,
   type Rate,
   type Rates,
 } from "./usageCost.ts";
@@ -76,15 +79,38 @@ function csvCell(value: string | number): string {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
-/** One line per organisation and model — the shape a costing sheet pivots on. */
-export function usageCsv(report: UsageReport, rates: Rates): string {
-  const header = ["Organisation", "Organisation ID", "Model", "Calls", "Input tokens", "Output tokens", "Total tokens", "Estimated cost (USD)"];
+/**
+ * One line per organisation and model — the shape a costing sheet pivots on.
+ * Rupees at `inrPerUsd`, with the dollars beside them to check against a vendor invoice.
+ */
+export function usageCsv(report: UsageReport, rates: Rates, inrPerUsd: number): string {
+  const header = [
+    "Organisation",
+    "Organisation ID",
+    "Model",
+    "Calls",
+    "Input tokens",
+    "Output tokens",
+    "Total tokens",
+    "Estimated cost (INR)",
+    "Estimated cost (USD)",
+  ];
   const lines = [header.join(",")];
   for (const org of report.organisations) {
     for (const model of org.models) {
       const cost = estimate([model], rates, report.known_prices).usd;
       lines.push(
-        [org.name, org.organisation_id, model.model, model.calls, model.input_tokens, model.output_tokens, model.input_tokens + model.output_tokens, cost.toFixed(4)]
+        [
+          org.name,
+          org.organisation_id,
+          model.model,
+          model.calls,
+          model.input_tokens,
+          model.output_tokens,
+          model.input_tokens + model.output_tokens,
+          (cost * inrPerUsd).toFixed(2),
+          cost.toFixed(4),
+        ]
           .map(csvCell)
           .join(","),
       );
@@ -108,9 +134,13 @@ function download(filename: string, text: string): void {
  * ones the run acted as, named from bolt-v2; each expands into its models.
  *
  * Costs are estimates: most calls come back unpriced (see `usageCost.ts`), so
- * the Rates card takes a USD-per-million rate per model. The rates are shared by
+ * the Rates card takes a per-million rate per model. The rates are shared by
  * the whole organisation tree (`PUT /agent/usage/rates`): the root
  * organisation's admin sets them, everyone else sees the same numbers.
+ *
+ * Every cost is shown in rupees. Rates stay in US dollars underneath (what
+ * vendors quote); the inputs show and take rupees at the tree's exchange rate,
+ * which the admin saves with the rates.
  */
 export function UsageRoute() {
   const [period, setPeriod] = useState<Period>("this-month");
@@ -128,7 +158,13 @@ export function UsageRoute() {
   const [fromBrowser, setFromBrowser] = useState(false);
   const [savingRates, setSavingRates] = useState(false);
   const [ratesMessage, setRatesMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const dirty = JSON.stringify(rates) !== JSON.stringify(savedRates);
+  /** Rupees per US dollar: the one every cost is shown at, and the saved one. */
+  const [fx, setFx] = useState(0);
+  const [savedFx, setSavedFx] = useState(0);
+  const savedFxRef = useRef(0);
+  /** What a rupee input holds while it is being typed into ("2", "28", "288."), by `model:field` or "fx". */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const dirty = JSON.stringify(rates) !== JSON.stringify(savedRates) || fx !== savedFx;
 
   const range = useMemo(() => periodRange(period, new Date(), customFrom, customTo), [period, customFrom, customTo]);
 
@@ -147,6 +183,10 @@ export function UsageRoute() {
         setRates((current) => (JSON.stringify(current) !== previouslySaved ? current : body.rates));
         setSavedRates(body.rates);
         savedRatesRef.current = body.rates;
+        const previousFx = savedFxRef.current;
+        setFx((current) => (current !== previousFx ? current : body.inr_per_usd));
+        setSavedFx(body.inr_per_usd);
+        savedFxRef.current = body.inr_per_usd;
         // Rates typed into this browser before they were shared: offered for saving, once.
         const local = loadLocalRates();
         if (body.can_edit_rates && Object.keys(body.rates).length === 0 && Object.keys(local).length > 0) {
@@ -189,22 +229,63 @@ export function UsageRoute() {
 
   const total = useMemo(() => estimate((report?.organisations ?? []).flatMap((org) => org.models), rates, known), [report, rates, known]);
 
+  /** `value` is rupees per 1M tokens, as typed; the rate is kept in dollars. */
   function setRate(model: string, field: keyof Rate, value: string) {
     const current = rateFor(model, rates, known) ?? { input: 0, output: 0 };
     const parsed = Number(value);
-    setRates({ ...rates, [model]: { ...current, [field]: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 } });
+    const usd = Number.isFinite(parsed) && parsed >= 0 ? rateInUsd(parsed, fx) : 0;
+    setDrafts((prev) => ({ ...prev, [`${model}:${field}`]: value }));
+    setRates({ ...rates, [model]: { ...current, [field]: usd } });
     setRatesMessage(null);
   }
+
+  function setExchangeRate(value: string) {
+    setDrafts((prev) => ({ ...prev, fx: value }));
+    const parsed = Number(value);
+    // An empty or half-typed box leaves the last good rate in use.
+    if (Number.isFinite(parsed) && parsed > 0 && parsed < 1000) setFx(parsed);
+    setRatesMessage(null);
+  }
+
+  function endDraft(key: string) {
+    setDrafts((prev) => {
+      const { [key]: _done, ...rest } = prev;
+      return rest;
+    });
+  }
+
+  /** What a rupee rate input shows: the typing in progress, else the rate converted. */
+  function rateValue(model: string, field: keyof Rate, rate: Rate | null): string {
+    const draft = drafts[`${model}:${field}`];
+    if (draft !== undefined) return draft;
+    return rate ? String(rateInInr(rate[field], fx)) : "";
+  }
+
+  const inr = (usd: number) => formatInr(usd * fx);
 
   async function submitRates() {
     setSavingRates(true);
     setRatesMessage(null);
     try {
-      const saved = await saveUsageRates(rates);
+      const saved = await saveUsageRates(rates, fx !== savedFx ? fx : undefined);
       setSavedRates(saved.rates);
       setRates(saved.rates);
       savedRatesRef.current = saved.rates;
-      setReport((prev) => (prev ? { ...prev, rates: saved.rates, rates_updated_at: saved.updated_at } : prev));
+      setFx(saved.inr_per_usd);
+      setSavedFx(saved.inr_per_usd);
+      savedFxRef.current = saved.inr_per_usd;
+      setDrafts({});
+      setReport((prev) =>
+        prev
+          ? {
+              ...prev,
+              rates: saved.rates,
+              rates_updated_at: saved.updated_at,
+              inr_per_usd: saved.inr_per_usd,
+              inr_per_usd_saved: saved.inr_per_usd_saved,
+            }
+          : prev,
+      );
       clearLocalRates();
       setFromBrowser(false);
       setRatesMessage({ ok: true, text: "Saved. Everyone in your organisation now sees these rates." });
@@ -237,7 +318,7 @@ export function UsageRoute() {
         title="Usage"
         description="Tokens each organisation's agent runs used, with an estimated cost — for working out what Bolty costs per customer."
         actionLabel="Export CSV"
-        onAction={report ? () => download(`bolty-usage-${new Date().toISOString().slice(0, 10)}.csv`, usageCsv(report, rates)) : undefined}
+        onAction={report ? () => download(`bolty-usage-${new Date().toISOString().slice(0, 10)}.csv`, usageCsv(report, rates, fx)) : undefined}
         actionDisabled={!report || report.organisations.length === 0}
       />
       <div className="flex flex-col gap-6">
@@ -309,7 +390,7 @@ export function UsageRoute() {
               <CardHeader>
                 <CardDescription>Estimated cost</CardDescription>
                 <CardTitle className="text-2xl tabular-nums" data-testid="usage-estimate">
-                  {formatUsd(total.usd + totals.document_cost_usd)}
+                  {inr(total.usd + totals.document_cost_usd)}
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground">
@@ -319,7 +400,7 @@ export function UsageRoute() {
             <Card>
               <CardHeader>
                 <CardDescription>Recorded by providers</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">{formatUsd(totals.cost_usd + totals.document_cost_usd)}</CardTitle>
+                <CardTitle className="text-2xl tabular-nums">{inr(totals.cost_usd + totals.document_cost_usd)}</CardTitle>
               </CardHeader>
               <CardContent className="text-xs text-muted-foreground">{formatCount(totals.unpriced_calls)} calls came back unpriced</CardContent>
             </Card>
@@ -382,7 +463,7 @@ export function UsageRoute() {
                         <TableCell className="text-right font-medium tabular-nums" title={exactTokens(org.total_tokens)}>
                           {formatTokens(org.total_tokens)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatUsd(orgCost(org))}</TableCell>
+                        <TableCell className="text-right tabular-nums">{inr(orgCost(org))}</TableCell>
                         <TableCell className="text-muted-foreground">{formatWhen(org.last_run_at)}</TableCell>
                       </TableRow>
                       {open &&
@@ -400,7 +481,7 @@ export function UsageRoute() {
                             <TableCell className="text-right tabular-nums" title={exactTokens(model.input_tokens + model.output_tokens)}>
                               {formatTokens(model.input_tokens + model.output_tokens)}
                             </TableCell>
-                            <TableCell className="text-right tabular-nums">{formatUsd(estimate([model], rates, known).usd)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{inr(estimate([model], rates, known).usd)}</TableCell>
                             <TableCell />
                           </TableRow>
                         ))}
@@ -418,18 +499,42 @@ export function UsageRoute() {
               <div className="flex flex-col gap-1.5">
                 <CardTitle>Rates</CardTitle>
                 <CardDescription>
-                  USD per 1 million tokens, per model, shared with everyone in your organisation.
+                  Rupees per 1 million tokens, per model, shared with everyone in your organisation.
                   {report?.can_edit_rates ? " Every estimate above uses them." : " Set by your root organisation's admin."}
                   {report?.rates_updated_at ? ` Last saved ${formatWhen(report.rates_updated_at)}.` : ""}
                 </CardDescription>
               </div>
-              {report?.can_edit_rates && (
-                <Button size="sm" onClick={() => void submitRates()} disabled={!dirty || savingRates} data-testid="usage-save-rates">
-                  {savingRates ? "Saving…" : "Save rates"}
-                </Button>
-              )}
+              <div className="flex shrink-0 items-end gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="usage-fx" className="text-muted-foreground">
+                    1 US$ in ₹
+                  </Label>
+                  <Input
+                    id="usage-fx"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    aria-label="Rupees per US dollar"
+                    className="h-8 w-24"
+                    value={drafts.fx ?? String(fx)}
+                    readOnly={!report?.can_edit_rates}
+                    onChange={(e) => setExchangeRate(e.target.value)}
+                    onBlur={() => endDraft("fx")}
+                  />
+                </div>
+                {report?.can_edit_rates && (
+                  <Button size="sm" onClick={() => void submitRates()} disabled={!dirty || savingRates} data-testid="usage-save-rates">
+                    {savingRates ? "Saving…" : "Save rates"}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              <p className="text-xs text-muted-foreground" data-testid="usage-fx-note">
+                Vendors price in US dollars; rates are kept in dollars and shown at 1 US$ = {formatInr(fx)}
+                {report?.inr_per_usd_saved ? "." : ", the service's default. Save your own rate to fix it."} Changing it re-prices every rate.
+              </p>
               {fromBrowser && (
                 <p className="text-sm text-muted-foreground">These are the rates saved in this browser before rates were shared. Save them to share them.</p>
               )}
@@ -444,24 +549,56 @@ export function UsageRoute() {
                   <TableRow>
                     <TableHead>Model</TableHead>
                     <TableHead className="text-right">Tokens in this period</TableHead>
-                    <TableHead className="w-40">Input rate</TableHead>
-                    <TableHead className="w-40">Output rate</TableHead>
+                    <TableHead className="w-40">Input, ₹ per 1M</TableHead>
+                    <TableHead className="w-40">Output, ₹ per 1M</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {models.map(([model, used]) => {
                     const rate = rateFor(model, rates, known);
+                    const list = known[model];
                     return (
                       <TableRow key={model}>
-                        <TableCell className="font-mono text-xs">{model}</TableCell>
+                        <TableCell>
+                          <div className="font-mono text-xs">{model}</div>
+                          {list && (
+                            <div className="text-[11px] text-muted-foreground">
+                              List price {formatUsd(list[0])} in · {formatUsd(list[1])} out
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums" title={exactTokens(used.input + used.output)}>
                           {formatTokens(used.input + used.output)}
                         </TableCell>
                         <TableCell>
-                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Input rate for ${model}`} className="h-8" value={rate?.input ?? ""} placeholder="0.00" readOnly={!report?.can_edit_rates} onChange={(e) => setRate(model, "input", e.target.value)} />
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            aria-label={`Input rate for ${model}`}
+                            className="h-8"
+                            value={rateValue(model, "input", rate)}
+                            placeholder="0.00"
+                            readOnly={!report?.can_edit_rates}
+                            onChange={(e) => setRate(model, "input", e.target.value)}
+                            onBlur={() => endDraft(`${model}:input`)}
+                          />
                         </TableCell>
                         <TableCell>
-                          <Input type="number" min={0} step="0.01" inputMode="decimal" aria-label={`Output rate for ${model}`} className="h-8" value={rate?.output ?? ""} placeholder="0.00" readOnly={!report?.can_edit_rates} onChange={(e) => setRate(model, "output", e.target.value)} />
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            inputMode="decimal"
+                            aria-label={`Output rate for ${model}`}
+                            className="h-8"
+                            value={rateValue(model, "output", rate)}
+                            placeholder="0.00"
+                            readOnly={!report?.can_edit_rates}
+                            onChange={(e) => setRate(model, "output", e.target.value)}
+                            onBlur={() => endDraft(`${model}:output`)}
+                          />
                         </TableCell>
                       </TableRow>
                     );

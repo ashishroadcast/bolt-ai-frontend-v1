@@ -41,6 +41,8 @@ const REPORT: UsageReport = {
   rates: {},
   rates_updated_at: null,
   can_edit_rates: true,
+  inr_per_usd: 96,
+  inr_per_usd_saved: false,
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -51,7 +53,7 @@ describe("UsageRoute", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   let urls: URL[];
   let report: UsageReport;
-  let puts: unknown[];
+  let puts: { rates: unknown; inr_per_usd?: number }[];
 
   beforeEach(() => {
     urls = [];
@@ -62,9 +64,10 @@ describe("UsageRoute", () => {
       const url = new URL(request.url);
       urls.push(url);
       if (url.pathname.endsWith("/agent/usage/rates") && request.method === "PUT") {
-        const body = (await request.json()) as { rates: unknown };
-        puts.push(body.rates);
-        return jsonResponse({ rates: body.rates, updated_at: "2026-09-30T12:00:00Z" });
+        const body = (await request.json()) as { rates: unknown; inr_per_usd?: number };
+        puts.push(body);
+        const fx = body.inr_per_usd ?? report.inr_per_usd;
+        return jsonResponse({ rates: body.rates, updated_at: "2026-09-30T12:00:00Z", inr_per_usd: fx, inr_per_usd_saved: body.inr_per_usd !== undefined });
       }
       return url.pathname.endsWith("/agent/usage") ? jsonResponse(report) : jsonResponse({ detail: "unhandled" }, 500);
     });
@@ -106,14 +109,37 @@ describe("UsageRoute", () => {
     expect(within(models[0]).getByText("cc/claude-sonnet-4-6")).toBeTruthy();
   });
 
-  it("turns a rate into an estimated cost", async () => {
+  it("turns a rupee rate into an estimated cost in rupees", async () => {
     renderUsage();
     await screen.findAllByTestId("usage-org-row");
-    expect(screen.getByTestId("usage-estimate").textContent).toBe("$0.00");
-    fireEvent.change(screen.getByLabelText("Input rate for cc/claude-sonnet-4-6"), { target: { value: "3" } });
-    fireEvent.change(screen.getByLabelText("Output rate for cc/claude-sonnet-4-6"), { target: { value: "15" } });
-    // (2,001,000 × $3 + 500,200 × $15) / 1M
-    await waitFor(() => expect(screen.getByTestId("usage-estimate").textContent).toBe("$13.51"));
+    expect(screen.getByTestId("usage-estimate").textContent).toBe("₹0.00");
+    fireEvent.change(screen.getByLabelText("Input rate for cc/claude-sonnet-4-6"), { target: { value: "288" } });
+    fireEvent.change(screen.getByLabelText("Output rate for cc/claude-sonnet-4-6"), { target: { value: "1440" } });
+    // (2,001,000 × ₹288 + 500,200 × ₹1,440) / 1M
+    await waitFor(() => expect(screen.getByTestId("usage-estimate").textContent).toBe("₹1,296.58"));
+  });
+
+  it("prices a model at its list price, converted, until a rate is saved", async () => {
+    report = { ...REPORT, known_prices: { "cc/claude-sonnet-4-6": [3, 15] } };
+    renderUsage();
+    await screen.findAllByTestId("usage-org-row");
+    expect((screen.getByLabelText("Input rate for cc/claude-sonnet-4-6") as HTMLInputElement).value).toBe("288");
+    expect(screen.getByText("List price $3.00 in · $15.00 out")).toBeTruthy();
+    expect(screen.getByTestId("usage-estimate").textContent).toBe("₹1,296.58");
+    expect(screen.getByTestId("usage-fx-note").textContent).toContain("the service's default");
+  });
+
+  it("re-prices everything at a new exchange rate and saves it with the rates", async () => {
+    report = { ...REPORT, rates: { "cc/claude-sonnet-4-6": { input: 3, output: 15 } } };
+    renderUsage();
+    await screen.findAllByTestId("usage-org-row");
+    fireEvent.change(screen.getByLabelText("Rupees per US dollar"), { target: { value: "100" } });
+    expect((screen.getByLabelText("Input rate for cc/claude-sonnet-4-6") as HTMLInputElement).value).toBe("300");
+    expect(screen.getByTestId("usage-estimate").textContent).toBe("₹1,350.60");
+    fireEvent.click(screen.getByTestId("usage-save-rates"));
+    await waitFor(() => expect(puts).toEqual([{ rates: { "cc/claude-sonnet-4-6": { input: 3, output: 15 } }, inr_per_usd: 100 }]));
+    expect(await screen.findByText(/Everyone in your organisation now sees these rates/)).toBeTruthy();
+    expect(screen.getByTestId("usage-fx-note").textContent).not.toContain("default");
   });
 
   it("saves rates to the server for everyone", async () => {
@@ -121,10 +147,11 @@ describe("UsageRoute", () => {
     await screen.findAllByTestId("usage-org-row");
     const save = screen.getByTestId("usage-save-rates") as HTMLButtonElement;
     expect(save.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText("Input rate for cc/claude-sonnet-4-6"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Input rate for cc/claude-sonnet-4-6"), { target: { value: "288" } });
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
-    await waitFor(() => expect(puts).toEqual([{ "cc/claude-sonnet-4-6": { input: 3, output: 0 } }]));
+    // Kept in dollars, and the unchanged default exchange rate is not saved as the tree's own.
+    await waitFor(() => expect(puts).toEqual([{ rates: { "cc/claude-sonnet-4-6": { input: 3, output: 0 } } }]));
     expect(await screen.findByText(/Everyone in your organisation now sees these rates/)).toBeTruthy();
     expect(save.disabled).toBe(true);
   });
@@ -134,10 +161,11 @@ describe("UsageRoute", () => {
     renderUsage();
     await screen.findAllByTestId("usage-org-row");
     const input = screen.getByLabelText("Input rate for cc/claude-sonnet-4-6") as HTMLInputElement;
-    expect(input.value).toBe("3");
+    expect(input.value).toBe("288");
     expect(input.readOnly).toBe(true);
+    expect((screen.getByLabelText("Rupees per US dollar") as HTMLInputElement).readOnly).toBe(true);
     expect(screen.queryByTestId("usage-save-rates")).toBeNull();
-    expect(screen.getByTestId("usage-estimate").textContent).toBe("$13.51");
+    expect(screen.getByTestId("usage-estimate").textContent).toBe("₹1,296.58");
   });
 
   it("offers rates this browser saved before, when the server has none", async () => {
@@ -157,10 +185,11 @@ describe("UsageRoute", () => {
     expect(screen.getAllByTestId("usage-org-row")).toHaveLength(1);
   });
 
-  it("exports one line per organisation and model", () => {
-    const csv = usageCsv(REPORT, { "cc/claude-sonnet-4-6": { input: 3, output: 15 } }).split("\n");
+  it("exports one line per organisation and model, in rupees and dollars", () => {
+    const csv = usageCsv(REPORT, { "cc/claude-sonnet-4-6": { input: 3, output: 15 } }, 96).split("\n");
     expect(csv[0]).toContain("Organisation,Organisation ID,Model");
-    expect(csv[1]).toBe("DP World Mundra,org-a,cc/claude-sonnet-4-6,6,2000000,500000,2500000,13.5000");
+    expect(csv[0]).toContain("Estimated cost (INR),Estimated cost (USD)");
+    expect(csv[1]).toBe("DP World Mundra,org-a,cc/claude-sonnet-4-6,6,2000000,500000,2500000,1296.00,13.5000");
   });
 
   it("makes a custom range end at the end of its last day", () => {
