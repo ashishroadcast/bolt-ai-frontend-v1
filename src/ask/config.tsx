@@ -30,10 +30,21 @@ import { GatewayClient } from "./http/gatewayClient.ts";
  * it had already worked out the right seams against the same backend: the
  * host owns the credential, the widget owns the conversation.
  */
+/**
+ * Why a host can't offer one kind of draft at all, in its own words — e.g. a
+ * mobile app with no builder to open drafts in. See `AskConfig.draftAccess`.
+ */
+export interface AskDraftUnavailable {
+  /** Short: the notice's heading and the quick action's label ("Not available on mobile"). */
+  title: string;
+  /** One sentence on where to do it instead. */
+  message: string;
+}
+
 /** See `AskConfig.draftAccess`. */
 export interface AskDraftAccess {
-  dashboard?: boolean;
-  form?: boolean;
+  dashboard?: boolean | AskDraftUnavailable;
+  form?: boolean | AskDraftUnavailable;
 }
 
 export interface AskConfig {
@@ -127,6 +138,11 @@ export interface AskConfig {
    * instead of starting a run: a draft the reader can never open is a
    * minute of waiting for something they cannot use. Absent (or `true`)
    * changes nothing, which is every host that has no such rule — the console.
+   *
+   * An {@link AskDraftUnavailable} instead of `false` blocks the same three
+   * ways, but for a reason that isn't the reader's role, told in the host's
+   * words: the quick action stays on screen, disabled and labelled with
+   * `title`, so a reader learns where the feature went rather than wondering.
    */
   draftAccess?: AskDraftAccess;
   /**

@@ -78,6 +78,32 @@ describe("EmptyState quick actions", () => {
     expect(screen.queryByRole("button", { name: /Create Dashboard/ })).not.toBeInTheDocument();
   });
 
+  it("keeps a card the host can't offer, disabled and saying why", async () => {
+    const fetchMock = routed([AGENT]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <TestAskProvider
+        config={{ draftAccess: { dashboard: { title: "Not available on mobile", message: "Use the web." } } }}
+      >
+        <ChatProvider>
+          <AskAgentsProvider>
+            <EmptyState title="Hi" body="body" />
+          </AskAgentsProvider>
+        </ChatProvider>
+      </TestAskProvider>,
+    );
+
+    const card = await screen.findByRole("button", { name: /Create Dashboard/ });
+    expect(card).toHaveTextContent("Not available on mobile");
+    expect(card).not.toHaveTextContent("Daily vehicle usage");
+    // Still disabled once the agents have loaded and the other cards enable.
+    await waitFor(() => expect(screen.getByRole("button", { name: /Create Forms/ })).toBeEnabled());
+    expect(card).toBeDisabled();
+    fireEvent.click(card);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
   it("is clickable once the agent list loads, with no agent armed", async () => {
     const fetchMock = routed([AGENT]);
     vi.stubGlobal("fetch", fetchMock);

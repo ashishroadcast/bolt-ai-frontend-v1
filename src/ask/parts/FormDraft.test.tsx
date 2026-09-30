@@ -49,6 +49,19 @@ describe("FormDraft", () => {
     expect(screen.queryByRole("button", { name: /Open in builder/ })).not.toBeInTheDocument();
   });
 
+  it("says, in the host's words, that forms aren't available here", () => {
+    render(
+      <TestAskProvider
+        config={{ draftAccess: { form: { title: "Not available on mobile", message: "Create forms in Bolt on the web." } } }}
+      >
+        <FormDraft {...draft()} />
+      </TestAskProvider>,
+    );
+    expect(screen.getByText("Not available on mobile")).toBeInTheDocument();
+    expect(screen.getByText("Create forms in Bolt on the web.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Vehicle Registration" })).not.toBeInTheDocument();
+  });
+
   it("shows what the form is, how big it is and when it appears", () => {
     show(draft());
 

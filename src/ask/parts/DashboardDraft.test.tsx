@@ -45,6 +45,18 @@ describe("DashboardDraft", () => {
     expect(screen.queryByRole("button", { name: /Open in builder/ })).not.toBeInTheDocument();
   });
 
+  it("says, in the host's words, that dashboards aren't available here", () => {
+    render(
+      <TestAskProvider config={{ draftAccess: { dashboard: { title: "Not available on mobile", message: "Create dashboards in Bolt on the web." } } }}>
+        <DashboardDraft {...draft()} />
+      </TestAskProvider>,
+    );
+    expect(screen.getByText("Not available on mobile")).toBeInTheDocument();
+    expect(screen.getByText("Create dashboards in Bolt on the web.")).toBeInTheDocument();
+    expect(screen.queryByText(/permission/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Operations Overview" })).not.toBeInTheDocument();
+  });
+
   it("shows the view's name, size and description", () => {
     show(draft());
     expect(screen.getByRole("heading", { name: "Operations Overview" })).toBeInTheDocument();

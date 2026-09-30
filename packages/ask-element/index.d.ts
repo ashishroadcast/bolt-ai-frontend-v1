@@ -260,8 +260,13 @@ export declare class BoltAiAskElement extends HTMLElement {
    * that kind's draft with a "You can't create …" notice, hides its quick
    * action and answers its slash command with the notice instead of a run.
    * `null` (the default) changes nothing.
+   *
+   * An {@link AskDraftUnavailable} instead of `false` is for a host that
+   * can't offer that kind at all (a mobile app with no builder): the same
+   * three blocks, in the host's words, and the quick action stays visible —
+   * disabled, labelled with `title` — so the reader learns where it went.
    */
-  draftAccess: { dashboard?: boolean; form?: boolean } | null;
+  draftAccess: { dashboard?: boolean | AskDraftUnavailable; form?: boolean | AskDraftUnavailable } | null;
 
   /**
    * Inserts a drafted widget into the builder's UNSAVED canvas and says what
@@ -352,6 +357,14 @@ export declare class BoltAiAskElement extends HTMLElement {
     listener: EventListenerOrEventListenerObject,
     options?: boolean | EventListenerOptions,
   ): void;
+}
+
+/** Why a host can't offer one kind of draft, in its own words. See `draftAccess`. */
+export interface AskDraftUnavailable {
+  /** Short: the notice's heading and the quick action's label ("Not available on mobile"). */
+  title: string;
+  /** One sentence on where to do it instead. */
+  message: string;
 }
 
 /** `detail` of the `conversationchange` event. */

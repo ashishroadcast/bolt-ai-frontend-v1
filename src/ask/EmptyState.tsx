@@ -2,7 +2,7 @@ import { FileSpreadsheet, LayoutDashboard, Radio, Sparkles, type LucideIcon } fr
 import type { ReactElement } from "react";
 import { AgentIcon } from "./AgentIcon.tsx";
 import { useAskConfig } from "./config.tsx";
-import type { DraftKind } from "./parts/DraftNotAllowed.tsx";
+import { draftBlock, type DraftKind } from "./parts/DraftNotAllowed.tsx";
 import { useChatContext } from "./chat/ChatContext.tsx";
 import { useAskAgents } from "./chat/useAskAgents.ts";
 import { useOnlineStatus } from "./chat/useOnlineStatus.ts";
@@ -16,8 +16,9 @@ interface QuickAction {
    * copy is a label ("Summarize Report"), not necessarily a well-formed
   * question, so the two are kept separate. */
   prompt: string;
-  /** The draft this card asks for, so it can be left out for a reader the
-   * host says may not create one (`AskConfig.draftAccess`). */
+  /** The draft this card asks for, so it can be left out — or shown
+   * disabled, with the host's reason — for a reader who can't have one here
+   * (`AskConfig.draftAccess`). */
   draft?: DraftKind;
 }
 
@@ -65,11 +66,13 @@ export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
   const { status, sendMessage, selectedAgent } = useChatContext();
   const { agents } = useAskAgents();
   const { draftAccess } = useAskConfig();
-  // A card for a draft the reader may not create would start a run that ends
-  // in a notice saying so; leaving it out says the same thing sooner.
-  const actions = QUICK_ACTIONS.filter(
-    (action) => action.draft === undefined || draftAccess?.[action.draft] !== false,
-  );
+  // A card for a draft the reader can't have would start a run that ends in a
+  // notice saying so. Without the permission the card is left out; where the
+  // host can't offer the feature at all (mobile) it stays, disabled, and says so.
+  const actions = QUICK_ACTIONS.map((action) => ({
+    ...action,
+    block: action.draft === undefined ? null : draftBlock(action.draft, draftAccess),
+  })).filter((action) => !action.block?.hideQuickAction);
   const isOnline = useOnlineStatus();
   // Not `selectedAgent !== null` — matches Composer.tsx's own gate (see
   // its docstring): a question with no agent armed is the ordinary case
@@ -115,13 +118,13 @@ export function EmptyState({ title, body }: EmptyStateProps): ReactElement {
               type="button"
               className={styles.card}
               onClick={() => runQuickAction(action)}
-              disabled={!canSend}
+              disabled={!canSend || action.block !== null}
             >
               <span className={styles.cardIcon} aria-hidden="true">
                 <action.icon size={16} strokeWidth={2} />
               </span>
               <span className={styles.cardTitle}>{action.title}</span>
-              <span className={styles.cardBody}>{action.body}</span>
+              <span className={styles.cardBody}>{action.block?.title ?? action.body}</span>
             </button>
           ))}
         </div>

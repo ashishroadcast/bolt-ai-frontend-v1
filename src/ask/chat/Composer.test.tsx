@@ -592,6 +592,32 @@ describe("Composer slash commands", () => {
     expect(runCalls(fetchMock)).toHaveLength(0);
   });
 
+  it("answers a draft command the host can't offer with the host's reason, and sends nothing", async () => {
+    fetchMock = routed([SALES, FORMS, FLEET]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <TestAskProvider
+        config={{ draftAccess: { form: { title: "Not available on mobile", message: "Create forms in Bolt on the web." } } }}
+      >
+        <ChatProvider>
+          <AskAgentsProvider>
+            <Composer />
+          </AskAgentsProvider>
+        </ChatProvider>
+      </TestAskProvider>,
+    );
+    await waitFor(() => expect(screen.getByLabelText("Show commands")).toBeInTheDocument());
+
+    type("/form a vehicle inspection checklist");
+    fireEvent.click(screen.getByRole("button", { name: "Ask" }));
+
+    expect(
+      await screen.findByText("Not available on mobile. Create forms in Bolt on the web."),
+    ).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(runCalls(fetchMock)).toHaveLength(0);
+  });
+
   it("opens on a leading slash and lists only agents an operator gave a command", async () => {
     const menu = await typeSlash();
 
@@ -696,10 +722,25 @@ describe("Composer slash commands", () => {
     expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
   });
 
-  it("arms on pointer down, which is before the input loses focus", async () => {
+  it("keeps the menu under the finger until the tap's click, so the click can't fall through", async () => {
+    await typeSlash();
+    const option = screen.getByRole("option", { name: /report/ });
+
+    // Touch: pointerdown, then (after the finger lifts) click. Closing the
+    // menu at pointerdown sent the click to whatever it had been covering.
+    fireEvent.pointerDown(option);
+    expect(screen.getByRole("listbox", { name: "Commands" })).toBeInTheDocument();
+
+    fireEvent.click(option);
+    expect(screen.queryByRole("listbox", { name: "Commands" })).not.toBeInTheDocument();
+  });
+
+  it("arms on click", async () => {
     await typeSlash();
 
-    fireEvent.pointerDown(screen.getByRole("option", { name: /report/ }));
+    const option = screen.getByRole("option", { name: /report/ });
+    fireEvent.pointerDown(option);
+    fireEvent.click(option);
 
     const field = screen.getByLabelText("Ask a question");
     expect((field as HTMLTextAreaElement).value).toBe("");

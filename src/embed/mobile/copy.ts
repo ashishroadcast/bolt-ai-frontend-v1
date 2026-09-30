@@ -5,6 +5,8 @@
  * step with it by hand.
  */
 
+import type { AskDraftUnavailable } from "../../ask/config.tsx";
+
 export type EmbedLang = "en" | "hi";
 
 export interface EmbedCopy {
@@ -15,6 +17,9 @@ export interface EmbedCopy {
   openInApp: string;
   /** Shown when the app never answers `hello` (a build without the bridge). */
   updateApp: string;
+  /** Apps have no dashboard or form builder: the widget says so wherever it would offer one. */
+  dashboardUnavailable: AskDraftUnavailable;
+  formUnavailable: AskDraftUnavailable;
 }
 
 const COPY: Record<EmbedLang, EmbedCopy> = {
@@ -25,6 +30,14 @@ const COPY: Record<EmbedLang, EmbedCopy> = {
     placeholder: "Ask about vehicles, trips, drivers or devices…",
     openInApp: "Open Ask from the Bolt app.",
     updateApp: "Update the app to use Ask.",
+    dashboardUnavailable: {
+      title: "Not available on mobile",
+      message: "Create dashboards in Bolt on the web.",
+    },
+    formUnavailable: {
+      title: "Not available on mobile",
+      message: "Create forms in Bolt on the web.",
+    },
   },
   hi: {
     emptyTitle: "अपने बेड़े के बारे में सीधी भाषा में पूछें",
@@ -33,6 +46,14 @@ const COPY: Record<EmbedLang, EmbedCopy> = {
     placeholder: "वाहनों, ट्रिप, ड्राइवरों या डिवाइस के बारे में पूछें…",
     openInApp: "Ask को Bolt ऐप से खोलें।",
     updateApp: "Ask इस्तेमाल करने के लिए ऐप अपडेट करें।",
+    dashboardUnavailable: {
+      title: "मोबाइल पर उपलब्ध नहीं",
+      message: "डैशबोर्ड वेब पर Bolt में बनाएं।",
+    },
+    formUnavailable: {
+      title: "मोबाइल पर उपलब्ध नहीं",
+      message: "फ़ॉर्म वेब पर Bolt में बनाएं।",
+    },
   },
 };
 

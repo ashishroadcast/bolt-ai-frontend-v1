@@ -58,6 +58,8 @@ async function start(): Promise<void> {
   ask.setAttribute("empty-body", copy.emptyBody);
   ask.setAttribute("placeholder", copy.placeholder);
   if (hello.conversationId) ask.setAttribute("conversation-id", String(hello.conversationId));
+  // No builders in the app: say so on the quick actions, drafts and slash commands.
+  ask.draftAccess = { dashboard: copy.dashboardUnavailable, form: copy.formUnavailable };
 
   bridge.onPush((push) => {
     switch (push.type) {

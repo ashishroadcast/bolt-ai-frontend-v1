@@ -498,8 +498,9 @@ export class BoltAiAskElement extends HTMLElement {
 
   /**
    * `AskConfig.draftAccess`: which drafts this reader may create, from the
-   * host's own access control. A property, not an attribute — it is an
-   * object, and the host already holds it as one.
+   * host's own access control — or, per kind, why this host can't offer it
+   * at all. A property, not an attribute — it is an object, and the host
+   * already holds it as one.
    */
   get draftAccess(): AskDraftAccess | null {
     return this.draftAccessValue;

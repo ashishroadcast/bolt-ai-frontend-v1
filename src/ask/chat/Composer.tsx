@@ -13,7 +13,7 @@ import { useAskLocale } from "../i18n/AskLocale.tsx";
 import { useChatContext } from "./ChatContext.tsx";
 import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
-import { draftNotAllowedText, type DraftKind } from "../parts/DraftNotAllowed.tsx";
+import { draftBlock, type DraftKind } from "../parts/DraftNotAllowed.tsx";
 import styles from "./Composer.module.css";
 
 /*
@@ -390,16 +390,16 @@ export function Composer() {
   const active = matches[Math.min(highlight, matches.length - 1)];
 
   /**
-   * The notice for a command whose drafts the host says this reader may not
-   * create (`AskConfig.draftAccess`), or `null`. Keyed on the command's name
+   * The notice for a command whose drafts this reader can't have here — no
+   * permission, or a host without the feature (`AskConfig.draftAccess`) — or `null`. Keyed on the command's name
    * because that is how the drafting agents are addressed (`/dashboard`,
    * `/form`); a run that ends in a draft the reader cannot open is a minute
    * spent on nothing.
    */
   function refusedCommand(entry: SlashCommand): string | null {
     const kind = draftKindOf(entry.command);
-    if (kind === null || draftAccess?.[kind] !== false) return null;
-    return draftNotAllowedText(kind);
+    if (kind === null) return null;
+    return draftBlock(kind, draftAccess)?.hint ?? null;
   }
 
   function choose(entry: SlashCommand) {
@@ -683,13 +683,14 @@ export function Composer() {
               aria-selected={entry === active}
               className={styles.command}
               data-active={entry === active || undefined}
-              // Pointer down, not click: click fires after the input has
-              // already lost focus, and a blur handler that closed the menu
-              // would take the button with it before the click landed.
-              onPointerDown={(pointer) => {
-                pointer.preventDefault();
-                choose(entry);
-              }}
+              // Chosen on click, not pointer down. Choosing closes the menu,
+              // and on a touch screen the tap's click still follows its
+              // pointerdown (preventDefault there doesn't cancel it): closed
+              // on pointerdown, the click landed on whatever the menu had
+              // been covering — in the thread, a Rerun button, which re-sent
+              // an old question. Pointer down only keeps focus in the input.
+              onPointerDown={(pointer) => pointer.preventDefault()}
+              onClick={() => choose(entry)}
               onMouseEnter={() => setHighlight(index)}
             >
               <span className={styles.commandName}>/{entry.command}</span>

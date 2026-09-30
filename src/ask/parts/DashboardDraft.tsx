@@ -1,7 +1,7 @@
 import { ArrowUpRight, LayoutDashboard } from "lucide-react";
 import { useId, type CSSProperties, type ReactElement } from "react";
 import { useAskConfig, type AskDashboardDraft, type AskDashboardDraftWidget } from "../config.tsx";
-import { DraftNotAllowed } from "./DraftNotAllowed.tsx";
+import { DraftNotAllowed, draftBlock } from "./DraftNotAllowed.tsx";
 import {
   sizeLabel,
   timeRangeLabel,
@@ -395,7 +395,8 @@ export function DashboardDraft(props: DashboardDraftProps): ReactElement {
   const { onDashboardDraft, draftAccess } = useAskConfig();
   const count = `${widgets.length} widget${widgets.length === 1 ? "" : "s"}`;
 
-  if (draftAccess?.dashboard === false) return <DraftNotAllowed kind="dashboard" />;
+  const block = draftBlock("dashboard", draftAccess);
+  if (block !== null) return <DraftNotAllowed block={block} />;
 
   return (
     <section className={styles.draft} aria-label={`Draft view: ${name}`}>
