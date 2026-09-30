@@ -1,0 +1,55 @@
+<!doctype html>
+<!--
+  Template for /embed/mobile/. vite.embed.config.ts fills the placeholders
+  and writes the result to dist/embed/mobile/index.html.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta http-equiv="Content-Security-Policy" content="%CSP%" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Ask</title>
+    <link rel="preconnect" href="%GATEWAY_ORIGIN%" crossorigin />
+    <link rel="modulepreload" href="%ENTRY%" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #fff;
+      }
+      body {
+        /* iOS hosts that draw edge to edge; 0 elsewhere. */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+          env(safe-area-inset-left);
+        box-sizing: border-box;
+      }
+      /* The widget needs a definite height to scroll its thread. */
+      bolt-ai-ask {
+        display: block;
+        height: 100%;
+      }
+      #notice {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        background: #fff;
+        color: #52575f;
+        font: 15px/1.5 system-ui, -apple-system, Roboto, sans-serif;
+        text-align: center;
+      }
+      #notice[hidden] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <bolt-ai-ask></bolt-ai-ask>
+    <p id="notice" hidden></p>
+    <script type="module" src="%ENTRY%"></script>
+  </body>
+</html>

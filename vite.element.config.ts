@@ -36,7 +36,7 @@ import { defineConfig, type Plugin } from "vite";
  * also the console's, where `:root` is correct. One build target's quirk
  * does not get to change the source both targets share.
  */
-function inlineShadowStyles(): Plugin {
+export function inlineShadowStyles(): Plugin {
   return {
     name: "inline-shadow-styles",
     // Vite's own CSS plugin emits the stylesheet asset in ITS generateBundle;
@@ -63,8 +63,10 @@ function inlineShadowStyles(): Plugin {
 
       for (const chunk of Object.values(bundle)) {
         if (chunk.type === "chunk" && chunk.code.includes("__ASK_SHADOW_STYLES__")) {
+          // Any quote: the app-mode minifier (vite.embed.config.ts) prints
+          // this literal with backticks where the library build keeps "…".
           chunk.code = chunk.code.replace(
-            /"__ASK_SHADOW_STYLES__"|'__ASK_SHADOW_STYLES__'/,
+            /(["'`])__ASK_SHADOW_STYLES__\1/,
             JSON.stringify(css),
           );
         }
@@ -88,6 +90,15 @@ const elementVersion = (
   }
 ).version;
 
+/**
+ * Compile-time constants every build of the element needs. Exported for
+ * `vite.embed.config.ts`, which bundles the same element into a hosted page.
+ */
+export const elementDefine = {
+  "process.env.NODE_ENV": JSON.stringify("production"),
+  __ASK_ELEMENT_VERSION__: JSON.stringify(elementVersion),
+};
+
 export default defineConfig({
   plugins: [react(), inlineShadowStyles()],
   // React (and several of its dependencies) branch on `process.env.NODE_ENV`
@@ -100,10 +111,7 @@ export default defineConfig({
   // ever exists to be embedded in someone else's app, and shipping React's
   // development build into a host drags its whole warning apparatus along
   // (and, here, 540kB of it — the bundle halved when this was set).
-  define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
-    __ASK_ELEMENT_VERSION__: JSON.stringify(elementVersion),
-  },
+  define: elementDefine,
   // No `public/`. That directory is the CONSOLE's — its favicon was being
   // copied into the package and published as though the widget had one, which
   // a widget cannot: it has no document of its own.
