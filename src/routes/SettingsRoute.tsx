@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -1146,6 +1147,21 @@ export function SettingsRoute() {
                         hundreds of rows, which is why this is off by default. Charts, stats and
                         summaries are the answer and always show; whether an agent draws them is its
                         own Generative UI setting.
+                      </span>
+                    </span>
+                  </Label>
+                  <Label className={TOGGLE_CLASS}>
+                    <Switch
+                      className="mt-0.5"
+                      checked={settings.ask.page_actions_enabled === true}
+                      disabled={askSaving || settings.ask.set_by_ancestor === true}
+                      onCheckedChange={(checked) => void saveAsk({ page_actions_enabled: checked })}
+                    />
+                    <span className="grid gap-1">
+                      <span className="font-medium">Page actions</span>
+                      <span className="text-muted-foreground">
+                        Lets the /do agent click and type on the bolt-v2 screen a person has open.
+                        Saves and deletes always ask first.
                       </span>
                     </span>
                   </Label>

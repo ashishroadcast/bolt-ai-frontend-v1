@@ -41,6 +41,12 @@ export interface AgentCodeExecution {
 export interface AskDisclosure {
   show_reasoning: boolean;
   show_query_results: boolean;
+  /**
+   * Whether the built-in `/do` agent may act on the bolt-v2 screen a reader
+   * has open (PAGE_ACTIONS_CONTRACT §1). Off by default. Absent from an
+   * agent-service that predates page actions, which reads as off.
+   */
+  page_actions_enabled?: boolean;
   /** An organisation above this one set these for its whole tree, and this
    * one cannot change them (the PATCH answers 409). Absent from an older
    * agent-service, which treats every organisation as its own. */

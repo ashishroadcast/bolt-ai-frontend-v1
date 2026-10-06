@@ -220,6 +220,32 @@ describe("SettingsRoute", () => {
     expect(JSON.parse(await patch.clone().text())).toEqual({ show_reasoning: true });
   });
 
+  it("turns page actions on with a switch, sending only that flag", async () => {
+    const base = routeFetch();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (input instanceof Request && input.method === "PATCH" && input.url.includes("/agent/settings/ask")) {
+        const body = JSON.parse(await input.clone().text()) as Record<string, boolean>;
+        return jsonResponse({ show_reasoning: false, show_query_results: false, page_actions_enabled: false, ...body });
+      }
+      return base(input);
+    });
+    renderSettings(fetchMock);
+
+    const toggle = await screen.findByRole("switch", { name: /Page actions/ });
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByText(/Lets the \/do agent click and type on the bolt-v2 screen/)).toBeInTheDocument();
+    fireEvent.click(toggle);
+
+    await waitFor(() => expect(toggle).toBeChecked());
+    const patches = fetchMock.mock.calls.filter(
+      ([input]) => input instanceof Request && input.method === "PATCH",
+    );
+    expect(patches).toHaveLength(1);
+    expect(JSON.parse(await (patches[0]![0] as Request).clone().text())).toEqual({
+      page_actions_enabled: true,
+    });
+  });
+
   it("lists configured models with their key, default and active status", async () => {
     renderSettings(routeFetch());
 
