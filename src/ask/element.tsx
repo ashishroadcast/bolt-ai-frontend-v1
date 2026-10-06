@@ -13,6 +13,8 @@ import {
   type AskHostContext,
   type AskWidgetDraft,
   type FormDraftHandoff,
+  type PageTaskRequest,
+  type PageTaskResult,
   type WidgetDraftAck,
 } from "./config.tsx";
 
@@ -79,6 +81,7 @@ type DashboardDraftHandler = (draft: AskDashboardDraft) => void;
 type WidgetDraftHandler = (draft: AskWidgetDraft) => Promise<WidgetDraftAck>;
 type EditWidgetHandler = (widgetId: string) => void;
 type HostContextProvider = () => AskHostContext | null;
+type PageTaskHandler = (request: PageTaskRequest) => Promise<PageTaskResult>;
 
 /**
  * The key events kept inside the widget while someone is typing in it. All
@@ -332,6 +335,42 @@ export class BoltAiAskElement extends HTMLElement {
   }
 
   private hostContextProviderValue: HostContextProvider | null = null;
+
+  /**
+   * Page actions (element 1.4.0, PAGE_ACTIONS_CONTRACT §4). Both accessors,
+   * by `onFormDraft`'s rule: whether they are set decides what every run
+   * sends (`page`) and whether the `/do` agent is offered, so a change of
+   * presence re-renders. Both must be set for either to do anything.
+   *
+   * - `onPageTask` — runs one page task on the host's screen, once per task
+   *   id, on the live stream only. Left null, a task that does arrive is
+   *   answered as failed straight away.
+   * - `pageActionsAvailable` — the host can act on its page right now.
+   */
+  get onPageTask(): PageTaskHandler | null {
+    return this.onPageTaskValue;
+  }
+
+  set onPageTask(value: PageTaskHandler | null) {
+    const had = this.onPageTaskValue !== null;
+    this.onPageTaskValue = value;
+    if (had !== (value !== null)) this.render();
+  }
+
+  private onPageTaskValue: PageTaskHandler | null = null;
+
+  get pageActionsAvailable(): boolean {
+    return this.pageActionsAvailableValue;
+  }
+
+  set pageActionsAvailable(value: boolean) {
+    const next = value === true;
+    if (next === this.pageActionsAvailableValue) return;
+    this.pageActionsAvailableValue = next;
+    this.render();
+  }
+
+  private pageActionsAvailableValue = false;
 
   /**
    * One per element, for the element's life — it outlives re-renders and a
@@ -678,6 +717,15 @@ export class BoltAiAskElement extends HTMLElement {
       ...(this.hostContextProviderValue === null
         ? {}
         : { hostContextProvider: () => this.hostContextProviderValue?.() ?? null }),
+      ...(this.onPageTaskValue === null
+        ? {}
+        : {
+            onPageTask: (request: PageTaskRequest): Promise<PageTaskResult> =>
+              // Cleared between the render and the call: failed, not a hang.
+              this.onPageTaskValue?.(request) ??
+              Promise.reject(new Error("This screen can't run page actions.")),
+          }),
+      ...(this.pageActionsAvailableValue ? { pageActionsAvailable: true } : {}),
       agentSelection: this.agentSelection,
       auth: {
         // Reads the property at call time, so a host that assigns it after

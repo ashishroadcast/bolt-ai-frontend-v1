@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useSyncExternalStore,
@@ -9,6 +10,7 @@ import {
 import type { AgentSelectionChannel } from "./chat/agentSelection.ts";
 import type { PhaseSegment } from "./chat/phaseTimeline.ts";
 import { GatewayClient } from "./http/gatewayClient.ts";
+import { abortPageTasks } from "./parts/pageTaskStore.ts";
 
 /**
  * Everything Ask needs from whoever is embedding it — and nothing more.
@@ -174,6 +176,66 @@ export interface AskConfig {
   agentSelection?: AgentSelectionChannel;
   /** Lets an embedded host collapse the assistant from Ask's own chrome. */
   onClose?: () => void;
+  /**
+   * Runs one page task (the built-in `/do` agent) on the host's own screen —
+   * bolt-v2 drives page-agent with it. Called once per `taskId`, only for a
+   * `data-page-task` part that arrived on the live stream; never for one
+   * re-read from history. See `PageTaskRequest` and PAGE_ACTIONS_CONTRACT §4.
+   *
+   * Ignored unless `pageActionsAvailable` is also true. Omitted, a task that
+   * does arrive is answered as failed at once rather than left waiting.
+   */
+  onPageTask?: (request: PageTaskRequest) => Promise<PageTaskResult>;
+  /**
+   * The host can act on its page right now. With `onPageTask` set, every run
+   * says which screen is open (`page: {route, title}`) and the `/do` agent is
+   * offered; otherwise neither happens.
+   */
+  pageActionsAvailable?: boolean;
+}
+
+/** One thing page-agent did, as the card lists it. */
+export interface PageTaskStep {
+  n: number;
+  action: string;
+  detail?: string;
+  ok: boolean;
+}
+
+/** How a page task ended, posted back to agent-service. */
+export interface PageTaskResult {
+  status: "done" | "failed" | "cancelled";
+  summary: string;
+  steps: PageTaskStep[];
+}
+
+/**
+ * Everything the host needs to run one page task. The model is never the
+ * host's: every LLM call goes through `llm.fetch` to agent-service's proxy,
+ * which holds the key and picks the real model.
+ */
+export interface PageTaskRequest {
+  /** The task id (32 hex). */
+  id: string;
+  task: string;
+  route?: string;
+  llm: {
+    /** `${baseUrl}/agent/page-tasks/${id}`; page-agent appends `/chat/completions`. */
+    baseURL: string;
+    model: "bolt-page-agent";
+    /** Adds the credential, `Organisation`, `X-Client` and
+     *  `X-Ask-Element-Version`; refreshes once on a 401. Only reaches URLs
+     *  under `baseURL`. */
+    fetch: typeof fetch;
+  };
+  /** Aborted by Stop, Escape, an organisation switch, a new conversation or
+   *  the element leaving the page. */
+  signal: AbortSignal;
+  onStep(step: PageTaskStep): void;
+  /** Allow / Deny in the card. Resolves false when the task is aborted. */
+  confirm(message: string): Promise<boolean>;
+  /** A free-text answer box in the card. Rejects when the task is aborted. */
+  askUser(question: string): Promise<string>;
 }
 
 /** The size vocabulary the AI speaks (`catalog.sizes` in the dashboards
@@ -472,6 +534,11 @@ export function AskProvider({
       }),
     [config.baseUrl, config.clientType],
   );
+
+  // A page task belongs to the client (so to the organisation) that started
+  // it. This provider unmounting — the element's `resetScope()` on an
+  // organisation switch, or the element leaving the page — stops them.
+  useEffect(() => () => abortPageTasks(client), [client]);
 
   const value = useMemo<AskContextValue>(() => ({ config, client }), [config, client]);
 

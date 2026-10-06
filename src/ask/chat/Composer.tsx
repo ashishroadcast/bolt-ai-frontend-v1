@@ -11,7 +11,7 @@ import {
 import { useAskConfig, type AskHostContext } from "../config.tsx";
 import { useAskLocale } from "../i18n/AskLocale.tsx";
 import { useChatContext } from "./ChatContext.tsx";
-import { useAskAgents, type AskAgent } from "./useAskAgents.ts";
+import { agentLabel, useAskAgents, type AskAgent } from "./useAskAgents.ts";
 import { useOnlineStatus } from "./useOnlineStatus.ts";
 import { draftBlock, type DraftKind } from "../parts/DraftNotAllowed.tsx";
 import styles from "./Composer.module.css";
@@ -676,7 +676,7 @@ export function Composer() {
         <div className={styles.menu} id="ask-commands" role="listbox" aria-label="Commands">
           {matches.map((entry, index) => (
             <button
-              key={entry.agent.id}
+              key={entry.command}
               type="button"
               id={`ask-command-${entry.command}`}
               role="option"
@@ -694,7 +694,7 @@ export function Composer() {
               onMouseEnter={() => setHighlight(index)}
             >
               <span className={styles.commandName}>/{entry.command}</span>
-              <span className={styles.commandAgent}>{entry.agent.name}</span>
+              <span className={styles.commandAgent}>{agentLabel(entry.agent)}</span>
               {entry.agent.description !== undefined && entry.agent.description !== null && (
                 <span className={styles.commandDesc}>{entry.agent.description}</span>
               )}

@@ -648,10 +648,43 @@ function adaptWidgetDraft(data: Record<string, unknown>, live: boolean): Record<
   };
 }
 
+const PAGE_TASK_STATUSES = new Set(["pending", "running", "done", "failed", "cancelled", "expired"]);
+
+/**
+ * A page task (PAGE_ACTIONS_CONTRACT §3). `live` comes from the caller, as
+ * for a widget draft: a `pending` part re-read from history is a task this
+ * page never ran, and the card says "Interrupted" rather than offering to
+ * run it. An unknown status reads as `pending`, the one that does nothing.
+ */
+function adaptPageTask(data: Record<string, unknown>, live: boolean): Record<string, unknown> {
+  const status =
+    typeof data.status === "string" && PAGE_TASK_STATUSES.has(data.status) ? data.status : "pending";
+  const steps = (Array.isArray(data.steps) ? data.steps : []).flatMap((raw: unknown, index) => {
+    if (!isRecord(raw) || !nonEmptyString(raw.action)) return [];
+    return [
+      {
+        n: typeof raw.n === "number" ? raw.n : index + 1,
+        action: raw.action,
+        ...(nonEmptyString(raw.detail) ? { detail: raw.detail } : {}),
+        ok: raw.ok !== false,
+      },
+    ];
+  });
+  return {
+    taskId: typeof data.taskId === "string" ? data.taskId : "",
+    task: typeof data.task === "string" ? data.task : "",
+    ...(nonEmptyString(data.route) ? { route: data.route } : {}),
+    status,
+    ...(typeof data.summary === "string" && data.summary !== "" ? { summary: data.summary } : {}),
+    steps,
+    live,
+  };
+}
+
 /**
  * `live` is true only for a part `useChat` is reading off a run this session
- * started. History (`conversation.hydrateMessages`) never passes it. Only
- * `data-widget-draft` reads it today — see `adaptWidgetDraft`.
+ * started. History (`conversation.hydrateMessages`) never passes it. Read by
+ * `data-widget-draft` and `data-page-task` — see their adapters.
  *
  * `null` means "leave this part out". Almost every malformed part renders
  * its component's own empty state instead, because an empty table or chart
@@ -668,6 +701,9 @@ export function toUIPart(
   if (intent === "data-dashboard-draft") return { intent, data: adaptDashboardDraft(data) };
   if (intent === "data-widget-draft") {
     return { intent, data: adaptWidgetDraft(data, options.live === true) };
+  }
+  if (intent === "data-page-task") {
+    return { intent, data: adaptPageTask(data, options.live === true) };
   }
   if (intent === "data-table") return { intent, data: adaptTable(data) };
   if (intent === "data-chart") return { intent, data: adaptChart(data) };

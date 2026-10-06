@@ -25,6 +25,23 @@ function isAbort(err: unknown, signal: AbortSignal | null | undefined): boolean 
   return (err instanceof DOMException && err.name === "AbortError") || signal?.aborted === true;
 }
 
+/** One signal that aborts when any of `signals` does. `AbortSignal.any`
+ * where the platform has it; a listener per signal where it does not. */
+function anySignal(signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
+  const present = signals.filter((signal): signal is AbortSignal => signal !== undefined);
+  if (present.length <= 1) return present[0];
+  if (typeof AbortSignal.any === "function") return AbortSignal.any(present);
+  const controller = new AbortController();
+  for (const signal of present) {
+    if (signal.aborted) {
+      controller.abort(signal.reason);
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
+  }
+  return controller.signal;
+}
+
 export interface GatewayClientOptions {
   /** The gateway's origin, e.g. http://localhost:8080 — no trailing slash required. */
   baseUrl: string;
@@ -480,6 +497,101 @@ export class GatewayClient {
       return undefined as T;
     }
     return this.readJson<T>(response);
+  }
+
+  /** `path` on this client's origin, e.g. `/agent/page-tasks/abc`. */
+  agentUrl(path: string): string {
+    return `${this.baseUrl}${path}`;
+  }
+
+  /** The organisation the next request would act as, or null for none. */
+  currentOrganisationId(): string | null {
+    try {
+      const id = this.getOrganisationId?.();
+      return id === undefined || id === null || id === "" ? null : id;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A `fetch` for someone else's code to call — page-agent's LLM client, in
+   * bolt-v2 — carrying exactly what every other request from this client
+   * carries: a fresh `Authorization: Bearer`, `Organisation`, `X-Client` and
+   * `X-Ask-Element-Version`, with one refresh-and-retry on a 401.
+   *
+   * **Only for URLs under `prefix`.** The credential is this widget's to
+   * send, and a fetch that attached it to any URL it was handed would let
+   * whatever drives it post the token anywhere. Anything else is refused
+   * before a request is made.
+   *
+   * `organisationId`, when given, is pinned: a task started as one
+   * organisation keeps talking as it even if the host switches mid-task, so
+   * its calls reach the task rather than 404 under the new tenant.
+   *
+   * The response is returned whatever its status — the caller reads it — but
+   * a 401 the refresh did not recover still reaches `onUnauthorized`.
+   */
+  scopedFetch(
+    prefix: string,
+    options: { organisationId?: string | null; signal?: AbortSignal } = {},
+  ): typeof fetch {
+    const scoped = async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url !== prefix && !url.startsWith(`${prefix}/`) && !url.startsWith(`${prefix}?`)) {
+        throw new TypeError(`This fetch only reaches ${prefix}.`);
+      }
+      const fromRequest = input instanceof Request ? input : null;
+      const method = init.method ?? fromRequest?.method ?? "GET";
+      // Read once, so the 401 retry can send it again.
+      const body =
+        init.body ??
+        (fromRequest !== null && method !== "GET" && method !== "HEAD"
+          ? await fromRequest.clone().text()
+          : undefined);
+      const signal = anySignal([init.signal ?? fromRequest?.signal ?? undefined, options.signal]);
+
+      const attempt = async (isRetry: boolean): Promise<Response> => {
+        const headers = new Headers(init.headers ?? fromRequest?.headers);
+        headers.set("Authorization", `Bearer ${await this.requireToken()}`);
+        if (options.organisationId) headers.set("Organisation", options.organisationId);
+        if (!headers.has("Content-Type") && body !== undefined) {
+          headers.set("Content-Type", "application/json");
+        }
+        this.applyContextHeaders(headers);
+        const response = await this.send(url, { ...init, method, headers, body, signal });
+        if (response.status === 401 && !isRetry && (await this.runRefresh())) {
+          return attempt(true);
+        }
+        if (response.status === 401) this.onUnauthorized();
+        return response;
+      };
+      return attempt(false);
+    };
+    return scoped as typeof fetch;
+  }
+
+  /**
+   * `POST /agent/page-tasks/{id}/result` (PAGE_ACTIONS_CONTRACT §6). Resolves
+   * false on a 404 — the task is unknown or already closed (late, or a
+   * duplicate), which is nothing the reader can act on.
+   */
+  async postPageTaskResult(
+    taskId: string,
+    result: unknown,
+    organisationId?: string | null,
+  ): Promise<boolean> {
+    try {
+      await this.agentFetch(`/agent/page-tasks/${encodeURIComponent(taskId)}/result`, {
+        method: "POST",
+        headers: organisationId ? { Organisation: organisationId } : undefined,
+        body: JSON.stringify(result),
+      });
+      return true;
+    } catch (err) {
+      if (err instanceof GatewayError && err.status === 404) return false;
+      throw err;
+    }
   }
 
   private async readGraphQLResponse<T>(response: Response, wasAuthed: boolean): Promise<T> {

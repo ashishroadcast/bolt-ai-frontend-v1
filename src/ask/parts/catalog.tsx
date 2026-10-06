@@ -9,6 +9,7 @@ import { Citations, type CitationsProps } from "./Citations.tsx";
 import { FormDraft, type FormDraftProps } from "./FormDraft.tsx";
 import { DashboardDraft, type DashboardDraftProps } from "./DashboardDraft.tsx";
 import { WidgetDraft, type WidgetDraftProps } from "./WidgetDraft.tsx";
+import { PageTaskCard, type PageTaskCardProps } from "./PageTaskCard.tsx";
 import { UnknownIntent } from "./UnknownIntent.tsx";
 
 /*
@@ -32,6 +33,7 @@ export type UIPartIntent =
   | "data-form-draft"
   | "data-dashboard-draft"
   | "data-widget-draft"
+  | "data-page-task"
   | "citations";
 
 export interface UIPartDataByIntent {
@@ -44,6 +46,7 @@ export interface UIPartDataByIntent {
   "data-form-draft": FormDraftProps;
   "data-dashboard-draft": DashboardDraftProps;
   "data-widget-draft": WidgetDraftProps;
+  "data-page-task": PageTaskCardProps;
   citations: CitationsProps;
 }
 
@@ -73,6 +76,7 @@ const componentCatalog: Record<UIPartIntent, ComponentType<any>> = {
   "data-form-draft": FormDraft,
   "data-dashboard-draft": DashboardDraft,
   "data-widget-draft": WidgetDraft,
+  "data-page-task": PageTaskCard,
   citations: Citations,
 };
 

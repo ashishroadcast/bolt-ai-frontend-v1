@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAskClient, useAskConfig, type AskHostContext } from "../config.tsx";
 import type { UIPart } from "../parts/catalog.tsx";
+import { abortPageTasks, startPageTask, usePageTaskRunning } from "../parts/pageTaskStore.ts";
 import { fetchConversation } from "./conversation.ts";
 import { buildPhaseTimeline, readPhaseDetail, type PhaseTimelineEvent } from "./phaseTimeline.ts";
 import { readDataStream, type DataChunk, type UsageMetadata } from "./protocol.ts";
-import { isMissingConversationError, postAgentRun } from "./runStream.ts";
+import { isMissingConversationError, postAgentRun, type RunPage } from "./runStream.ts";
 import { buildRunTrace, EMPTY_TRACE, type TraceEvent } from "./runTrace.ts";
 import type { ActiveRun, ChatMessage, RunSummary } from "./types.ts";
 import { toUIPart } from "./wireParts.ts";
@@ -119,6 +120,18 @@ function readHostContext(
   return withoutSelection;
 }
 
+/** PAGE_ACTIONS_CONTRACT §2's cap on each of `route` and `title`. */
+const PAGE_FIELD_MAX = 512;
+
+/** The screen the host has open, for a run that may act on it. */
+function readPage(): RunPage {
+  const route = `${window.location.pathname}${window.location.search}`;
+  return {
+    route: route.slice(0, PAGE_FIELD_MAX),
+    title: document.title.slice(0, PAGE_FIELD_MAX),
+  };
+}
+
 let localIdCounter = 0;
 function nextLocalId(prefix: string): string {
   localIdCounter += 1;
@@ -210,12 +223,16 @@ export function confirmUnloadDuringAskRun(): void {
  */
 export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = {}): UseChatResult {
   const client = useAskClient();
-  const { hostContextProvider } = useAskConfig();
+  const { hostContextProvider, onPageTask, pageActionsAvailable } = useAskConfig();
   // A ref, because `runTurn` is created once and must still reach the
   // provider the host has CURRENTLY assigned — the element re-renders with a
   // new config whenever one is set or cleared.
   const hostContextRef = useRef(hostContextProvider);
   hostContextRef.current = hostContextProvider;
+  // Same reason. Undefined unless the host says it can act on its page now.
+  const pageTaskRef = useRef(pageActionsAvailable === true ? onPageTask : undefined);
+  pageTaskRef.current = pageActionsAvailable === true ? onPageTask : undefined;
+  const pageTaskRunning = usePageTaskRunning();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [status, setStatus] = useState<"idle" | "streaming">("idle");
@@ -244,8 +261,10 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
   // is cancelled server-side the moment the connection closes, and nothing
   // is saved. Only while streaming: a prompt on every close would train
   // people to click through it.
+  // A page task running on the host's screen counts too: a reload would stop
+  // it halfway through whatever it was filling in.
   useEffect(() => {
-    if (status !== "streaming") return;
+    if (status !== "streaming" && !pageTaskRunning) return;
     const warn = (event: BeforeUnloadEvent) => {
       if (unloadConfirmed) return;
       event.preventDefault();
@@ -254,7 +273,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [status]);
+  }, [status, pageTaskRunning]);
 
   useEffect(() => {
     // Sets the ref back to true on every (re)mount — not just once at
@@ -310,6 +329,10 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     // this task's to change.
     const traceEvents: TraceEvent[] = [];
     const partsAcc: UIPart[] = [];
+    // Where each page task's part sits in `partsAcc`, by part id (or task
+    // id): the server streams the same part again with its final data, and
+    // that replaces the pending card rather than adding a second.
+    const pageTaskParts = new Map<string, number>();
     let textAcc = "";
     // Transient: never persisted, never part of the message — see
     // ActiveRun.thought.
@@ -423,6 +446,9 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
       // "How do I create a geofence?" to Fleet because Fleet answered the
       // question before, and Fleet can only refuse it.
       const agent = options?.agent;
+      // Which screen is open, on every run, but only from a host that can act
+      // on it — the server offers page actions to nothing else.
+      const page = pageTaskRef.current === undefined ? null : readPage();
       const send = () =>
         postAgentRun(
           client,
@@ -433,6 +459,7 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
             // Left off entirely when there is none: an embed with no
             // dashboard beside it sends exactly the body it always did.
             ...(hostContext === null ? {} : { host_context: hostContext }),
+            ...(page === null ? {} : { page }),
           },
           { signal: controller.signal },
         );
@@ -578,7 +605,29 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
               // (wireParts.adaptWidgetDraft). History never passes it.
               // `null` is a part the adapter refused (an empty summary).
               const part = toUIPart(dataChunk.type, dataChunk.data, { live: true });
-              if (part !== null) {
+              if (part !== null && part.intent === "data-page-task") {
+                const task = part.data as { taskId: string; task: string; route?: string; status: string };
+                const key = dataChunk.id ?? task.taskId;
+                const at = pageTaskParts.get(key);
+                if (at === undefined) {
+                  pageTaskParts.set(key, partsAcc.length);
+                  partsAcc.push(part);
+                } else {
+                  partsAcc[at] = part;
+                }
+                updateActiveRun({ parts: [...partsAcc] });
+                // Once per task id (the store's claim), and only while this
+                // run's thread is the one on screen.
+                if (task.status === "pending" && isCurrent()) {
+                  startPageTask({
+                    taskId: task.taskId,
+                    task: task.task,
+                    ...(task.route === undefined ? {} : { route: task.route }),
+                    client,
+                    onPageTask: pageTaskRef.current,
+                  });
+                }
+              } else if (part !== null) {
                 partsAcc.push(part);
                 updateActiveRun({ parts: [...partsAcc] });
               }
@@ -647,6 +696,8 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
    */
   const discardRun = useCallback(() => {
     generationRef.current += 1;
+    // A page task belongs to the run and the thread it was asked in.
+    abortPageTasks(client);
     inFlightRef.current?.release();
     inFlightRef.current = null;
     abortRef.current?.abort();
@@ -654,11 +705,12 @@ export function useChat({ stallTimeoutMs = STALL_TIMEOUT_MS }: UseChatOptions = 
     isStreamingRef.current = false;
     setStatus("idle");
     setActiveRun(null);
-  }, []);
+  }, [client]);
 
   const stop = useCallback(() => {
+    abortPageTasks(client);
     inFlightRef.current?.end("stopped");
-  }, []);
+  }, [client]);
 
   const sendMessage = useCallback(
     (text: string, options?: SendOptions) => {

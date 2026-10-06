@@ -142,6 +142,56 @@ export interface AskHostContext {
   selectedWidgetId?: string;
 }
 
+/** One thing page-agent did, as the page task card lists it. */
+export interface PageTaskStep {
+  n: number;
+  action: string;
+  detail?: string;
+  ok: boolean;
+}
+
+/** How a page task ended. Ask posts it to `/agent/page-tasks/{id}/result`. */
+export interface PageTaskResult {
+  status: 'done' | 'failed' | 'cancelled';
+  summary: string;
+  steps: PageTaskStep[];
+}
+
+/**
+ * One page task for the host to run (PAGE_ACTIONS_CONTRACT §4). Handed to
+ * {@link BoltAiAskElement.onPageTask} once per task id, on the live stream
+ * only.
+ */
+export interface PageTaskRequest {
+  /** The task id (32 hex). */
+  id: string;
+  task: string;
+  route?: string;
+  llm: {
+    /** `${baseUrl}/agent/page-tasks/${id}` — page-agent appends `/chat/completions`. */
+    baseURL: string;
+    /** An alias; agent-service picks the real model. */
+    model: 'bolt-page-agent';
+    /**
+     * Adds `Authorization: Bearer <fresh token>`, `Organisation` (pinned to
+     * the organisation the task started in), `X-Client` and
+     * `X-Ask-Element-Version`; on a 401 refreshes the credential once and
+     * retries. Refuses (throws `TypeError`) any URL not under `baseURL`.
+     */
+    fetch: typeof fetch;
+  };
+  /** Aborted by the card's Stop, Escape, an organisation switch, a new
+   *  conversation, or the element leaving the page. */
+  signal: AbortSignal;
+  /** Live progress in the card. */
+  onStep(step: PageTaskStep): void;
+  /** Allow / Deny in the card. Resolves false when the task is aborted. */
+  confirm(message: string): Promise<boolean>;
+  /** A free-text answer box in the card. Rejects (AbortError) when the task
+   *  is aborted. */
+  askUser(question: string): Promise<string>;
+}
+
 /**
  * The ATTRIBUTE surface, for the values that genuinely are strings.
  *
@@ -293,6 +343,30 @@ export declare class BoltAiAskElement extends HTMLElement {
    * Return `null` to send none. Setting or clearing it re-renders.
    */
   hostContextProvider: (() => AskHostContext | null) | null;
+
+  /**
+   * Runs one page task (the built-in `/do` agent) on the host's screen and
+   * resolves with how it ended. Called exactly once per task id, only for a
+   * task that arrived on the live stream — a reopened conversation never
+   * runs one. A rejected promise is posted as `{status: 'failed', summary:
+   * <error message>, steps: <steps reported so far>}`. When the task is
+   * aborted Ask posts `cancelled` itself at once; a later resolution is
+   * ignored.
+   *
+   * Does nothing unless {@link pageActionsAvailable} is also true. `null`
+   * (the default): a task that does arrive is posted as failed straight
+   * away. Setting or clearing it re-renders.
+   */
+  onPageTask: ((request: PageTaskRequest) => Promise<PageTaskResult>) | null;
+
+  /**
+   * The host can act on its page right now. With {@link onPageTask} set,
+   * every run sends `page: {route, title}` (`location.pathname +
+   * location.search` and `document.title`, each capped at 512 chars) and the
+   * `/do` agent is offered in the composer's `/` menu; otherwise neither.
+   * `false` by default. A property only — there is no attribute.
+   */
+  pageActionsAvailable: boolean;
 
   /**
    * Arms the agent whose `slash_command` matches (leading `/` optional), the

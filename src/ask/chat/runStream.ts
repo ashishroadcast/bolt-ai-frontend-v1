@@ -19,6 +19,14 @@ export interface RunRequest {
   session_id?: number;
   /** The host's screen (CONTRACT §7). Omitted when the host supplies none. */
   host_context?: AskHostContext;
+  /** The page the host has open, from a host that can act on it
+   *  (PAGE_ACTIONS_CONTRACT §2). Omitted everywhere else. */
+  page?: RunPage;
+}
+
+export interface RunPage {
+  route: string;
+  title: string;
 }
 
 /**

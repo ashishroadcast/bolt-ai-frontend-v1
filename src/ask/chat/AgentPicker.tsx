@@ -1,7 +1,7 @@
 import { Bot, X } from "lucide-react";
 import { useEffect } from "react";
 import { useAskConfig, useAskReconnecting } from "../config.tsx";
-import { useAgents } from "./useAskAgents.ts";
+import { agentLabel, useAgents } from "./useAskAgents.ts";
 import { useChatContext } from "./ChatContext.tsx";
 import styles from "./AgentPicker.module.css";
 
@@ -128,6 +128,9 @@ export function AgentPicker() {
   // The common case: agents are loaded, nothing has explicitly armed one,
   // and every question from here routes itself. Nothing to say.
   if (selectedAgent === null) return null;
+  // A built-in is armed by its command (`do`) but called by its name.
+  const armed = agents.find((agent) => agent.name === selectedAgent);
+  const armedLabel = armed === undefined ? selectedAgent : agentLabel(armed);
 
   return (
     <div className={styles.bar}>
@@ -136,12 +139,12 @@ export function AgentPicker() {
       </span>
       <span className={styles.label}>Chatting with</span>
       <span className={styles.armedChip}>
-        <span className={styles.armedName}>{selectedAgent}</span>
+        <span className={styles.armedName}>{armedLabel}</span>
         <button
           type="button"
           className={styles.disarm}
           onClick={() => setSelectedAgent(null)}
-          aria-label={`Stop chatting with ${selectedAgent}`}
+          aria-label={`Stop chatting with ${armedLabel}`}
           title="Stop chatting with this agent"
         >
           <X size={12} strokeWidth={2.25} aria-hidden="true" />

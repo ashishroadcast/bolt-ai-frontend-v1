@@ -4,11 +4,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { useAskClient } from "../config.tsx";
+import { useAskClient, useAskConfig } from "../config.tsx";
 import { GatewayError } from "../http/errors.ts";
 
 /**
@@ -54,6 +55,56 @@ export interface AskAgent {
    * predates the field.
    */
   slash_command?: string | null;
+  /**
+   * One of agent-service's own agents rather than a row an operator made —
+   * today only `/do`, which acts on the host's screen (PAGE_ACTIONS_CONTRACT
+   * §1). A built-in is run by its slash command (`agent: "do"`), so
+   * `normaliseAgents` makes that its `name` and keeps the listed name as
+   * `label`.
+   */
+  builtin?: boolean;
+  /** What to call the agent on screen when that differs from `name`. */
+  label?: string;
+}
+
+/** The built-in that acts on the host's page. */
+const PAGE_AGENT_COMMAND = "do";
+
+/**
+ * The list as it came off the wire, made safe to use everywhere an
+ * operator's agent is. A built-in may arrive with fewer fields than a
+ * database row — no numeric id, no `is_active` — so each is filled in: a
+ * negative id no persisted message can name, and active unless it says
+ * otherwise. Anything without a usable name is dropped.
+ */
+export function normaliseAgents(raw: unknown): AskAgent[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry: unknown, index): AskAgent[] => {
+    if (entry === null || typeof entry !== "object") return [];
+    const agent = entry as Partial<AskAgent>;
+    if (agent.builtin !== true) {
+      return typeof agent.name === "string" ? [agent as AskAgent] : [];
+    }
+    const command = typeof agent.slash_command === "string" ? agent.slash_command.replace(/^\//, "") : "";
+    const wireName = command !== "" ? command : agent.name;
+    if (typeof wireName !== "string" || wireName === "") return [];
+    return [
+      {
+        ...agent,
+        id: typeof agent.id === "number" ? agent.id : -(index + 1),
+        name: wireName,
+        label: typeof agent.name === "string" && agent.name !== "" ? agent.name : wireName,
+        is_active: agent.is_active !== false,
+        builtin: true,
+        ...(command === "" ? {} : { slash_command: command }),
+      },
+    ];
+  });
+}
+
+/** What an agent is called on screen. */
+export function agentLabel(agent: AskAgent): string {
+  return agent.label ?? agent.name;
 }
 
 export interface UseAskAgentsResult {
@@ -120,7 +171,19 @@ export function AskAgentsProvider({ children }: { children: ReactNode }) {
 export function useAskAgents(): UseAskAgentsResult {
   const shared = useContext(AskAgentsContext);
   const own = useFetchedAgents({ skip: shared !== null });
-  return shared ?? own;
+  const result = shared ?? own;
+  // `/do` acts on the host's screen, so it is offered only where the host
+  // can run it. agent-service lists it for any caller with the switch and
+  // the permission — the console included, which has no page to act on.
+  const { onPageTask, pageActionsAvailable } = useAskConfig();
+  const canActOnPage = pageActionsAvailable === true && onPageTask !== undefined;
+  return useMemo(() => {
+    if (canActOnPage) return result;
+    const agents = result.agents.filter(
+      (agent) => !(agent.builtin === true && agent.slash_command === PAGE_AGENT_COMMAND),
+    );
+    return agents.length === result.agents.length ? result : { ...result, agents };
+  }, [result, canActOnPage]);
 }
 
 /**
@@ -164,8 +227,9 @@ function useFetchedAgents({ skip = false }: { skip?: boolean } = {}): UseAskAgen
     });
 
     client
-      .agentFetch<AskAgent[]>("/agent/agents")
-      .then((agents) => {
+      .agentFetch<unknown>("/agent/agents")
+      .then((raw) => {
+        const agents = normaliseAgents(raw);
         if (cancelled) return;
         failuresRef.current = 0;
         recoverableRef.current = false;
