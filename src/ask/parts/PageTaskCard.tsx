@@ -203,9 +203,10 @@ export function PageTaskCard(props: PageTaskCardProps): ReactElement {
         </div>
       )}
 
-      {view.kind === "ended" && (view.summary !== undefined || view.steps.length > 0) && (
+      {/* The summary is not repeated here: the assistant's reply under the card carries it,
+          rendered as markdown, where the card could only show it raw. */}
+      {view.kind === "ended" && view.steps.length > 0 && (
         <div className={styles.body}>
-          {view.summary !== undefined && <p className={styles.summary}>{view.summary}</p>}
           <StepList steps={view.steps} />
         </div>
       )}

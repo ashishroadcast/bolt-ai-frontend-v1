@@ -93,7 +93,8 @@ describe("PageTaskCard and the page task runner", () => {
       />,
     );
     expect(screen.getByRole("status")).toHaveTextContent("Done");
-    expect(screen.getByText("Renamed it.")).toBeInTheDocument();
+    // The summary lives in the reply under the card, not in the card.
+    expect(screen.queryByText("Renamed it.")).not.toBeInTheDocument();
     expect(screen.getByText("Clicked Edit")).toBeInTheDocument();
     expect(screen.getByText(/— Truck 7/)).toBeInTheDocument();
     expect(screen.getByText(/(failed)/)).toBeInTheDocument();
@@ -139,7 +140,7 @@ describe("PageTaskCard and the page task runner", () => {
       host.settle.resolve({ status: "done", summary: "Renamed.", steps: [{ n: 1, action: "Saved", ok: true }] });
     });
     expect(screen.getByRole("status")).toHaveTextContent("Done");
-    expect(screen.getByText("Renamed.")).toBeInTheDocument();
+    expect(screen.queryByText("Renamed.")).not.toBeInTheDocument();
     expect(await postedResults(fetchMock)).toEqual([
       { status: "done", summary: "Renamed.", steps: [{ n: 1, action: "Saved", ok: true }] },
     ]);
