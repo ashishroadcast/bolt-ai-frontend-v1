@@ -1,4 +1,29 @@
-# `@bolt-ai/ask-element`
+# `@roadcast/whitelight-bolty`
+
+## Whitelight (WFM) build
+
+Published privately as `@roadcast/whitelight-bolty` (the `roadcast` npm org). A consumer
+needs, in its `.npmrc` (the token is a read-only granular token, from CI secrets, never
+committed):
+
+```
+@roadcast:registry=https://registry.npmjs.org/
+//registry.npmjs.org/:_authToken=${NPM_TOKEN}
+```
+
+Publish: bump `version` here, then `npm run build:element && cd packages/ask-element && npm publish`.
+
+Wiring that WFM depends on (see whitelight-angular `src/app/pages/bolty-panel/`):
+
+- `base-url` must be a different origin from the web app: bolt-ai-v1 picks the WFM
+  deployment from the request's `Origin`, which browsers omit on same-origin GETs.
+- `credentialProvider` returns the user's token; a leading `Bearer ` and `""` are handled.
+- `organisationProvider` returns `String(selectedUserId)`, the acting user; call
+  `resetScope()` when it changes.
+- `onUnauthorized` must not log the user out of WFM.
+- `draftAccess = { dashboard: false, form: false }`: bolt-v2's drafting is not in WFM.
+- A 403 means: site not configured, user outside the caller's tree, or Bolty switched off
+  (`user_configuration.more.enable_bolty`).
 
 Ask — the assistant surface from the Bolty console — as a `<bolt-ai-ask>`
 custom element. One self-contained ES module: React, every dependency, and
@@ -10,14 +35,14 @@ Built from `src/ask/` in this repo by `npm run build:element`. **Do not edit
 ## Install
 
 ```
-npm install @bolt-ai/ask-element
+npm install @roadcast/whitelight-bolty
 ```
 
 ## Use
 
 ```ts
-import '@bolt-ai/ask-element';           // registers <bolt-ai-ask>
-import type { BoltAiAskElement } from '@bolt-ai/ask-element';
+import '@roadcast/whitelight-bolty';           // registers <bolt-ai-ask>
+import type { BoltAiAskElement } from '@roadcast/whitelight-bolty';
 
 const ask = document.createElement('bolt-ai-ask');
 ask.baseUrl = 'https://bolt-ai.example.com';
@@ -27,7 +52,7 @@ document.body.append(ask);
 ```
 
 The import is a **side effect** — it defines the element and returns nothing
-you need. In a host that code-splits, `await import('@bolt-ai/ask-element')`
+you need. In a host that code-splits, `await import('@roadcast/whitelight-bolty')`
 at the moment the widget is first shown keeps ~1.1MB out of the entry chunk.
 
 `index.d.ts` is the contract; everything settable is documented there.

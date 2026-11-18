@@ -1,8 +1,17 @@
 {
-  "name": "@bolt-ai/ask-element",
+  "name": "@roadcast/whitelight-bolty",
   "version": "2.0.0-wfm.0",
   "description": "Ask, as a <bolt-ai-ask> custom element — one self-contained file that embeds the assistant in any host, React or not.",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ashishroadcast/bolt-ai-frontend-v1.git",
+    "directory": "packages/ask-element"
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "types": "./index.d.ts",
   "main": "./dist/bolt-ai-ask.js",
