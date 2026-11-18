@@ -85,7 +85,7 @@ export interface Session {
    * with Bolt") — matters at sign-out: that token is the Bolt tab's own
    * session, so signing out here must not end it in bolt-v2 too.
    */
-  via?: "password" | "code" | "bolt";
+  via?: "password" | "code" | "bolt" | "whitelight";
   /**
    * The organisation a user signed in to, named, so the top bar can say so
    * before the picker has loaded anything. Absent for an API key.

@@ -1,3 +1,4 @@
+import { whitelightLogin } from "./whitelight.ts";
 import { createContext, useCallback, useContext, useSyncExternalStore, type ReactNode } from "react";
 import { GATEWAY_URL } from "../api/config.ts";
 import { GatewayError } from "../ask/http/errors.ts";
@@ -93,6 +94,8 @@ export interface AuthContextValue {
    * Throws `GatewayError` carrying operator-facing text on failure.
    */
   signInWithApiKey: (apiKey: string) => Promise<void>;
+  /** A Whitelight (WFM) username and password, relayed by Bolty to WFM's own login. */
+  signInWithWhitelight: (input: { username: string; password: string }) => Promise<void>;
   /**
    * Every organisation this session may act as — the top-bar picker's
    * source. Returns `[]` when there is no session. Throws `GatewayError`.
@@ -289,6 +292,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [startUserSession],
   );
 
+  const signInWithWhitelight = useCallback(
+    async (input: { username: string; password: string }) => {
+      const tokens = await whitelightLogin(input.username.trim(), input.password);
+      await startUserSession({
+        token: tokens.token,
+        refreshToken: tokens.refreshToken || null,
+        organisation: null,
+        via: "whitelight",
+      });
+    },
+    [startUserSession],
+  );
+
   const signInWithApiKey = useCallback(async (rawKey: string) => {
     // Tolerate a paste that brought "Bearer " along from a devtools header
     // view, or stray whitespace from a terminal.
@@ -367,6 +383,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithCode,
     signOutDevice,
     signInWithBolt,
+    signInWithWhitelight,
     signInWithApiKey,
     loadActingOrganisations,
     actAsOrganisation,

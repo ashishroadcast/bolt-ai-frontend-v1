@@ -1,3 +1,4 @@
+import { WHITELIGHT_SIGN_IN } from "../auth/whitelight.ts";
 import {
   AlertCircle,
   ArrowLeft,
@@ -544,6 +545,8 @@ export function SignInRoute() {
   const [showPassword, setShowPassword] = useState(false);
   const [code, setCode] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [wlUsername, setWlUsername] = useState("");
+  const [wlPassword, setWlPassword] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
 
   // What is in flight: "identify", "password", "code", "send", "bolt",
@@ -761,6 +764,23 @@ export function SignInRoute() {
     }
   }
 
+  async function submitWhitelight(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    if (wlUsername.trim() === "" || wlPassword === "") {
+      setError("Enter your Whitelight username and password.");
+      return;
+    }
+    setBusy("whitelight");
+    try {
+      await auth.signInWithWhitelight({ username: wlUsername, password: wlPassword });
+      finish();
+    } catch (err) {
+      setError(messageOf(err, "Couldn't sign in. Check your username and password and try again."));
+      setBusy(null);
+    }
+  }
+
   async function submitApiKey(event: FormEvent) {
     event.preventDefault();
     setError(null);
@@ -782,6 +802,69 @@ export function SignInRoute() {
 
   switch (step.name) {
     case "identify": {
+      if (WHITELIGHT_SIGN_IN) {
+        // Whitelight build: the user's WFM account, relayed to WFM's own login.
+        card = (
+          <>
+            <Head title="Sign in to Bolty">
+              Use your Whitelight account. You'll see the same vehicles and permissions you have in
+              Whitelight.
+            </Head>
+            {signOutReason === "expired" && (
+              <Notice>Your session ended. Sign in again to pick up where you left off.</Notice>
+            )}
+            <form className={styles.form} onSubmit={(event) => void submitWhitelight(event)} noValidate>
+              <div className={styles.fieldGroup}>
+                <label className={styles.label} htmlFor="sign-in-wl-username">
+                  Username, email or mobile number
+                </label>
+                <div className={styles.inputWrap}>
+                  <input
+                    id="sign-in-wl-username"
+                    name="username"
+                    autoComplete="username"
+                    autoFocus
+                    className={styles.input}
+                    value={wlUsername}
+                    disabled={busy === "whitelight"}
+                    onChange={(event) => setWlUsername(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className={styles.fieldGroup}>
+                <label className={styles.label} htmlFor="sign-in-wl-password">
+                  Password
+                </label>
+                <div className={styles.inputWrap}>
+                  <KeyRound size={17} className={styles.inputIcon} aria-hidden="true" />
+                  <input
+                    id="sign-in-wl-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    className={styles.input}
+                    value={wlPassword}
+                    disabled={busy === "whitelight"}
+                    aria-invalid={error !== null}
+                    onChange={(event) => setWlPassword(event.target.value)}
+                  />
+                </div>
+              </div>
+              {errorLine}
+              <SubmitButton busy={busy === "whitelight"} busyLabel="Signing in…">
+                Sign in
+              </SubmitButton>
+            </form>
+            <p className={styles.hint}>
+              Connecting a service or integration?{" "}
+              <button type="button" className={styles.link} onClick={() => go({ name: "apiKey" })}>
+                Use an API key
+              </button>
+            </p>
+          </>
+        );
+        break;
+      }
       const reason =
         signOutReason === "expired"
           ? "Your session ended. Sign in again to pick up where you left off."

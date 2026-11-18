@@ -1,3 +1,4 @@
+import { whitelightRefresh } from "./whitelight.ts";
 import { GatewayError } from "../ask/http/errors.ts";
 import { refreshTokens } from "./boltv2.ts";
 import { tokenExpiresAt } from "./jwt.ts";
@@ -80,7 +81,9 @@ async function renew(force: boolean): Promise<boolean> {
     if (refreshToken === null) return false;
 
     try {
-      const renewed = await refreshTokens(refreshToken);
+      // A Whitelight session renews through Bolty's relay to WFM's own refresh.
+      const renewed =
+        current.via === "whitelight" ? await whitelightRefresh(refreshToken) : await refreshTokens(refreshToken);
       const latest = getSession();
       // Signed out (or switched to an API key) while the request was out:
       // the answer belongs to a session that no longer exists.
