@@ -1,6 +1,6 @@
 {
   "name": "@bolt-ai/ask-element",
-  "version": "1.4.1",
+  "version": "2.0.0-wfm.0",
   "description": "Ask, as a <bolt-ai-ask> custom element — one self-contained file that embeds the assistant in any host, React or not.",
   "license": "UNLICENSED",
   "type": "module",
@@ -17,7 +17,7 @@
   "//sideEffects": "TRUE, and load-bearing. This package's entire purpose is a side effect: importing it calls customElements.define('bolt-ai-ask'). Hosts import it for effect and use no bindings, so a bundler told sideEffects:false would tree-shake the whole thing away and leave an inert tag with no error.",
   "sideEffects": true,
   "files": [
-    "dist",
+    "dist/bolt-ai-ask.js",
     "index.d.ts",
     "README.md"
   ],
