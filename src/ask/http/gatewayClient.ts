@@ -291,11 +291,18 @@ export class GatewayClient {
   }
 
   private async readToken(): Promise<string | null> {
+    let raw: string | null;
     try {
-      return await this.getToken();
+      raw = await this.getToken();
     } catch {
       return null;
     }
+    // WFM: a host may store its token as "Bearer <jwt>" (whitelight-angular's
+    // AuthService does) or hand over "" when signed out. Sending either as-is
+    // would put "Bearer Bearer ..." or a bare "Bearer" on the wire.
+    if (raw === null || raw === undefined) return null;
+    const bare = String(raw).replace(/^Bearer\s+/i, "").trim();
+    return bare === "" ? null : bare;
   }
 
   /**

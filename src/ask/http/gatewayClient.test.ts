@@ -53,6 +53,34 @@ describe("GatewayClient", () => {
     expect(request.headers.get("Authorization")).toBe("Bearer the-jwt");
   });
 
+  // WFM: whitelight-angular stores its token as "Bearer <jwt>" and returns ""
+  // when signed out.
+  it("strips a host's own Bearer prefix so the header is not doubled", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ ok: true }));
+    const client = new GatewayClient({
+      baseUrl: "http://gateway.test",
+      getToken: () => "Bearer the-jwt ",
+      onUnauthorized,
+    });
+
+    await client.agentFetch("/agent/me");
+
+    const request = fetchMock.mock.calls[0]![0] as Request;
+    expect(request.headers.get("Authorization")).toBe("Bearer the-jwt");
+  });
+
+  it("treats an empty token as signed out: nothing is sent", async () => {
+    const client = new GatewayClient({
+      baseUrl: "http://gateway.test",
+      getToken: () => "",
+      onUnauthorized,
+    });
+
+    await expect(client.agentFetch("/agent/me")).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalled();
+  });
+
   it("does not attach a bearer to an unauthenticated GraphQL call (login)", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ data: { ok: true } }));
     const client = new GatewayClient({
