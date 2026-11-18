@@ -42,7 +42,7 @@ describe("a wire table, rendered", () => {
       row_count: 1,
     });
 
-    expect(cellTexts()).toEqual(["12,345", "12,345.25", "₹12,34,567.50"]);
+    expect(cellTexts()).toEqual(["12,345", "12,345.25", "1,234,567.50"]);
   });
 
   it("leaves an integer column from an older part, which sent no kinds, ungrouped", () => {
@@ -72,7 +72,7 @@ describe("a wire table, rendered", () => {
       row_count: 1,
     });
 
-    expect(cellTexts()).toEqual(["2026-01-09 10:00 IST", "2026-01-09 10:00"]);
+    expect(cellTexts()).toEqual(["2026-01-09 08:30 GMT+4", "2026-01-09 10:00"]);
   });
 
   it("counts the rows in its header the way its pager does", () => {

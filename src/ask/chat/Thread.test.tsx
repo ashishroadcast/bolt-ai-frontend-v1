@@ -471,7 +471,7 @@ describe("Thread", () => {
     expect(screen.getByText("Net sales by month")).toBeInTheDocument();
     expect(screen.queryByText("No data for this window.")).not.toBeInTheDocument();
     // The axis is legible at money scale rather than eight digits wide.
-    expect(screen.getByText("3Cr")).toBeInTheDocument();
+    expect(screen.getByText("30M")).toBeInTheDocument();
     // In the axis itself — the chart's accessible table names May too.
     expect(screen.getAllByText("May").some((node) => node.closest("svg") !== null)).toBe(true);
   });
@@ -721,7 +721,7 @@ describe("Thread", () => {
           column_kinds: ["text", "currency"],
         },
       })}`,
-      `data: {"type":"data-stats","data":{"title":"Net sales per store","subLabel":"last 14 days · over 265 values","figures":[{"label":"Median net sales","value":"\u20b99,44,220.66"},{"label":"IQR net sales","value":"\u20b99,62,279.45"}]}}`,
+      `data: {"type":"data-stats","data":{"title":"Net sales per store","subLabel":"last 14 days · over 265 values","figures":[{"label":"Median net sales","value":"944,220.66"},{"label":"IQR net sales","value":"962,279.45"}]}}`,
       `data: {"type":"text-start","id":"answer"}`,
       `data: {"type":"text-delta","id":"answer","delta":"Half the stores clear 9.4 lakh."}`,
       `data: {"type":"text-end","id":"answer"}`,
@@ -735,8 +735,8 @@ describe("Thread", () => {
     await waitFor(() => expect(chatRef.current!.status).toBe("idle"));
 
     // The figures are on screen as figures.
-    expect(screen.getByText("₹9,44,220.66")).toBeInTheDocument();
-    expect(screen.getByText("₹9,62,279.45")).toBeInTheDocument();
+    expect(screen.getByText("944,220.66")).toBeInTheDocument();
+    expect(screen.getByText("962,279.45")).toBeInTheDocument();
 
     // The table is still there — it is what the figures are checked
     // against — but closed, and labelled with the count it is hiding.

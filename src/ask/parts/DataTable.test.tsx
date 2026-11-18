@@ -37,7 +37,7 @@ describe("DataTable", () => {
     expect(screen.getByText("Chicken Biryani")).toBeInTheDocument();
     // Indian digit grouping and an INR sign — proves currency formatting ran,
     // not just that the raw number was passed through.
-    expect(screen.getByText("₹1,42,310")).toBeInTheDocument();
+    expect(screen.getByText("142,310")).toBeInTheDocument();
     expect(screen.getByText("28.4%")).toBeInTheDocument();
   });
 

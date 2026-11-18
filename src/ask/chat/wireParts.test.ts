@@ -66,7 +66,7 @@ describe("toUIPart / data-table", () => {
     // 12,345 would state something false about an identifier. A string,
     // too: DataTable groups any JS number it is handed.
     expect(props.named[0]!.store_id).toBe("12345");
-    expect(props.named[0]!.net_sales_sum).toBe("2,90,82,789.84");
+    expect(props.named[0]!.net_sales_sum).toBe("29,082,789.84");
   });
 
   it("rounds a plain measure to two decimals rather than showing float noise", () => {
@@ -183,7 +183,7 @@ describe("toUIPart / data-table", () => {
 
 describe("currency and percent columns", () => {
   // The server now says what a column holds (app.stream.columns), because a
-  // prompt could not: one run wrote "₹944,220.66" and the next
+  // prompt could not: one run wrote "944,220.66" and the next
   // "Rs 1,012,406.24", and a growth column reached the screen as
   // 2,119.9706005879884000.
   function table(kinds: string[], rows: unknown[][]) {
@@ -202,7 +202,7 @@ describe("currency and percent columns", () => {
       [["Bombay Canteen", "12443248.6", "12.3456"]],
     );
 
-    expect(out.named[0].total_net_sales).toBe("₹1,24,43,248.60");
+    expect(out.named[0].total_net_sales).toBe("12,443,248.60");
   });
 
   it("caps a percentage at two decimals rather than sixteen", () => {
@@ -216,20 +216,20 @@ describe("currency and percent columns", () => {
 
   it("keeps paise — a currency total that loses them stops reconciling", () => {
     // Intl's own style:"currency" defaults to maximumFractionDigits 0 here,
-    // which would render this as ₹9,44,221.
+    // which would render this as 944,221.
     const out = table(["text", "currency", "percent"], [["Sinhgad", "944220.66", "0"]]);
 
-    expect(out.named[0].total_net_sales).toBe("₹9,44,220.66");
+    expect(out.named[0].total_net_sales).toBe("944,220.66");
   });
 
   it("puts a negative figure's sign before the rupee sign", () => {
     const out = table(["text", "currency", "percent"], [["Sinhgad", "-1234", "-12.3"]]);
 
-    expect(out.named[0].total_net_sales).toBe("-₹1,234.00");
+    expect(out.named[0].total_net_sales).toBe("-1,234.00");
     expect(out.named[0].mom_growth_pct).toBe("-12.30%");
   });
 
-  it("never writes a missing figure as ₹0.00", () => {
+  it("never writes a missing figure as 0.00", () => {
     const out = table(["text", "currency", "percent"], [["Sinhgad", null, ""]]);
 
     expect(out.named[0].total_net_sales).toBe("");
@@ -252,7 +252,7 @@ describe("currency and percent columns", () => {
       truncated: false,
     });
 
-    expect(out.named[0].total_net_sales).toBe("9,44,220.66");
+    expect(out.named[0].total_net_sales).toBe("944,220.66");
   });
 
   it("leaves an id column alone", () => {
@@ -264,28 +264,28 @@ describe("currency and percent columns", () => {
       truncated: false,
     });
 
-    // Never "₹280", never "2,80".
+    // Never "280", never "2,80".
     expect(out.named[0].store_id).toBe("280");
   });
 });
 
-describe("timestamp columns render in IST", () => {
+describe("timestamp columns render in the reader's zone (tests run in Asia/Muscat)", () => {
   // Live incident this section exists to fix: an operator asking "which
   // vehicle was updated a few minutes ago" got back a raw UTC timestamp
   // with no timezone marker at all, in a table where every other figure
-  // (₹, lakhs/crores) is already India-first.
+  // (, lakhs/crores) is already India-first.
 
-  it("converts a Z-suffixed Redis timestamp to IST, labelled", () => {
+  it("converts a Z-suffixed Redis timestamp to the reader's zone, labelled", () => {
     const out = tableProps({
       columns: ["lastUpdate"],
       rows: [["2026-09-09T04:36:52Z"]],
       row_count: 1,
     });
 
-    expect(out.named[0]!.lastUpdate).toBe("2026-09-09 10:06 IST");
+    expect(out.named[0]!.lastUpdate).toBe("2026-09-09 08:36 GMT+4");
   });
 
-  it("converts an explicit-offset Postgres timestamp to IST", () => {
+  it("converts an explicit-offset Postgres timestamp to the reader's zone", () => {
     // The shape `_json_safe` produces once asyncpg's own timestamptz value
     // has been stringified.
     const out = tableProps({
@@ -294,7 +294,7 @@ describe("timestamp columns render in IST", () => {
       row_count: 1,
     });
 
-    expect(out.named[0]!.last_ping).toBe("2026-01-09 17:30 IST");
+    expect(out.named[0]!.last_ping).toBe("2026-01-09 16:00 GMT+4");
   });
 
   it("writes a naive timestamp — no Z, no offset — as the local time it is, unconverted", () => {
@@ -365,7 +365,7 @@ describe("updated_at/created_at are dropped from the generative UI table", () =>
     expect(props.names).toEqual(["id", "name", "last_ping"]);
     expect(props.named[0]!.updated_at).toBeUndefined();
     expect(props.named[0]!.created_at).toBeUndefined();
-    expect(props.named[0]!.last_ping).toBe("2026-09-09 10:06 IST");
+    expect(props.named[0]!.last_ping).toBe("2026-09-09 08:36 GMT+4");
   });
 
   it("matches case-insensitively and ignores surrounding whitespace", () => {
@@ -402,7 +402,7 @@ describe("updated_at/created_at are dropped from the generative UI table", () =>
 
     // Keyed by the column's place on the wire, which survives the drop.
     expect(out.columns).toEqual([{ key: "c1", header: "Net sales", type: "number" }]);
-    expect(out.named[0]!.net_sales).toBe("₹9,44,220.66");
+    expect(out.named[0]!.net_sales).toBe("944,220.66");
   });
 });
 
@@ -412,8 +412,8 @@ describe("toUIPart / data-stats", () => {
       title: "Net sales per store",
       subLabel: "last 14 days · over 265 values",
       figures: [
-        { label: "Median net sales", value: "₹9,44,220.66" },
-        { label: "IQR net sales", value: "₹9,62,279.45" },
+        { label: "Median net sales", value: "944,220.66" },
+        { label: "IQR net sales", value: "962,279.45" },
       ],
     });
 
@@ -422,8 +422,8 @@ describe("toUIPart / data-stats", () => {
       title: "Net sales per store",
       subLabel: "last 14 days · over 265 values",
       figures: [
-        { label: "Median net sales", value: "₹9,44,220.66" },
-        { label: "IQR net sales", value: "₹9,62,279.45" },
+        { label: "Median net sales", value: "944,220.66" },
+        { label: "IQR net sales", value: "962,279.45" },
       ],
     });
   });
@@ -431,10 +431,10 @@ describe("toUIPart / data-stats", () => {
   it("drops a figure missing either half rather than rendering a blank tile", () => {
     const data = toUIPart("data-stats", {
       title: "x",
-      figures: [{ label: "Median" }, { value: "12" }, null, { label: "Q1", value: "₹5.00" }],
+      figures: [{ label: "Median" }, { value: "12" }, null, { label: "Q1", value: "5.00" }],
     }).data as { figures: unknown[] };
 
-    expect(data.figures).toEqual([{ label: "Q1", value: "₹5.00" }]);
+    expect(data.figures).toEqual([{ label: "Q1", value: "5.00" }]);
   });
 
   it("names the part honestly when the server sent no title", () => {
@@ -644,14 +644,14 @@ describe("toUIPart — data-summary", () => {
   it("keeps a summary with a headline, dropping points that are not text", () => {
     const data = toUIPart("data-summary", {
       headline: "Bandra led the week",
-      headlineValue: "₹9,44,220.66",
+      headlineValue: "944,220.66",
       points: ["It outsold Andheri.", null, 12, ""],
       basis: "14 stores, last 7 days",
     }).data;
 
     expect(data).toEqual({
       headline: "Bandra led the week",
-      headlineValue: "₹9,44,220.66",
+      headlineValue: "944,220.66",
       points: ["It outsold Andheri."],
       basis: "14 stores, last 7 days",
     });

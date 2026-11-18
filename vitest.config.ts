@@ -16,6 +16,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // WFM: timestamps render in the reader's zone (`src/ask/locale.ts`), so tests
+    // pin one: Muscat, where WFM's users are.
+    env: { TZ: "Asia/Muscat" },
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     // `.env.local` sets VITE_GATEWAY_URL=/ so the Vite dev server can proxy

@@ -90,12 +90,12 @@ describe("choosing how to draw the numbers", () => {
 
 describe("the money axis", () => {
   it("keeps an eight-digit figure short enough to read, in Indian units", () => {
-    // "2,90,82,789" is wider than the gutter and overlapped the plot.
+    // "29,082,789" is wider than the gutter and overlapped the plot.
     // Crore and lakh, not compact "M"/"B": en-IN's own compact notation
     // abbreviates thousand as "T", which reads as trillion to half this
     // console's audience.
-    expect(axisTickLabel(29_082_789)).toBe("2.9Cr");
-    expect(axisTickLabel(745_895)).toBe("7.5L");
+    expect(axisTickLabel(29_082_789)).toBe("29.1M");
+    expect(axisTickLabel(745_895)).toBe("745.9k");
     expect(axisTickLabel(12_400)).toBe("12.4k");
   });
 
@@ -104,12 +104,12 @@ describe("the money axis", () => {
     expect(axisTickLabel(0)).toBe("0");
   });
 
-  it("never leaves a trailing .0 — '3Cr' reads better than '3.0Cr'", () => {
-    expect(axisTickLabel(30_000_000)).toBe("3Cr");
+  it("never leaves a trailing .0 — '30M' reads better than '30.0M'", () => {
+    expect(axisTickLabel(30_000_000)).toBe("30M");
   });
 
   it("keeps the unit on a negative figure, and its sign", () => {
-    expect(axisTickLabel(-745_895)).toBe("-7.5L");
+    expect(axisTickLabel(-745_895)).toBe("-745.9k");
   });
 });
 
@@ -287,14 +287,14 @@ describe("hasIsolatedPoint", () => {
 
 // --- writing each number in its own unit ------------------------------------
 //
-// Every tooltip put a rupee sign on every value: trip counts read "₹42.00",
-// a 0–1 share read "₹0.35" on an axis from 0 to 1, and a scatter tooltip
-// read "label: ₹NaN" because the point's name had been fed in as a value.
+// Every tooltip put a rupee sign on every value: trip counts read "42.00",
+// a 0–1 share read "0.35" on an axis from 0 to 1, and a scatter tooltip
+// read "label: NaN" because the point's name had been fed in as a value.
 
 describe("formatValue", () => {
   it("writes money in rupees with Indian grouping", () => {
-    expect(formatValue(1234567, "currency")).toBe("₹12,34,567.00");
-    expect(formatValue(-1234.5, "currency")).toBe("-₹1,234.50");
+    expect(formatValue(1234567, "currency")).toBe("1,234,567.00");
+    expect(formatValue(-1234.5, "currency")).toBe("-1,234.50");
   });
 
   it("writes a percentage as a percentage, and a 0–1 share as one too", () => {
@@ -305,7 +305,7 @@ describe("formatValue", () => {
 
   it("writes counts and plain numbers without a rupee sign", () => {
     expect(formatValue(1204, "integer")).toBe("1,204");
-    expect(formatValue(1234567.891, "number")).toBe("12,34,567.89");
+    expect(formatValue(1234567.891, "number")).toBe("1,234,567.89");
   });
 
   it("falls back to a plain grouped number when a series names no format", () => {
@@ -325,7 +325,7 @@ describe("formatAxisTick", () => {
   });
 
   it("keeps money and counts in short Indian units", () => {
-    expect(formatAxisTick(29_082_789, "currency")).toBe("2.9Cr");
+    expect(formatAxisTick(29_082_789, "currency")).toBe("29.1M");
     expect(formatAxisTick(12_400, "integer")).toBe("12.4k");
     expect(formatAxisTick(50, "percent")).toBe("50%");
   });
@@ -352,7 +352,7 @@ describe("tooltip formatters", () => {
     const format = formatterFor(typed);
 
     expect(format(42, "Trips", { dataKey: "v:trips" })).toEqual(["42", "Trips"]);
-    expect(format(1500, "Net sales", { dataKey: "v:sales" })).toEqual(["₹1,500.00", "Net sales"]);
+    expect(format(1500, "Net sales", { dataKey: "v:sales" })).toEqual(["1,500.00", "Net sales"]);
     // A slice has no data key of ours, only its series' name.
     expect(format(42, "Trips", undefined)).toEqual(["42", "Trips"]);
   });
@@ -361,7 +361,7 @@ describe("tooltip formatters", () => {
     const format = shareFormatterFor(typed);
 
     expect(format(0.35, "Net sales", { dataKey: "v:sales", payload: { "r:sales": 1234 } })).toEqual([
-      "35% · ₹1,234.00",
+      "35% · 1,234.00",
       "Net sales",
     ]);
   });
@@ -390,7 +390,7 @@ describe("the scatter's hover read-out", () => {
 
     expect(screen.getByText("Bandra")).toBeInTheDocument();
     expect(screen.getByText("1,204")).toBeInTheDocument();
-    expect(screen.getByText("₹10,08,942.35")).toBeInTheDocument();
+    expect(screen.getByText("1,008,942.35")).toBeInTheDocument();
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
     expect(screen.queryByText(/^label/i)).not.toBeInTheDocument();
   });
@@ -517,7 +517,7 @@ describe("the chart's accessible table", () => {
     expect(within(table).getAllByRole("rowheader").map((cell) => cell.textContent)).toEqual(["Mon", "Tue"]);
     const cells = within(table).getAllByRole("cell").map((cell) => cell.textContent);
     // The corner, then each row's values in order — and a gap said as one.
-    expect(cells).toEqual(["", "1,204", "₹10,08,942.35", "988", "No data"]);
+    expect(cells).toEqual(["", "1,204", "1,008,942.35", "988", "No data"]);
   });
 
   it("hides the drawing itself, so nothing is read twice", () => {
@@ -548,7 +548,7 @@ describe("the chart's accessible table", () => {
     const table = screen.getByRole("table", { name: "Mix" });
     expect(within(table).getAllByRole("rowheader")).toHaveLength(10);
     expect(within(table).getByRole("columnheader").textContent).toBe("This month");
-    expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toContain("₹1,000.00");
+    expect(within(table).getAllByRole("cell").map((cell) => cell.textContent)).toContain("1,000.00");
   });
 
   it("says both the figure and its share on a share chart", () => {

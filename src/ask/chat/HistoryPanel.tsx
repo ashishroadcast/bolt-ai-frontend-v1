@@ -1,3 +1,4 @@
+import { DISPLAY_LOCALE } from "../locale.ts";
 import { ArrowLeft, Link2, MessageCircle, MessageSquarePlus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { GatewayError } from "../http/errors.ts";
@@ -32,9 +33,9 @@ const UNTITLED = "Untitled conversation";
 function formatStamp(iso: string, bucket: string): string {
   const date = new Date(iso);
   if (bucket === "Today" || bucket === "Yesterday") {
-    return new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digit" }).format(date);
+    return new Intl.DateTimeFormat(DISPLAY_LOCALE, { hour: "numeric", minute: "2-digit" }).format(date);
   }
-  return new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { month: "short", day: "numeric" }).format(date);
 }
 
 function startOfDay(date: Date): number {

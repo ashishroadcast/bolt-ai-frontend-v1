@@ -1,3 +1,4 @@
+import { numberFormat } from "../locale.ts";
 import { BarChart3 } from "lucide-react";
 import type { CSSProperties, ReactElement } from "react";
 import {
@@ -282,10 +283,11 @@ function ChartLegend({ entries, line }: { entries: readonly LegendEntry[]; line:
  */
 export function axisTickLabel(value: number): string {
   const abs = Math.abs(value);
-  if (abs >= 1e7) return `${trimZero(value / 1e7)}Cr`;
-  if (abs >= 1e5) return `${trimZero(value / 1e5)}L`;
+  // WFM: thousands, millions, billions (upstream used lakh and crore).
+  if (abs >= 1e9) return `${trimZero(value / 1e9)}B`;
+  if (abs >= 1e6) return `${trimZero(value / 1e6)}M`;
   if (abs >= 1e3) return `${trimZero(value / 1e3)}k`;
-  return new Intl.NumberFormat("en-IN").format(value);
+  return numberFormat().format(value);
 }
 
 /** One decimal, but never a trailing ".0" — "3Cr" reads better than
@@ -294,10 +296,10 @@ function trimZero(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
 }
 
-const MONEY = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const PLAIN = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
-const WHOLE = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const PERCENT = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
+const MONEY = numberFormat({ minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const PLAIN = numberFormat({ maximumFractionDigits: 2 });
+const WHOLE = numberFormat({ maximumFractionDigits: 0 });
+const PERCENT = numberFormat({ maximumFractionDigits: 1 });
 
 /**
  * One exact figure, written the way its series says it should be — the
@@ -315,7 +317,8 @@ export function formatValue(value: number, format?: SeriesFormat): string {
   const v = value === 0 ? 0 : value;
   switch (format) {
     case "currency":
-      return `${v < 0 ? "-" : ""}₹${MONEY.format(Math.abs(v))}`;
+      // WFM: no currency symbol (see `../locale`).
+      return `${v < 0 ? "-" : ""}${MONEY.format(Math.abs(v))}`;
     case "percent":
       return `${PERCENT.format(v)}%`;
     case "share":

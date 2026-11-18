@@ -1,3 +1,4 @@
+import { numberFormat } from "../locale.ts";
 import { ChevronLeft, ChevronRight, Table2 } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { Sheet } from "./Sheet.tsx";
@@ -64,16 +65,13 @@ function formatCell(value: DataTableCellValue, type: DataTableColumnType): strin
   if (typeof value !== "number") return value;
   switch (type) {
     case "currency":
-      return new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: "INR",
-        maximumFractionDigits: 0,
-      }).format(value);
+      // WFM: no currency symbol (see `../locale`).
+      return numberFormat({ maximumFractionDigits: 0 }).format(value);
     case "percent":
     case "share":
       return `${value.toFixed(1)}%`;
     default:
-      return new Intl.NumberFormat("en-IN").format(value);
+      return numberFormat().format(value);
   }
 }
 
@@ -91,7 +89,7 @@ function shareColumnMax(rows: DataTableRow[], key: string): number {
   return max > 0 ? max : 1;
 }
 
-const COUNT = new Intl.NumberFormat("en-IN");
+const COUNT = numberFormat();
 
 /**
  * A row count, grouped the way the pager writes it. Exported so the

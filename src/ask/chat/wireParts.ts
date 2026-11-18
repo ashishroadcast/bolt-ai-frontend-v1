@@ -1,3 +1,4 @@
+import { formatLocalTimestamp, numberFormat } from "../locale.ts";
 import type { UIPart } from "../parts/catalog.tsx";
 import { formatRowCount } from "../parts/DataTable.tsx";
 
@@ -93,14 +94,15 @@ function formatByKind(value: string | number, kind: string): string | number {
   if (text === "") return value;
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) return value;
-  const fixed = new Intl.NumberFormat("en-IN", {
+  const fixed = numberFormat({
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Math.abs(parsed));
   // The sign leads the symbol, "-\u20B91,234.00", the way a statement prints a
   // debit. Formatting the signed value put it after: "\u20B9-1,234.00".
   const sign = parsed < 0 && fixed !== "0.00" ? "-" : "";
-  if (kind === "currency") return `${sign}\u20B9${fixed}`;
+  // WFM: no currency symbol (see `../locale`).
+  if (kind === "currency") return `${sign}${fixed}`;
   return `${sign}${fixed}%`;
 }
 
@@ -167,7 +169,7 @@ function formatGroupedNumber(value: string | number): string | number {
   if (text === "") return value;
   const parsed = Number(text);
   if (!Number.isFinite(parsed)) return value;
-  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(parsed);
+  return numberFormat({ maximumFractionDigits: 2 }).format(parsed);
 }
 
 function isIntegerColumn(rows: readonly (string | number)[][], index: number): boolean {
@@ -255,31 +257,14 @@ function isTimestampColumn(rows: readonly (string | number)[][], index: number):
   return seen;
 }
 
-const IST_FORMATTER = new Intl.DateTimeFormat("en-IN", {
-  timeZone: "Asia/Kolkata",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
 /**
- * A UTC-or-explicitly-offset timestamp string, shown the way every other
- * figure in this table already is: India-first, and labelled so nobody
- * reads a converted value as still being UTC. `"%Y-%m-%d %H:%M IST"` —
- * the identical shape `app.stream.columns.render` produces for the same
- * value on the model's own side of this wire, so the sentence and the
- * table agree, not just the currency and percent columns that already had
- * this property.
+ * A UTC-or-explicitly-offset timestamp string, in the reader's own zone and
+ * labelled with its offset (WFM; upstream converted to IST). See `../locale`.
  */
 function formatIstCell(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const parts = IST_FORMATTER.formatToParts(date);
-  const get = (type: string): string => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} IST`;
+  return formatLocalTimestamp(date);
 }
 
 /**

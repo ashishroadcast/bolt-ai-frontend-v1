@@ -1,3 +1,4 @@
+import { numberFormat } from "../locale.ts";
 import type { UsageMetadata } from "./protocol.ts";
 
 /**
@@ -181,7 +182,7 @@ export function formatCost(usd: number): string {
 }
 
 export function formatCount(n: number): string {
-  return new Intl.NumberFormat("en-IN").format(n);
+  return numberFormat().format(n);
 }
 
 /**
