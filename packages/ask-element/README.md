@@ -2,21 +2,18 @@
 
 ## Whitelight (WFM) build
 
-Published privately as `@roadcast/whitelight-bolty` (the `roadcast` npm org). A consumer
-needs, in its `.npmrc` (the token is a read-only granular token, from CI secrets, never
-committed):
+Published publicly on npm as `@roadcast/whitelight-bolty` (the `roadcast` npm org), so
+`npm install @roadcast/whitelight-bolty` needs no token. The bundle holds no hosts or keys:
+the Bolty URL and the user's token are given at runtime by the host page.
 
-```
-@roadcast:registry=https://registry.npmjs.org/
-//registry.npmjs.org/:_authToken=${NPM_TOKEN}
-```
-
-Publish: bump `version` here, then `npm run build:element && cd packages/ask-element && npm publish`.
+Publish (an npm account in the `roadcast` org): bump `version` here, then
+`npm run build:element && cd packages/ask-element && npm publish`.
 
 Wiring that WFM depends on (see whitelight-angular `src/app/pages/bolty-panel/`):
 
-- `base-url` must be a different origin from the web app: bolt-ai-v1 picks the WFM
-  deployment from the request's `Origin`, which browsers omit on same-origin GETs.
+- `base-url` is Bolty's URL. bolt-ai-v1 picks the WFM deployment from the request's
+  `Origin` (or `Referer`), so the web app's origin must be listed in its
+  `WHITELIGHT_DEPLOYMENTS_JSON`, and allowed by its CORS setting when it differs.
 - `credentialProvider` returns the user's token; a leading `Bearer ` and `""` are handled.
 - `organisationProvider` returns `String(selectedUserId)`, the acting user; call
   `resetScope()` when it changes.
