@@ -21,7 +21,8 @@
       "types": "./index.d.ts",
       "import": "./dist/bolt-ai-ask.js",
       "default": "./dist/bolt-ai-ask.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "//sideEffects": "TRUE, and load-bearing. This package's entire purpose is a side effect: importing it calls customElements.define('bolt-ai-ask'). Hosts import it for effect and use no bindings, so a bundler told sideEffects:false would tree-shake the whole thing away and leave an inert tag with no error.",
   "sideEffects": true,
