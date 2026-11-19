@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build && npm run build:embed",
-    "build:whitelight": "tsc -b && vite build --mode whitelight && npm run build:embed",
+    "build:whitelight": "tsc -b && vite build --mode whitelight",
     "build:embed": "vite build --config vite.embed.config.ts",
     "lint": "oxlint",
     "preview": "vite preview",
