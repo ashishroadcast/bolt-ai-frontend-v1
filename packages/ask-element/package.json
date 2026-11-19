@@ -1,7 +1,7 @@
 {
-  "name": "@roadcast/whitelight-bolty",
+  "name": "whitelight-bolty",
   "version": "1.0.0",
-  "description": "Ask, as a <bolt-ai-ask> custom element — one self-contained file that embeds the assistant in any host, React or not.",
+  "description": "Ask, as a <bolt-ai-ask> custom element \u2014 one self-contained file that embeds the assistant in any host, React or not.",
   "license": "UNLICENSED",
   "repository": {
     "type": "git",

@@ -1,12 +1,12 @@
-# `@roadcast/whitelight-bolty`
+# `whitelight-bolty`
 
 ## Whitelight (WFM) build
 
-Published publicly on npm as `@roadcast/whitelight-bolty` (the `roadcast` npm org), so
-`npm install @roadcast/whitelight-bolty` needs no token. The bundle holds no hosts or keys:
-the Bolty URL and the user's token are given at runtime by the host page.
+Published publicly on npm as `whitelight-bolty` (an unscoped name: no npm org), so
+`npm install whitelight-bolty` needs no token. The bundle holds no hosts or keys: the
+Bolty URL and the user's token are given at runtime by the host page.
 
-Publish (an npm account in the `roadcast` org): bump `version` here, then
+Publish (the npm account that owns the package): bump `version` here, then
 `npm run build:element && cd packages/ask-element && npm publish`.
 
 Wiring that WFM depends on (see whitelight-angular `src/app/pages/bolty-panel/`):
