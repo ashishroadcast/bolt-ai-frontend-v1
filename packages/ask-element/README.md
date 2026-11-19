@@ -2,12 +2,14 @@
 
 ## Whitelight (WFM) build
 
-Published publicly on npm as `whitelight-bolty` (an unscoped name: no npm org), so
-`npm install whitelight-bolty` needs no token. The bundle holds no hosts or keys: the
-Bolty URL and the user's token are given at runtime by the host page.
+Released as `whitelight-bolty` on Bolty's own server, not on npmjs.com (no npm account or
+org is needed): https://bolty.wfm.om/packages/whitelight-bolty-<version>.tgz. WFM installs
+it by that URL and its lock file pins the sha512, so npm refuses a changed file.
 
-Publish (the npm account that owns the package): bump `version` here, then
-`npm run build:element && cd packages/ask-element && npm publish`.
+Release a version: bump `version` here, then
+`npm run build:element && cd packages/ask-element && npm pack`, and copy the .tgz to
+`~/bolty/packages/` on the Bolty server (chmod 444). Never replace a released file: a
+new version is a new file. Then point whitelight-angular's `package.json` at the new URL.
 
 Wiring that WFM depends on (see whitelight-angular `src/app/pages/bolty-panel/`):
 
